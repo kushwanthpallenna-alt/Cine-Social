@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from "react";
 import Link from "next/link";
+import Image from "next/image";
 
 export interface ReviewReply {
   id: string;
@@ -245,9 +246,13 @@ export default function ReviewCard({
         <div className="flex items-center gap-3">
           <Link href={`/profile/${review.user_id}`} className="flex-shrink-0 group">
             {avatarUrl ? (
-              <img
+              <Image
                 src={avatarUrl}
                 alt={authorName}
+                width={40}
+                height={40}
+                loading="lazy"
+                sizes="40px"
                 className="w-10 h-10 rounded-full object-cover border border-white/10 group-hover:border-primary transition-colors"
               />
             ) : (
@@ -279,10 +284,9 @@ export default function ReviewCard({
           </div>
         </div>
 
-        {/* Poster thumbnail if provided */}
         {posterPath && review.movie_id && (
-          <Link href={`/movies?id=${review.movie_id}`} className="w-10 md:w-12 aspect-[2/3] rounded overflow-hidden border border-white/10 flex-shrink-0 hover:opacity-80 transition-opacity">
-            <img src={`https://image.tmdb.org/t/p/w185${posterPath}`} alt={displayTitle || "Movie"} className="w-full h-full object-cover" />
+          <Link href={`/movies?id=${review.movie_id}`} className="w-10 md:w-12 aspect-[2/3] rounded overflow-hidden border border-white/10 flex-shrink-0 hover:opacity-80 transition-opacity relative">
+            <Image src={`https://image.tmdb.org/t/p/w185${posterPath}`} alt={displayTitle || "Movie"} fill sizes="(max-width: 768px) 40px, 48px" loading="lazy" className="object-cover" />
           </Link>
         )}
       </div>
@@ -415,9 +419,13 @@ export default function ReviewCard({
                     <div className="flex items-center justify-between gap-2">
                       <div className="flex items-center gap-2">
                         {reply.avatar_url ? (
-                          <img
+                          <Image
                             src={reply.avatar_url}
                             alt={reply.user_name}
+                            width={20}
+                            height={20}
+                            loading="lazy"
+                            sizes="20px"
                             className="w-5 h-5 rounded-full object-cover border border-white/10"
                           />
                         ) : (

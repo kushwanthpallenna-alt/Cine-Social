@@ -2,11 +2,14 @@
 
 import React, { useState, useEffect, useRef } from "react";
 import Link from "next/link";
+import Image from "next/image";
+import dynamic from "next/dynamic";
 import { useSession, signOut } from "next-auth/react";
 import { supabase } from "@/lib/supabase";
 import { useToast } from "@/components/ToastProvider";
-import NotificationBell from "@/components/NotificationBell";
-import Carousel from "@/components/Carousel";
+
+const NotificationBell = dynamic(() => import("@/components/NotificationBell"), { ssr: false });
+const Carousel = dynamic(() => import("@/components/Carousel"));
 
 
 
@@ -354,12 +357,15 @@ export default function Home() {
           <div className="relative">
             <button
               onClick={() => setShowProfileMenu(!showProfileMenu)}
-              className="w-8 h-8 rounded-full overflow-hidden border border-primary/20 hover:opacity-80 transition-all focus:outline-none cursor-pointer flex items-center justify-center bg-white/5"
+              className="w-8 h-8 rounded-full overflow-hidden border border-primary/20 hover:opacity-80 transition-all focus:outline-none cursor-pointer flex items-center justify-center bg-white/5 relative"
             >
-              <img
+              <Image
                 alt={user?.name || "User profile photo"}
-                className="w-full h-full object-cover"
+                className="object-cover"
                 src={user?.image || "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150"}
+                fill
+                loading="lazy"
+                sizes="32px"
               />
             </button>
             
@@ -491,10 +497,22 @@ export default function Home() {
             ) : heroMovie ? (
               <section className="relative w-full h-screen overflow-hidden">
                 <div className="absolute inset-0">
-                  <img
+                  {heroMovie.backdrop_path && (
+                    <link
+                      rel="preload"
+                      as="image"
+                      href={`https://image.tmdb.org/t/p/original${heroMovie.backdrop_path}`}
+                      fetchPriority="high"
+                    />
+                  )}
+                  <Image
                     alt={heroMovie.title || "Trending Movie Backdrop"}
-                    className="w-full h-full object-cover"
+                    className="object-cover"
                     src={heroMovie.backdrop_path ? `https://image.tmdb.org/t/p/original${heroMovie.backdrop_path}` : "https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?w=1600"}
+                    fill
+                    priority
+                    sizes="100vw"
+                    quality={85}
                   />
                   <div className="absolute inset-0 hero-gradient"></div>
                 </div>
@@ -575,10 +593,13 @@ export default function Home() {
             {/* Card 1 - Blade Runner 2049 */}
             <Link href="/movies?id=335984" className="min-w-[280px] md:min-w-[340px] group cursor-pointer block snap-start">
               <div className="relative h-[180px] rounded-xl overflow-hidden glass-panel">
-                <img
+                <Image
                   alt="Blade Runner"
-                  className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110"
+                  className="object-cover transition-transform duration-500 group-hover:scale-110"
                   src="https://lh3.googleusercontent.com/aida-public/AB6AXuAxf9CS53Dv5MGRtqtidFPZZwuyRjx7Qfu3Q4gR0k3y3v2SdUPXJ8eljOk_L3Ln6CRUd4GYL8BlJoiFLESYXhrTUL7OW4OkZ46rwY1YdyHyI-qw59EeJ_ZQZ-ZlqXys28NnKcg_DWJ_hifTNB90kcelsEIA2zv9Vi-5OoZnEixk3MaY560tCHGGvdhpnu5st_FCI_cwhwscpW4vMpYwgEaTRj3WZCWYF0a9NT01rpj9wTmC0crSI2RepF_-6nhkSOjfAwhGP9H5CIo"
+                  fill
+                  loading="lazy"
+                  sizes="(max-width: 768px) 280px, 340px"
                 />
                 <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
                   <div className="w-12 h-12 rounded-full bg-primary/80 flex items-center justify-center">
@@ -605,10 +626,13 @@ export default function Home() {
             {/* Card 2 - The Godfather */}
             <Link href="/movies?id=238" className="min-w-[280px] md:min-w-[340px] group cursor-pointer block snap-start">
               <div className="relative h-[180px] rounded-xl overflow-hidden glass-panel">
-                <img
+                <Image
                   alt="Classic Noir"
-                  className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110"
+                  className="object-cover transition-transform duration-500 group-hover:scale-110"
                   src="https://lh3.googleusercontent.com/aida-public/AB6AXuDp_uAbl8kXVsezA3J8wftI2-DCzOYNWBkGo2W3104npOwRSX1qr-ShURspHLlDytgyMW2oDFQXHXnFi8puIsFybFSCec-TRugsGf_uh75tMwRm-anXdIMKnCJc_9yA_q4modScsI2Rd9rpHY7ExVCnJ-1Rn3n6nheMuydp1od364yDtknEbFrgcQtP7sGImpVysal2aN6e0xIeHvw5J4clQoY8pWjVLZIPtlw3SDmAqbWUJaEnGLOVYVPIaydtmjyRNlI-xj_KQGU"
+                  fill
+                  loading="lazy"
+                  sizes="(max-width: 768px) 280px, 340px"
                 />
                 <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
                   <div className="w-12 h-12 rounded-full bg-primary/80 flex items-center justify-center">
@@ -644,10 +668,14 @@ export default function Home() {
             <div className="grid grid-cols-1 md:grid-cols-3 gap-gutter">
               <Link href="/movies?id=872585" className="flex items-center gap-stack-md p-stack-sm rounded-lg hover:bg-white/5 transition-colors cursor-pointer block">
                 <div className="relative flex-shrink-0">
-                  <img
+                  <Image
                     alt="Friend 1"
                     className="w-10 h-10 rounded-full object-cover border border-white/20"
                     src="https://lh3.googleusercontent.com/aida-public/AB6AXuCsbOCgiRCJjBm38ZBkIr4rZ47v-oetCvz_BXwq8Q1FsBwX1hfCFzHu8UY0PZaY702HTr5ktwK3xH-FWvpSYHK13gRhsfM8Bg6sim71ue6DE-Zcc6PcI9TYxqxKCshDmJ7KGjsceAjCXqlDqRI9SsNaz8WGTIzcUiXqTccWUwIOrPRrZEs1jwkr-BS6eir4EzfM_ltUP3G9gIjElccoHck6XljXu2riN0EqwwzkrlMQfoGy7BUWriSYnr6fFDWP-LVHeF2ZWym7ZNs"
+                    width={40}
+                    height={40}
+                    loading="lazy"
+                    sizes="40px"
                   />
                   <div className="absolute -bottom-1 -right-1 w-4 h-4 bg-primary rounded-full border-2 border-surface flex items-center justify-center">
                     <span className="material-symbols-outlined text-[8px] text-on-primary" style={{ fontVariationSettings: "'FILL' 1" }}>
@@ -665,10 +693,14 @@ export default function Home() {
 
               <Link href="/movies?id=792307" className="flex items-center gap-stack-md p-stack-sm rounded-lg hover:bg-white/5 transition-colors cursor-pointer block">
                 <div className="relative flex-shrink-0">
-                  <img
+                  <Image
                     alt="Friend 2"
                     className="w-10 h-10 rounded-full object-cover border border-white/20"
                     src="https://lh3.googleusercontent.com/aida-public/AB6AXuD8slP0yJdPEhjFz0UG9T6zmCA1BrtLo9H8_GhWFOaxrE7q-8GmOfwIbpHjF-riFTivojnQgW3TTZIA2gByt8jhxFmg3qo32pRL4WR6E4zHchxuazOZsYsxNjVuIDhTTVMXeJ_cpUEwgZnGvK9b9n-iZ8mNOqSH_JYiSDyWwkmqrScNHtKU_aQfRL7R0oUj9vwYpv0cdGJGbiJUxbJpwpwxWuG371KYq9TnFg_YJmrMXlnI1JVsmJvmWClT8nZAveC3hO6_Sxju5yI"
+                    width={40}
+                    height={40}
+                    loading="lazy"
+                    sizes="40px"
                   />
                 </div>
                 <div>
@@ -681,10 +713,14 @@ export default function Home() {
 
               <Link href="/movies?id=840430" className="hidden md:flex items-center gap-stack-md p-stack-sm rounded-lg hover:bg-white/5 transition-colors cursor-pointer block">
                 <div className="relative flex-shrink-0">
-                  <img
+                  <Image
                     alt="Friend 3"
                     className="w-10 h-10 rounded-full object-cover border border-white/20"
                     src="https://lh3.googleusercontent.com/aida-public/AB6AXuA0KBTb49s9MTsf4tg9J8_22Ctm0lFjrHJaB1iMEfc1MsBDUWude1b5wQ6peS6XxwLSl9nfWRfYqU8NfiWWBKmfKK-Yeucd_uv8YqJcWvHatZNxrxZL7LDQBF-mQ4OljuhwNoF4Lvw7HyQIRtLhxFeWGsEVg08XwJ4an3tXxaoIyn6mCapcgpNN_lRRgjhECMlN1NnNek4cdyNYFOM3k059CMCflMjrXiJG9sqMQyrVTWAOZEjUVakX6gS7gCNTwEpQE8C6aNmb53E"
+                    width={40}
+                    height={40}
+                    loading="lazy"
+                    sizes="40px"
                   />
                 </div>
                 <div>
@@ -727,10 +763,13 @@ export default function Home() {
                       <div key={movie.id} className="min-w-[160px] md:min-w-[200px] group relative flex-shrink-0 snap-start">
                         <Link href={`/movies?id=${movie.id}`} className="cursor-pointer block">
                           <div className="relative aspect-[2/3] rounded-xl overflow-hidden glass-panel mb-stack-sm bg-white/5">
-                            <img
+                            <Image
                               alt={movie.title || "Movie Poster"}
-                              className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105"
+                              className="object-cover transition-transform duration-700 group-hover:scale-105"
                               src={movie.poster_path ? `https://image.tmdb.org/t/p/w500${movie.poster_path}` : "https://images.unsplash.com/photo-1594909122845-11baa439b7bf?w=500"}
+                              fill
+                              loading="lazy"
+                              sizes="(max-width: 768px) 160px, 200px"
                             />
                             <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex flex-col justify-end p-stack-sm">
                               <span className="text-secondary text-sm flex items-center gap-1 font-bold">
@@ -871,11 +910,14 @@ export default function Home() {
                       {idx + 1}
                     </span>
                     <div className="relative ml-16 md:ml-24 w-[120px] md:w-[160px] aspect-[2/3] rounded-xl overflow-hidden glass-panel shadow-2xl z-10">
-                      <Link href={`/movies?id=${movie.id}`} className="cursor-pointer block w-full h-full">
-                        <img
+                      <Link href={`/movies?id=${movie.id}`} className="cursor-pointer block w-full h-full relative">
+                        <Image
                           alt={movie.title || "Top Rated"}
-                          className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105"
+                          className="object-cover transition-transform duration-700 group-hover:scale-105"
                           src={movie.poster_path ? `https://image.tmdb.org/t/p/w500${movie.poster_path}` : "https://images.unsplash.com/photo-1594909122845-11baa439b7bf?w=500"}
+                          fill
+                          loading="lazy"
+                          sizes="(max-width: 768px) 120px, 160px"
                         />
                       </Link>
                     </div>

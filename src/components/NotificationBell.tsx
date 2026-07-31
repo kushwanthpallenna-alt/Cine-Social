@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { useSession } from "next-auth/react";
 import Link from "next/link";
+import Image from "next/image";
 
 interface Notification {
   id: string;
@@ -178,9 +179,13 @@ export default function NotificationBell() {
                       {/* Avatar or Icon */}
                       <div className="relative flex-shrink-0 mt-0.5">
                         {notif.actor_avatar ? (
-                          <img
+                          <Image
                             src={notif.actor_avatar}
                             alt={notif.actor_name || ""}
+                            width={36}
+                            height={36}
+                            loading="lazy"
+                            sizes="36px"
                             className="w-9 h-9 rounded-full object-cover border border-white/10"
                           />
                         ) : (

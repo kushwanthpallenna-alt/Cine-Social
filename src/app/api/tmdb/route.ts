@@ -57,7 +57,11 @@ export async function GET(request: Request) {
     }
 
     const data = await response.json();
-    return NextResponse.json(data);
+    return NextResponse.json(data, {
+      headers: {
+        "Cache-Control": "public, max-age=3600, s-maxage=3600, stale-while-revalidate=86400",
+      },
+    });
   } catch (error: any) {
     return NextResponse.json(
       { error: "Internal Server Error during fetch proxy", details: error?.message || error },

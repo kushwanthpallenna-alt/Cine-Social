@@ -7,6 +7,7 @@ import { useSession, signOut } from "next-auth/react";
 import { supabase } from "@/lib/supabase";
 import NotificationBell from "@/components/NotificationBell";
 import ReviewCard from "@/components/ReviewCard";
+import Carousel from "@/components/Carousel";
 
 
 
@@ -766,7 +767,7 @@ function MovieDetailsView({ movieId }: { movieId: string }) {
                   Ensemble Cast
                 </h3>
               </div>
-              <div className="flex gap-stack-lg overflow-x-auto pb-4 scroll-smooth no-scrollbar">
+              <Carousel containerClassName="gap-stack-lg pb-4">
                 {cast.map((actor: any) => (
                   <div key={actor.id} className="flex-shrink-0 w-24 text-center group">
                     <div className="w-24 h-24 rounded-full overflow-hidden border-2 border-transparent group-hover:border-primary transition-all mb-2 shadow-lg bg-white/5">
@@ -780,7 +781,7 @@ function MovieDetailsView({ movieId }: { movieId: string }) {
                     <span className="block text-label-sm text-on-surface-variant opacity-60 truncate">{actor.character}</span>
                   </div>
                 ))}
-              </div>
+              </Carousel>
             </section>
           )}
 

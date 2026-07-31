@@ -6,6 +6,7 @@ import { useSession, signOut } from "next-auth/react";
 import { supabase } from "@/lib/supabase";
 import { useToast } from "@/components/ToastProvider";
 import NotificationBell from "@/components/NotificationBell";
+import Carousel from "@/components/Carousel";
 
 
 
@@ -570,7 +571,7 @@ export default function Home() {
               View All <span className="material-symbols-outlined text-sm">chevron_right</span>
             </Link>
           </div>
-          <div className="flex gap-gutter overflow-x-auto no-scrollbar pb-4 -mx-container-margin px-container-margin md:mx-0 md:px-0 snap-x snap-mandatory scroll-px-container-margin md:scroll-px-0">
+          <Carousel containerClassName="gap-gutter pb-4 -mx-container-margin px-container-margin md:mx-0 md:px-0 snap-x snap-mandatory scroll-px-container-margin md:scroll-px-0">
             {/* Card 1 - Blade Runner 2049 */}
             <Link href="/movies?id=335984" className="min-w-[280px] md:min-w-[340px] group cursor-pointer block snap-start">
               <div className="relative h-[180px] rounded-xl overflow-hidden glass-panel">
@@ -630,7 +631,7 @@ export default function Home() {
                 <span className="material-symbols-outlined text-on-surface-variant">more_vert</span>
               </div>
             </Link>
-          </div>
+          </Carousel>
         </section>
 
         {/* Friends Activity (Exclusive Section) */}
@@ -710,9 +711,9 @@ export default function Home() {
           </div>
 
           {viewMode === "slider" ? (
-            <div
+            <Carousel
               onScroll={handleHorizontalScroll}
-              className="flex gap-gutter overflow-x-auto no-scrollbar pb-4 -mx-container-margin px-container-margin md:mx-0 md:px-0 snap-x snap-mandatory scroll-px-container-margin md:scroll-px-0"
+              containerClassName="gap-gutter pb-4 -mx-container-margin px-container-margin md:mx-0 md:px-0 snap-x snap-mandatory scroll-px-container-margin md:scroll-px-0"
             >
               {loading ? (
                 Array.from({ length: 6 }).map((_, i) => <PosterSkeleton key={i} />)
@@ -787,7 +788,7 @@ export default function Home() {
               ) : (
                 <p className="text-on-surface-variant">No trending movies found</p>
               )}
-            </div>
+            </Carousel>
           ) : (
             <div className="space-y-6">
               <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-stack-md animate-fade-in">
@@ -856,7 +857,7 @@ export default function Home() {
           <div className="flex justify-between items-end mb-stack-md">
             <h3 className="font-headline-lg text-headline-lg font-serif">Top Rated All Time</h3>
           </div>
-          <div className="flex gap-12 overflow-x-auto no-scrollbar pb-4 -mx-container-margin px-container-margin md:mx-0 md:px-0 items-center snap-x snap-mandatory scroll-px-container-margin md:scroll-px-0">
+          <Carousel containerClassName="gap-12 pb-4 -mx-container-margin px-container-margin md:mx-0 md:px-0 items-center snap-x snap-mandatory scroll-px-container-margin md:scroll-px-0">
             {loading ? (
               Array.from({ length: 3 }).map((_, i) => <RankSkeleton key={i} />)
             ) : topRatedMovies.length > 0 ? (
@@ -903,7 +904,7 @@ export default function Home() {
             ) : (
               <p className="text-on-surface-variant">No top rated movies found</p>
             )}
-          </div>
+          </Carousel>
         </section>
           </>
         )}

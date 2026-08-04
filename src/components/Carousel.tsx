@@ -55,15 +55,22 @@ export default function Carousel({
     };
   }, [checkScroll, children]);
 
-  // Non-passive wheel event listener for converting vertical scroll into horizontal scroll
+  // Wheel event listener: only intercept Shift+scroll for horizontal scrolling.
+  // Plain vertical wheel events are intentionally ignored so the page scrolls normally.
   useEffect(() => {
     const container = scrollRef.current;
     if (!container) return;
 
     const handleWheel = (e: WheelEvent) => {
+      // Only hijack the wheel event when Shift is held — this is the explicit
+      // "scroll carousel horizontally" gesture. Without Shift, let the event
+      // bubble up so the browser performs its normal vertical page scroll.
+      if (!e.shiftKey) return;
+
       if (e.deltaY !== 0) {
         const canLeft = container.scrollLeft > 0;
-        const canRight = container.scrollLeft + container.clientWidth < container.scrollWidth - 1;
+        const canRight =
+          container.scrollLeft + container.clientWidth < container.scrollWidth - 1;
 
         if ((e.deltaY < 0 && canLeft) || (e.deltaY > 0 && canRight)) {
           e.preventDefault();
@@ -73,6 +80,7 @@ export default function Carousel({
       }
     };
 
+    // passive: false is still required so we can call preventDefault() on Shift+wheel.
     container.addEventListener("wheel", handleWheel, { passive: false });
     return () => {
       container.removeEventListener("wheel", handleWheel);

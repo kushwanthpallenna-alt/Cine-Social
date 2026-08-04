@@ -71,7 +71,7 @@ const HeroSkeleton = () => (
 );
 
 const PosterSkeleton = () => (
-  <div className="min-w-[140px] md:min-w-[180px] flex-shrink-0 space-y-2">
+  <div className="w-[160px] md:w-[200px] flex-shrink-0 space-y-2">
     <div className="aspect-[2/3] rounded-xl bg-white/10 border border-white/5 animate-skeleton-pulse"></div>
     <div className="h-4 bg-white/10 rounded-md w-3/4 animate-skeleton-pulse"></div>
     <div className="h-3 bg-white/5 rounded-md w-1/2 animate-skeleton-pulse"></div>
@@ -760,7 +760,7 @@ export default function Home() {
                     const isLoading = watchlistLoadingId === String(movie.id);
 
                     return (
-                      <div key={movie.id} className="min-w-[160px] md:min-w-[200px] group relative flex-shrink-0 snap-start">
+                      <div key={movie.id} className="w-[160px] md:w-[200px] flex-shrink-0 group relative snap-start">
                         <Link href={`/movies?id=${movie.id}`} className="cursor-pointer block">
                           <div className="relative aspect-[2/3] rounded-xl overflow-hidden glass-panel mb-stack-sm bg-white/5">
                             <Image
@@ -811,13 +811,13 @@ export default function Home() {
                     <button
                       key="load-more-btn"
                       onClick={loadMoreTrending}
-                      className="flex-shrink-0 min-w-[160px] md:min-w-[200px] aspect-[2/3] rounded-xl border border-dashed border-white/20 flex flex-col items-center justify-center gap-2 hover:border-primary hover:text-primary transition-all active:scale-95 cursor-pointer bg-white/5 text-on-surface"
+                      className="flex-shrink-0 w-[160px] md:w-[200px] aspect-[2/3] rounded-xl border border-dashed border-white/20 flex flex-col items-center justify-center gap-2 hover:border-primary hover:text-primary transition-all active:scale-95 cursor-pointer bg-white/5 text-on-surface"
                     >
                       <span className="material-symbols-outlined text-[32px]">add_circle</span>
                       <span className="font-bold">Load More</span>
                     </button>
                   ) : (
-                    <div key="load-more-loading" className="flex-shrink-0 min-w-[160px] md:min-w-[200px] aspect-[2/3] rounded-xl border border-dashed border-white/20 flex items-center justify-center bg-white/5">
+                    <div key="load-more-loading" className="flex-shrink-0 w-[160px] md:w-[200px] aspect-[2/3] rounded-xl border border-dashed border-white/20 flex items-center justify-center bg-white/5">
                       <div className="h-6 w-6 border-2 border-primary border-t-transparent rounded-full animate-spin"></div>
                     </div>
                   );

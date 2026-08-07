@@ -6,6 +6,7 @@ import { useSession } from "next-auth/react";
 import { supabase } from "@/lib/supabase";
 import { useToast } from "@/components/ToastProvider";
 import NotificationBell from "@/components/NotificationBell";
+import { getSafeAvatarUrl } from "@/lib/avatar";
 
 type SortOption = 
   | "default"
@@ -454,8 +455,8 @@ const UserProfileSkeleton = () => (
             onClick={() => setAvatarModalOpen(true)}
             aria-label="View profile picture"
           >
-            {profile.avatar_url ? (
-              <img src={profile.avatar_url} alt={displayName} className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105" />
+            {getSafeAvatarUrl(profile.avatar_url) ? (
+              <img src={getSafeAvatarUrl(profile.avatar_url)!} alt={displayName} className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105" />
             ) : (
               <div className="w-full h-full bg-primary/20 flex items-center justify-center">
                 <span className="text-primary font-bold text-3xl font-serif">{initials}</span>
@@ -701,8 +702,8 @@ const UserProfileSkeleton = () => (
                     onClick={() => setFollowListModal(null)}
                     className="flex items-center gap-4 px-6 py-3 hover:bg-white/5 transition-colors"
                   >
-                    {u.avatar_url ? (
-                      <img src={u.avatar_url} alt={u.display_name} className="w-11 h-11 rounded-full object-cover border border-white/10 flex-shrink-0" />
+                    {getSafeAvatarUrl(u.avatar_url) ? (
+                      <img src={getSafeAvatarUrl(u.avatar_url)!} alt={u.display_name} className="w-11 h-11 rounded-full object-cover border border-white/10 flex-shrink-0" />
                     ) : (
                       <div className="w-11 h-11 rounded-full bg-primary/20 border border-primary/20 flex items-center justify-center flex-shrink-0">
                         <span className="text-primary font-bold text-sm">{(u.display_name || u.username || "?").slice(0, 2).toUpperCase()}</span>
@@ -739,8 +740,8 @@ const UserProfileSkeleton = () => (
             className="w-64 h-64 md:w-80 md:h-80 rounded-full overflow-hidden border-4 border-white/10 shadow-[0_0_80px_rgba(0,0,0,0.9)] mb-8"
             onClick={e => e.stopPropagation()}
           >
-            {profile?.avatar_url ? (
-              <img src={profile.avatar_url} alt={displayName} className="w-full h-full object-cover" />
+            {getSafeAvatarUrl(profile?.avatar_url) ? (
+              <img src={getSafeAvatarUrl(profile.avatar_url)!} alt={displayName} className="w-full h-full object-cover" />
             ) : (
               <div className="w-full h-full bg-primary/20 flex items-center justify-center">
                 <span className="text-primary font-bold text-5xl font-serif">{initials}</span>

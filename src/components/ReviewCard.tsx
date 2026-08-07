@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from "react";
 import Link from "next/link";
 import Image from "next/image";
+import { getSafeAvatarUrl } from "@/lib/avatar";
 
 export interface ReviewReply {
   id: string;
@@ -245,9 +246,9 @@ export default function ReviewCard({
       <div className="flex items-start justify-between gap-3">
         <div className="flex items-center gap-3">
           <Link href={`/profile/${review.user_id}`} className="flex-shrink-0 group">
-            {avatarUrl ? (
+            {getSafeAvatarUrl(avatarUrl) ? (
               <Image
-                src={avatarUrl}
+                src={getSafeAvatarUrl(avatarUrl)!}
                 alt={authorName}
                 width={40}
                 height={40}
@@ -418,9 +419,9 @@ export default function ReviewCard({
                   <div key={reply.id} className="bg-white/5 p-3 rounded-xl border border-white/5 text-xs space-y-1">
                     <div className="flex items-center justify-between gap-2">
                       <div className="flex items-center gap-2">
-                        {reply.avatar_url ? (
+                        {getSafeAvatarUrl(reply.avatar_url) ? (
                           <Image
-                            src={reply.avatar_url}
+                            src={getSafeAvatarUrl(reply.avatar_url)!}
                             alt={reply.user_name}
                             width={20}
                             height={20}

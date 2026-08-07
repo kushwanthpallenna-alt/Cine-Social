@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, Suspense } from "react";
+import React, { useState, useEffect, useCallback, Suspense } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useSession, signOut } from "next-auth/react";
@@ -8,6 +8,8 @@ import { supabase } from "@/lib/supabase";
 import NotificationBell from "@/components/NotificationBell";
 import ReviewCard from "@/components/ReviewCard";
 import Carousel from "@/components/Carousel";
+import PosterPickerModal from "@/components/PosterPickerModal";
+import { getAvatarUrlOrDefault } from "@/lib/avatar";
 
 
 
@@ -142,12 +144,33 @@ function MovieDetailsView({ movieId }: { movieId: string }) {
   const [showTrailerModal, setShowTrailerModal] = useState(false);
   const [toast, setToast] = useState<{ message: string; visible: boolean }>({ message: "", visible: false });
 
+  // Poster preference
+  const [preferredPoster, setPreferredPoster] = useState<string | null>(null);
+  const [showPosterPicker, setShowPosterPicker] = useState(false);
+
   const showToast = (message: string) => {
     setToast({ message, visible: true });
     setTimeout(() => {
       setToast(prev => ({ ...prev, visible: false }));
     }, 3000);
   };
+
+  // Fetch this user's preferred poster for this movie
+  useEffect(() => {
+    if (!user?.id || !movieId) return;
+    const userId = user.id;
+    fetch(`/api/poster-preference?userId=${encodeURIComponent(userId)}&movieId=${encodeURIComponent(movieId)}`)
+      .then((r) => r.json())
+      .then((data) => {
+        if (data?.poster_path) setPreferredPoster(data.poster_path);
+      })
+      .catch(() => {});
+  }, [user, movieId]);
+
+  const handlePosterSelect = useCallback((posterPath: string | null) => {
+    setPreferredPoster(posterPath);
+    showToast(posterPath ? "Poster updated!" : "Poster reset to default!");
+  }, []);
 
   // Fetch watchlist status
   useEffect(() => {
@@ -607,7 +630,7 @@ function MovieDetailsView({ movieId }: { movieId: string }) {
               <img
                 alt={user?.name || "User"}
                 className="w-full h-full object-cover"
-                src={user?.image || "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150"}
+                src={getAvatarUrlOrDefault(user?.image)}
               />
             </button>
             
@@ -647,15 +670,32 @@ function MovieDetailsView({ movieId }: { movieId: string }) {
         <div className="px-container-margin -mt-40 relative z-10 max-w-screen-xl mx-auto w-full">
           <div className="flex flex-col md:flex-row gap-gutter">
             {/* Movie Poster */}
-            <div className="w-40 md:w-64 flex-shrink-0 group">
+            <div className="w-40 md:w-64 flex-shrink-0 group/poster relative">
               <div className="rounded-xl overflow-hidden shadow-2xl border border-white/10 aspect-[2/3] relative">
                 <img
-                  className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110"
+                  className="w-full h-full object-cover transition-transform duration-700 group-hover/poster:scale-110"
                   alt={movie.title || "Movie Poster"}
-                  src={movie.poster_path ? `https://image.tmdb.org/t/p/w500${movie.poster_path}` : "https://images.unsplash.com/photo-1594909122845-11baa439b7bf?w=500"}
+                  src={(preferredPoster ?? movie.poster_path) ? `https://image.tmdb.org/t/p/w500${preferredPoster ?? movie.poster_path}` : "https://images.unsplash.com/photo-1594909122845-11baa439b7bf?w=500"}
                 />
                 <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent"></div>
+                {/* Change Poster button — only for signed-in users */}
+                {user?.id && (
+                  <button
+                    onClick={() => setShowPosterPicker(true)}
+                    title="Change poster"
+                    className="absolute top-2 right-2 w-8 h-8 rounded-full bg-black/60 hover:bg-black/80 backdrop-blur-md flex items-center justify-center text-white border border-white/20 transition-all duration-200 cursor-pointer shadow-lg hover:scale-110 active:scale-95 opacity-0 group-hover/poster:opacity-100"
+                  >
+                    <span className="material-symbols-outlined text-[16px]">collections</span>
+                  </button>
+                )}
               </div>
+              {/* Preferred poster indicator */}
+              {preferredPoster && preferredPoster !== movie.poster_path && (
+                <div className="flex items-center gap-1 mt-1.5 justify-center">
+                  <span className="material-symbols-outlined text-[12px] text-[#ffb4aa]">auto_awesome</span>
+                  <span className="text-[10px] text-[#ffb4aa] font-bold uppercase tracking-widest">Custom</span>
+                </div>
+              )}
             </div>
 
             {/* Info Section */}
@@ -1028,6 +1068,19 @@ function MovieDetailsView({ movieId }: { movieId: string }) {
           </div>
         </div>
       )}
+      {/* Poster Picker Modal */}
+      {showPosterPicker && user?.id && (
+        <PosterPickerModal
+          movieId={movieId}
+          movieTitle={movie.title || movie.name || ""}
+          currentPosterPath={preferredPoster}
+          defaultPosterPath={movie.poster_path ?? null}
+          userId={user.id}
+          onClose={() => setShowPosterPicker(false)}
+          onSelect={handlePosterSelect}
+        />
+      )}
+
       {/* YouTube Trailer Modal */}
       {showTrailerModal && trailerKey && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/90 backdrop-blur-md animate-fade-in">
@@ -1065,6 +1118,8 @@ function WatchlistView() {
   const user = session?.user as any;
   const [watchlist, setWatchlist] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  // Map of movie_id → preferred poster_path
+  const [posterPrefs, setPosterPrefs] = useState<Record<string, string>>({});
 
   useEffect(() => {
     if (!user?.id) {
@@ -1080,6 +1135,24 @@ function WatchlistView() {
           .order("created_at", { ascending: false });
         if (data) {
           setWatchlist(data);
+          // Batch-fetch poster preferences for all watchlist movies
+          if (data.length > 0) {
+            const movieIds = data.map((m: any) => String(m.movie_id));
+            fetch("/api/poster-preference/batch", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ user_id: user.id, movie_ids: movieIds }),
+            })
+              .then((r) => r.json())
+              .then((prefs: { movie_id: string; poster_path: string }[]) => {
+                if (Array.isArray(prefs)) {
+                  const map: Record<string, string> = {};
+                  prefs.forEach((p) => { map[p.movie_id] = p.poster_path; });
+                  setPosterPrefs(map);
+                }
+              })
+              .catch(() => {});
+          }
         }
       } catch (err) {
         console.error("Error fetching watchlist:", err);
@@ -1122,19 +1195,22 @@ function WatchlistView() {
           </div>
         ) : (
           <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-stack-md">
-            {watchlist.map((movie: any) => (
-              <Link key={movie.id} href={`/movies?id=${movie.movie_id}`} className="group cursor-pointer block relative">
-                <div className="aspect-[2/3] rounded-xl overflow-hidden border border-white/10 relative mb-2">
-                  <img
-                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
-                    alt={movie.movie_title || "Movie Poster"}
-                    src={movie.poster_path ? `https://image.tmdb.org/t/p/w500${movie.poster_path}` : "https://images.unsplash.com/photo-1594909122845-11baa439b7bf?w=500"}
-                  />
-                  <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity"></div>
-                </div>
-                <h4 className="text-body-md font-bold truncate group-hover:text-primary transition-colors">{movie.movie_title}</h4>
-              </Link>
-            ))}
+            {watchlist.map((movie: any) => {
+              const displayPoster = posterPrefs[String(movie.movie_id)] ?? movie.poster_path;
+              return (
+                <Link key={movie.id} href={`/movies?id=${movie.movie_id}`} className="group cursor-pointer block relative">
+                  <div className="aspect-[2/3] rounded-xl overflow-hidden border border-white/10 relative mb-2">
+                    <img
+                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                      alt={movie.movie_title || "Movie Poster"}
+                      src={displayPoster ? `https://image.tmdb.org/t/p/w500${displayPoster}` : "https://images.unsplash.com/photo-1594909122845-11baa439b7bf?w=500"}
+                    />
+                    <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity"></div>
+                  </div>
+                  <h4 className="text-body-md font-bold truncate group-hover:text-primary transition-colors">{movie.movie_title}</h4>
+                </Link>
+              );
+            })}
           </div>
         )}
       </main>

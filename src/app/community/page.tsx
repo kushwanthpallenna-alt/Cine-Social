@@ -4,6 +4,7 @@ import React, { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 import { useSession } from "next-auth/react";
 import ReviewCard from "@/components/ReviewCard";
+import { getSafeAvatarUrl } from "@/lib/avatar";
 
 function timeAgo(dateStr: string): string {
   const diff = Date.now() - new Date(dateStr).getTime();
@@ -27,11 +28,12 @@ function StarRating({ rating }: { rating: number }) {
 }
 
 function UserAvatar({ displayName, avatarUrl, size = 8 }: { displayName: string; avatarUrl?: string | null; size?: number }) {
+  const safeUrl = getSafeAvatarUrl(avatarUrl);
   const initials = displayName?.slice(0, 2).toUpperCase() || "?";
-  if (avatarUrl) {
+  if (safeUrl) {
     return (
       <img
-        src={avatarUrl}
+        src={safeUrl}
         alt={displayName}
         className={`w-${size} h-${size} rounded-full object-cover border border-white/10 flex-shrink-0`}
       />
@@ -278,8 +280,8 @@ export default function CommunityFeed() {
                 {searchResults.map(u => (
                   <div key={u.user_id} className="flex items-center gap-3 px-4 py-3 hover:bg-white/5 transition-colors border-b border-white/5 last:border-0">
                     <Link href={`/profile/${u.user_id}`} className="flex items-center gap-3 flex-1 min-w-0">
-                      {u.avatar_url ? (
-                        <img src={u.avatar_url} alt={u.display_name} className="w-9 h-9 rounded-full object-cover border border-white/10 flex-shrink-0" />
+                      {getSafeAvatarUrl(u.avatar_url) ? (
+                        <img src={getSafeAvatarUrl(u.avatar_url)!} alt={u.display_name} className="w-9 h-9 rounded-full object-cover border border-white/10 flex-shrink-0" />
                       ) : (
                         <div className="w-9 h-9 rounded-full bg-primary/20 border border-primary/20 flex items-center justify-center flex-shrink-0">
                           <span className="text-primary font-bold text-xs">{(u.display_name || u.username || "?").slice(0,2).toUpperCase()}</span>

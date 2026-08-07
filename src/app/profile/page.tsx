@@ -5,6 +5,7 @@ import Link from "next/link";
 import { supabase } from "@/lib/supabase";
 import { useSession, signOut } from "next-auth/react";
 import ReviewCard from "@/components/ReviewCard";
+import { getSafeAvatarUrl, getAvatarUrlOrDefault } from "@/lib/avatar";
 
 type SortOption = 
   | "default"
@@ -160,6 +161,9 @@ export default function ProfilePage() {
   const [bannerBackdropUrl, setBannerBackdropUrl] = useState<string | null>(null);
   const [bannerMovieTitle, setBannerMovieTitle] = useState<string | null>(null);
 
+  // Poster preferences map: movie_id -> preferred poster_path
+  const [posterPrefs, setPosterPrefs] = useState<Record<string, string>>({});
+
   // Fetch TMDB backdrop_path for Film 1 in Top 5
   useEffect(() => {
     const film1 = favorites["movie_1"];
@@ -292,6 +296,24 @@ export default function ProfilePage() {
         );
         
         setMovieDetails(details);
+
+        // Batch-fetch poster preferences for all movies the user has interacted with
+        if (uniqueIds.size > 0) {
+          fetch("/api/poster-preference/batch", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ user_id: user.id, movie_ids: Array.from(uniqueIds) }),
+          })
+            .then((r) => r.json())
+            .then((prefs: { movie_id: string; poster_path: string }[]) => {
+              if (Array.isArray(prefs)) {
+                const map: Record<string, string> = {};
+                prefs.forEach((p) => { map[p.movie_id] = p.poster_path; });
+                setPosterPrefs(map);
+              }
+            })
+            .catch(() => {});
+        }
       } catch (err) {
         console.error("Error fetching user data:", err);
       } finally {
@@ -796,7 +818,7 @@ export default function ProfilePage() {
                 className="w-32 h-32 md:w-40 md:h-40 rounded-full overflow-hidden border-4 border-[#050505] shadow-[0_12px_40px_rgba(0,0,0,0.85)] relative group bg-[#131313] flex-shrink-0 cursor-pointer focus:outline-none"
                 aria-label="View or change profile picture"
               >
-                <img src={avatarUrl || user.image || "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150"} alt="Profile" className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105" />
+                <img src={getAvatarUrlOrDefault(avatarUrl || user?.image)} alt="Profile" className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105" />
                 <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
                   <span className="material-symbols-outlined text-white text-3xl">zoom_in</span>
                 </div>
@@ -1116,7 +1138,7 @@ export default function ProfilePage() {
                                 <img
                                   className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
                                   alt={movie.movie_title || movie.title || "Movie Poster"}
-                                  src={movie.poster_path ? `https://image.tmdb.org/t/p/w500${movie.poster_path}` : "https://images.unsplash.com/photo-1594909122845-11baa439b7bf?w=500"}
+                                  src={(posterPrefs[item.movie_id] ?? movie.poster_path) ? `https://image.tmdb.org/t/p/w500${posterPrefs[item.movie_id] ?? movie.poster_path}` : "https://images.unsplash.com/photo-1594909122845-11baa439b7bf?w=500"}
                                 />
                                 <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/20 to-transparent"></div>
                                 {/* User Rating Overlay */}
@@ -1156,7 +1178,7 @@ export default function ProfilePage() {
                               <img
                                 className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
                                 alt={movie.movie_title || movie.title || "Movie Poster"}
-                                src={movie.poster_path ? `https://image.tmdb.org/t/p/w500${movie.poster_path}` : "https://images.unsplash.com/photo-1594909122845-11baa439b7bf?w=500"}
+                                src={(posterPrefs[item.movie_id] ?? movie.poster_path) ? `https://image.tmdb.org/t/p/w500${posterPrefs[item.movie_id] ?? movie.poster_path}` : "https://images.unsplash.com/photo-1594909122845-11baa439b7bf?w=500"}
                               />
                               <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/20 to-transparent"></div>
                             </div>
@@ -1543,8 +1565,8 @@ export default function ProfilePage() {
                     onClick={() => setFollowListModal(null)}
                     className="flex items-center gap-4 px-6 py-3 hover:bg-white/5 transition-colors"
                   >
-                    {u.avatar_url ? (
-                      <img src={u.avatar_url} alt={u.display_name} className="w-11 h-11 rounded-full object-cover border border-white/10 flex-shrink-0" />
+                    {getSafeAvatarUrl(u.avatar_url) ? (
+                      <img src={getSafeAvatarUrl(u.avatar_url)!} alt={u.display_name} className="w-11 h-11 rounded-full object-cover border border-white/10 flex-shrink-0" />
                     ) : (
                       <div className="w-11 h-11 rounded-full bg-primary/20 border border-primary/20 flex items-center justify-center flex-shrink-0">
                         <span className="text-primary font-bold text-sm">{(u.display_name || u.username || "?").slice(0, 2).toUpperCase()}</span>
@@ -1584,7 +1606,7 @@ export default function ProfilePage() {
             onClick={e => e.stopPropagation()}
           >
             <img
-              src={avatarUrl || user?.image || "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=400"}
+              src={getAvatarUrlOrDefault(avatarUrl || user?.image)}
               alt="Profile"
               className="w-full h-full object-cover"
             />

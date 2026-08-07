@@ -4,6 +4,7 @@ import React, { useState, useEffect, useRef, useCallback } from "react";
 import { useSession } from "next-auth/react";
 import Link from "next/link";
 import Image from "next/image";
+import { getSafeAvatarUrl } from "@/lib/avatar";
 
 interface Notification {
   id: string;
@@ -178,9 +179,9 @@ export default function NotificationBell() {
                     >
                       {/* Avatar or Icon */}
                       <div className="relative flex-shrink-0 mt-0.5">
-                        {notif.actor_avatar ? (
+                        {getSafeAvatarUrl(notif.actor_avatar) ? (
                           <Image
-                            src={notif.actor_avatar}
+                            src={getSafeAvatarUrl(notif.actor_avatar)!}
                             alt={notif.actor_name || ""}
                             width={36}
                             height={36}

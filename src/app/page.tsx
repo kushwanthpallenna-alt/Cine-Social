@@ -441,15 +441,15 @@ export default function Home() {
                   const isLoading = watchlistLoadingId === String(movie.id);
 
                   return (
-                    <div key={movie.id} className="group relative block animate-fade-in">
+                    <div key={movie.id} className="group/card relative block animate-fade-in">
                       <Link href={`/movies?id=${movie.id}`} className="cursor-pointer block">
                         <div className="relative aspect-[2/3] rounded-xl overflow-hidden glass-panel mb-stack-sm bg-white/5">
                           <img
                             alt={movie.title || "Movie Poster"}
-                            className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105"
+                            className="w-full h-full object-cover transition-transform duration-700 group-hover/card:scale-105"
                             src={movie.poster_path ? `https://image.tmdb.org/t/p/w500${movie.poster_path}` : "https://images.unsplash.com/photo-1594909122845-11baa439b7bf?w=500"}
                           />
-                          <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex flex-col justify-end p-stack-sm">
+                          <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-0 group-hover/card:opacity-100 transition-opacity flex flex-col justify-end p-stack-sm">
                             <span className="text-secondary text-sm flex items-center gap-1 font-bold">
                               <span className="material-symbols-outlined text-xs" style={{ fontVariationSettings: "'FILL' 1" }}>
                                 star
@@ -458,7 +458,7 @@ export default function Home() {
                             </span>
                           </div>
                         </div>
-                        <h4 className="text-body-md font-semibold group-hover:text-primary truncate transition-colors font-body-md">
+                        <h4 className="text-body-md font-semibold group-hover/card:text-primary truncate transition-colors font-body-md">
                           {movie.title || movie.name}
                         </h4>
                       </Link>
@@ -471,7 +471,7 @@ export default function Home() {
                           handleWatchlistToggle(movie);
                         }}
                         disabled={isLoading}
-                        className="absolute top-2 right-2 z-10 w-8 h-8 rounded-full bg-black/60 hover:bg-black/80 backdrop-blur-md flex items-center justify-center text-white border border-white/10 transition-all duration-200 cursor-pointer shadow-lg hover:scale-110 active:scale-95 group-hover:opacity-100 md:opacity-0 animate-fade-in"
+                        className="absolute top-2 right-2 z-10 w-8 h-8 rounded-full bg-black/60 hover:bg-black/80 backdrop-blur-md flex items-center justify-center text-white border border-white/10 transition-all duration-200 cursor-pointer shadow-lg hover:scale-110 active:scale-95 group-hover/card:opacity-100 md:opacity-0 animate-fade-in"
                       >
                         {isLoading ? (
                           <div className="w-3 h-3 border-2 border-primary border-t-transparent rounded-full animate-spin"></div>
@@ -591,17 +591,17 @@ export default function Home() {
           </div>
           <Carousel containerClassName="gap-gutter pb-4 -mx-container-margin px-container-margin md:mx-0 md:px-0 snap-x snap-mandatory scroll-px-container-margin md:scroll-px-0">
             {/* Card 1 - Blade Runner 2049 */}
-            <Link href="/movies?id=335984" className="min-w-[280px] md:min-w-[340px] group cursor-pointer block snap-start">
+            <Link href="/movies?id=335984" className="min-w-[280px] md:min-w-[340px] group/card cursor-pointer block snap-start">
               <div className="relative h-[180px] rounded-xl overflow-hidden glass-panel">
                 <Image
                   alt="Blade Runner"
-                  className="object-cover transition-transform duration-500 group-hover:scale-110"
+                  className="object-cover transition-transform duration-500 group-hover/card:scale-110"
                   src="https://lh3.googleusercontent.com/aida-public/AB6AXuAxf9CS53Dv5MGRtqtidFPZZwuyRjx7Qfu3Q4gR0k3y3v2SdUPXJ8eljOk_L3Ln6CRUd4GYL8BlJoiFLESYXhrTUL7OW4OkZ46rwY1YdyHyI-qw59EeJ_ZQZ-ZlqXys28NnKcg_DWJ_hifTNB90kcelsEIA2zv9Vi-5OoZnEixk3MaY560tCHGGvdhpnu5st_FCI_cwhwscpW4vMpYwgEaTRj3WZCWYF0a9NT01rpj9wTmC0crSI2RepF_-6nhkSOjfAwhGP9H5CIo"
                   fill
                   loading="lazy"
                   sizes="(max-width: 768px) 280px, 340px"
                 />
-                <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover/card:opacity-100 transition-opacity">
                   <div className="w-12 h-12 rounded-full bg-primary/80 flex items-center justify-center">
                     <span className="material-symbols-outlined text-black" style={{ fontVariationSettings: "'FILL' 1" }}>
                       play_arrow
@@ -614,7 +614,7 @@ export default function Home() {
               </div>
               <div className="mt-stack-sm flex justify-between items-start">
                 <div>
-                  <h4 className="font-title-lg text-title-lg group-hover:text-primary transition-colors">
+                  <h4 className="font-title-lg text-title-lg group-hover/card:text-primary transition-colors">
                     Blade Runner 2049
                   </h4>
                   <p className="text-on-surface-variant text-body-md">1h 42m left</p>
@@ -624,17 +624,17 @@ export default function Home() {
             </Link>
 
             {/* Card 2 - The Godfather */}
-            <Link href="/movies?id=238" className="min-w-[280px] md:min-w-[340px] group cursor-pointer block snap-start">
+            <Link href="/movies?id=238" className="min-w-[280px] md:min-w-[340px] group/card cursor-pointer block snap-start">
               <div className="relative h-[180px] rounded-xl overflow-hidden glass-panel">
                 <Image
                   alt="Classic Noir"
-                  className="object-cover transition-transform duration-500 group-hover:scale-110"
+                  className="object-cover transition-transform duration-500 group-hover/card:scale-110"
                   src="https://lh3.googleusercontent.com/aida-public/AB6AXuDp_uAbl8kXVsezA3J8wftI2-DCzOYNWBkGo2W3104npOwRSX1qr-ShURspHLlDytgyMW2oDFQXHXnFi8puIsFybFSCec-TRugsGf_uh75tMwRm-anXdIMKnCJc_9yA_q4modScsI2Rd9rpHY7ExVCnJ-1Rn3n6nheMuydp1od364yDtknEbFrgcQtP7sGImpVysal2aN6e0xIeHvw5J4clQoY8pWjVLZIPtlw3SDmAqbWUJaEnGLOVYVPIaydtmjyRNlI-xj_KQGU"
                   fill
                   loading="lazy"
                   sizes="(max-width: 768px) 280px, 340px"
                 />
-                <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover/card:opacity-100 transition-opacity">
                   <div className="w-12 h-12 rounded-full bg-primary/80 flex items-center justify-center">
                     <span className="material-symbols-outlined text-black" style={{ fontVariationSettings: "'FILL' 1" }}>
                       play_arrow
@@ -647,7 +647,7 @@ export default function Home() {
               </div>
               <div className="mt-stack-sm flex justify-between items-start">
                 <div>
-                  <h4 className="font-title-lg text-title-lg group-hover:text-primary transition-colors">
+                  <h4 className="font-title-lg text-title-lg group-hover/card:text-primary transition-colors">
                     The Godfather
                   </h4>
                   <p className="text-on-surface-variant text-body-md">2h 15m left</p>
@@ -760,18 +760,18 @@ export default function Home() {
                     const isLoading = watchlistLoadingId === String(movie.id);
 
                     return (
-                      <div key={movie.id} className="w-[160px] md:w-[200px] flex-shrink-0 group relative snap-start">
+                      <div key={movie.id} className="w-[160px] md:w-[200px] flex-shrink-0 group/card relative snap-start">
                         <Link href={`/movies?id=${movie.id}`} className="cursor-pointer block">
                           <div className="relative aspect-[2/3] rounded-xl overflow-hidden glass-panel mb-stack-sm bg-white/5">
                             <Image
                               alt={movie.title || "Movie Poster"}
-                              className="object-cover transition-transform duration-700 group-hover:scale-105"
+                              className="object-cover transition-transform duration-700 group-hover/card:scale-105"
                               src={movie.poster_path ? `https://image.tmdb.org/t/p/w500${movie.poster_path}` : "https://images.unsplash.com/photo-1594909122845-11baa439b7bf?w=500"}
                               fill
                               loading="lazy"
                               sizes="(max-width: 768px) 160px, 200px"
                             />
-                            <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex flex-col justify-end p-stack-sm">
+                            <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-0 group-hover/card:opacity-100 transition-opacity flex flex-col justify-end p-stack-sm">
                               <span className="text-secondary text-sm flex items-center gap-1 font-bold">
                                 <span className="material-symbols-outlined text-xs" style={{ fontVariationSettings: "'FILL' 1" }}>
                                   star
@@ -780,7 +780,7 @@ export default function Home() {
                               </span>
                             </div>
                           </div>
-                          <h4 className="text-body-md font-semibold group-hover:text-primary truncate transition-colors font-body-md">
+                          <h4 className="text-body-md font-semibold group-hover/card:text-primary truncate transition-colors font-body-md">
                             {movie.title || movie.name}
                           </h4>
                         </Link>
@@ -793,7 +793,7 @@ export default function Home() {
                             handleWatchlistToggle(movie);
                           }}
                           disabled={isLoading}
-                          className="absolute top-2 right-2 z-10 w-8 h-8 rounded-full bg-black/60 hover:bg-black/80 backdrop-blur-md flex items-center justify-center text-white border border-white/10 transition-all duration-200 cursor-pointer shadow-lg hover:scale-110 active:scale-95 group-hover:opacity-100 md:opacity-0"
+                          className="absolute top-2 right-2 z-10 w-8 h-8 rounded-full bg-black/60 hover:bg-black/80 backdrop-blur-md flex items-center justify-center text-white border border-white/10 transition-all duration-200 cursor-pointer shadow-lg hover:scale-110 active:scale-95 group-hover/card:opacity-100 md:opacity-0"
                         >
                           {isLoading ? (
                             <div className="w-3 h-3 border-2 border-primary border-t-transparent rounded-full animate-spin"></div>
@@ -836,15 +836,15 @@ export default function Home() {
                   const isLoading = watchlistLoadingId === String(movie.id);
 
                   return (
-                    <div key={movie.id} className="group relative block animate-fade-in">
+                    <div key={movie.id} className="group/card relative block animate-fade-in">
                       <Link href={`/movies?id=${movie.id}`} className="cursor-pointer block">
                         <div className="relative aspect-[2/3] rounded-xl overflow-hidden glass-panel mb-stack-sm bg-white/5">
                           <img
                             alt={movie.title || "Movie Poster"}
-                            className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105"
+                            className="w-full h-full object-cover transition-transform duration-700 group-hover/card:scale-105"
                             src={movie.poster_path ? `https://image.tmdb.org/t/p/w500${movie.poster_path}` : "https://images.unsplash.com/photo-1594909122845-11baa439b7bf?w=500"}
                           />
-                          <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex flex-col justify-end p-stack-sm">
+                          <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-0 group-hover/card:opacity-100 transition-opacity flex flex-col justify-end p-stack-sm">
                             <span className="text-secondary text-sm flex items-center gap-1 font-bold">
                               <span className="material-symbols-outlined text-xs" style={{ fontVariationSettings: "'FILL' 1" }}>
                                 star
@@ -853,7 +853,7 @@ export default function Home() {
                             </span>
                           </div>
                         </div>
-                        <h4 className="text-body-md font-semibold group-hover:text-primary truncate transition-colors font-body-md font-semibold">
+                        <h4 className="text-body-md font-semibold group-hover/card:text-primary truncate transition-colors font-body-md font-semibold">
                           {movie.title || movie.name}
                         </h4>
                       </Link>
@@ -866,7 +866,7 @@ export default function Home() {
                           handleWatchlistToggle(movie);
                         }}
                         disabled={isLoading}
-                        className="absolute top-2 right-2 z-10 w-8 h-8 rounded-full bg-black/60 hover:bg-black/80 backdrop-blur-md flex items-center justify-center text-white border border-white/10 transition-all duration-200 cursor-pointer shadow-lg hover:scale-110 active:scale-95 group-hover:opacity-100 md:opacity-0"
+                        className="absolute top-2 right-2 z-10 w-8 h-8 rounded-full bg-black/60 hover:bg-black/80 backdrop-blur-md flex items-center justify-center text-white border border-white/10 transition-all duration-200 cursor-pointer shadow-lg hover:scale-110 active:scale-95 group-hover/card:opacity-100 md:opacity-0"
                       >
                         {isLoading ? (
                           <div className="w-3 h-3 border-2 border-primary border-t-transparent rounded-full animate-spin"></div>
@@ -905,15 +905,15 @@ export default function Home() {
                 const isLoading = watchlistLoadingId === String(movie.id);
 
                 return (
-                  <div key={movie.id} className="relative flex items-center min-w-[200px] md:min-w-[260px] group flex-shrink-0 snap-start">
-                    <span className="absolute -left-4 md:-left-8 text-[120px] md:text-[180px] font-display-lg leading-none text-transparent bg-clip-text bg-gradient-to-b from-white/20 to-transparent group-hover:from-primary/40 transition-all duration-500 z-0 select-none font-serif">
+                  <div key={movie.id} className="relative flex items-center min-w-[200px] md:min-w-[260px] group/card flex-shrink-0 snap-start">
+                    <span className="absolute -left-4 md:-left-8 text-[120px] md:text-[180px] font-display-lg leading-none text-transparent bg-clip-text bg-gradient-to-b from-white/20 to-transparent group-hover/card:from-primary/40 transition-all duration-500 z-0 select-none font-serif">
                       {idx + 1}
                     </span>
                     <div className="relative ml-16 md:ml-24 w-[120px] md:w-[160px] aspect-[2/3] rounded-xl overflow-hidden glass-panel shadow-2xl z-10">
                       <Link href={`/movies?id=${movie.id}`} className="cursor-pointer block w-full h-full relative">
                         <Image
                           alt={movie.title || "Top Rated"}
-                          className="object-cover transition-transform duration-700 group-hover:scale-105"
+                          className="object-cover transition-transform duration-700 group-hover/card:scale-105"
                           src={movie.poster_path ? `https://image.tmdb.org/t/p/w500${movie.poster_path}` : "https://images.unsplash.com/photo-1594909122845-11baa439b7bf?w=500"}
                           fill
                           loading="lazy"
@@ -930,7 +930,7 @@ export default function Home() {
                         handleWatchlistToggle(movie);
                       }}
                       disabled={isLoading}
-                      className="absolute top-2 right-2 z-20 w-8 h-8 rounded-full bg-black/60 hover:bg-black/80 backdrop-blur-md flex items-center justify-center text-white border border-white/10 transition-all duration-200 cursor-pointer shadow-lg hover:scale-110 active:scale-95 group-hover:opacity-100 md:opacity-0"
+                      className="absolute top-2 right-2 z-20 w-8 h-8 rounded-full bg-black/60 hover:bg-black/80 backdrop-blur-md flex items-center justify-center text-white border border-white/10 transition-all duration-200 cursor-pointer shadow-lg hover:scale-110 active:scale-95 group-hover/card:opacity-100 md:opacity-0"
                     >
                       {isLoading ? (
                         <div className="w-3 h-3 border-2 border-primary border-t-transparent rounded-full animate-spin"></div>

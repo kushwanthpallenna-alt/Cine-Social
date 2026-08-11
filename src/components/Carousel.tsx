@@ -153,7 +153,7 @@ export default function Carousel({
   };
 
   return (
-    <div className={`relative group ${className}`}>
+    <div className={`relative group/carousel ${className}`}>
       {/* Left Arrow Button */}
       {showArrows && (
         <button
@@ -163,7 +163,7 @@ export default function Carousel({
           aria-label="Scroll left"
           className={`absolute left-2 top-1/2 -translate-y-1/2 z-20 w-10 h-10 md:w-12 md:h-12 rounded-full bg-black/70 hover:bg-black/90 text-white backdrop-blur-md flex items-center justify-center border border-white/20 shadow-2xl transition-all duration-300 cursor-pointer ${
             canScrollLeft
-              ? "opacity-0 group-hover:opacity-100 hover:scale-110 active:scale-95"
+              ? "opacity-0 group-hover/carousel:opacity-100 hover:scale-110 active:scale-95"
               : "opacity-0 pointer-events-none"
           }`}
         >
@@ -200,7 +200,7 @@ export default function Carousel({
           aria-label="Scroll right"
           className={`absolute right-2 top-1/2 -translate-y-1/2 z-20 w-10 h-10 md:w-12 md:h-12 rounded-full bg-black/70 hover:bg-black/90 text-white backdrop-blur-md flex items-center justify-center border border-white/20 shadow-2xl transition-all duration-300 cursor-pointer ${
             canScrollRight
-              ? "opacity-0 group-hover:opacity-100 hover:scale-110 active:scale-95"
+              ? "opacity-0 group-hover/carousel:opacity-100 hover:scale-110 active:scale-95"
               : "opacity-0 pointer-events-none"
           }`}
         >

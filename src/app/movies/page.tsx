@@ -147,6 +147,8 @@ function MovieDetailsView({ movieId }: { movieId: string }) {
   // Poster preference
   const [preferredPoster, setPreferredPoster] = useState<string | null>(null);
   const [showPosterPicker, setShowPosterPicker] = useState(false);
+  // Mobile bottom-sheet confirmation before opening the full poster picker
+  const [showPosterConfirm, setShowPosterConfirm] = useState(false);
 
   const showToast = (message: string) => {
     setToast({ message, visible: true });
@@ -678,15 +680,30 @@ function MovieDetailsView({ movieId }: { movieId: string }) {
                   src={(preferredPoster ?? movie.poster_path) ? `https://image.tmdb.org/t/p/w500${preferredPoster ?? movie.poster_path}` : "https://images.unsplash.com/photo-1594909122845-11baa439b7bf?w=500"}
                 />
                 <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent"></div>
-                {/* Change Poster button — only for signed-in users */}
+
+                {/* Change Poster button — always visible on mobile, hover-only on desktop */}
                 {user?.id && (
-                  <button
-                    onClick={() => setShowPosterPicker(true)}
-                    title="Change poster"
-                    className="absolute top-2 right-2 w-8 h-8 rounded-full bg-black/60 hover:bg-black/80 backdrop-blur-md flex items-center justify-center text-white border border-white/20 transition-all duration-200 cursor-pointer shadow-lg hover:scale-110 active:scale-95 opacity-0 group-hover/poster:opacity-100"
-                  >
-                    <span className="material-symbols-outlined text-[16px]">collections</span>
-                  </button>
+                  <>
+                    {/* Desktop: hover-reveal icon button (unchanged behaviour) */}
+                    <button
+                      onClick={() => setShowPosterPicker(true)}
+                      title="Change poster"
+                      aria-label="Change poster"
+                      className="hidden md:flex absolute top-2 right-2 w-8 h-8 rounded-full bg-black/60 hover:bg-black/80 backdrop-blur-md items-center justify-center text-white border border-white/20 transition-all duration-200 cursor-pointer shadow-lg hover:scale-110 active:scale-95 opacity-0 group-hover/poster:opacity-100"
+                    >
+                      <span className="material-symbols-outlined text-[16px]">collections</span>
+                    </button>
+
+                    {/* Mobile: always-visible pill button with "Edit" label */}
+                    <button
+                      onClick={() => setShowPosterConfirm(true)}
+                      aria-label="Change poster"
+                      className="md:hidden absolute bottom-2 left-1/2 -translate-x-1/2 flex items-center gap-1 px-3 py-1.5 rounded-full bg-black/70 backdrop-blur-md border border-white/20 text-white text-[11px] font-bold shadow-lg active:scale-95 transition-transform cursor-pointer"
+                    >
+                      <span className="material-symbols-outlined text-[13px]">edit</span>
+                      Edit Poster
+                    </button>
+                  </>
                 )}
               </div>
               {/* Preferred poster indicator */}
@@ -1068,6 +1085,81 @@ function MovieDetailsView({ movieId }: { movieId: string }) {
           </div>
         </div>
       )}
+      {/* Mobile Poster Confirm Bottom Sheet */}
+      {showPosterConfirm && (
+        <div
+          className="fixed inset-0 z-[105] flex items-end justify-center md:hidden"
+          onClick={() => setShowPosterConfirm(false)}
+        >
+          {/* Dim backdrop */}
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
+
+          {/* Sheet */}
+          <div
+            className="relative w-full max-w-lg rounded-t-2xl border border-white/10 shadow-2xl overflow-hidden animate-fade-in"
+            style={{ background: "linear-gradient(180deg, #1a1a1a 0%, #131313 100%)" }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Drag handle */}
+            <div className="flex justify-center pt-3 pb-1">
+              <div className="w-10 h-1 rounded-full bg-white/20" />
+            </div>
+
+            <div className="px-6 py-4">
+              <div className="flex items-center gap-3 mb-3">
+                <div className="w-10 h-10 rounded-full bg-white/10 flex items-center justify-center flex-shrink-0">
+                  <span className="material-symbols-outlined text-[#ffb4aa] text-xl">collections</span>
+                </div>
+                <div>
+                  <h3 className="font-bold text-white text-base leading-tight">Change Movie Poster</h3>
+                  <p className="text-white/50 text-xs mt-0.5">Pick a different artwork for this film</p>
+                </div>
+              </div>
+
+              {/* Current poster preview */}
+              <div className="flex items-center gap-3 bg-white/5 rounded-xl p-3 mb-4 border border-white/10">
+                <img
+                  src={(preferredPoster ?? movie?.poster_path) ? `https://image.tmdb.org/t/p/w92${preferredPoster ?? movie?.poster_path}` : "https://images.unsplash.com/photo-1594909122845-11baa439b7bf?w=92"}
+                  alt="Current poster"
+                  className="w-12 rounded-lg object-cover aspect-[2/3] flex-shrink-0"
+                />
+                <div className="min-w-0">
+                  <p className="text-white/40 text-[10px] uppercase tracking-widest mb-0.5">Current poster</p>
+                  <p className="text-white text-sm font-semibold truncate">{movie?.title || movie?.name}</p>
+                  {preferredPoster && preferredPoster !== movie?.poster_path && (
+                    <span className="inline-flex items-center gap-1 text-[#ffb4aa] text-[10px] font-bold uppercase tracking-widest mt-0.5">
+                      <span className="material-symbols-outlined text-[10px]">auto_awesome</span>
+                      Custom
+                    </span>
+                  )}
+                </div>
+              </div>
+
+              {/* Actions */}
+              <button
+                onClick={() => {
+                  setShowPosterConfirm(false);
+                  setShowPosterPicker(true);
+                }}
+                className="w-full py-3.5 rounded-full bg-[#ffb4aa] text-black font-bold text-sm active:scale-95 transition-transform cursor-pointer flex items-center justify-center gap-2 mb-2"
+              >
+                <span className="material-symbols-outlined text-[18px]">photo_library</span>
+                Browse Poster Options
+              </button>
+              <button
+                onClick={() => setShowPosterConfirm(false)}
+                className="w-full py-3 rounded-full border border-white/10 text-white/60 text-sm active:scale-95 transition-transform cursor-pointer"
+              >
+                Cancel
+              </button>
+            </div>
+
+            {/* Safe-area bottom padding for phones with home-bar */}
+            <div className="h-safe-bottom" style={{ paddingBottom: "env(safe-area-inset-bottom, 12px)" }} />
+          </div>
+        </div>
+      )}
+
       {/* Poster Picker Modal */}
       {showPosterPicker && user?.id && (
         <PosterPickerModal

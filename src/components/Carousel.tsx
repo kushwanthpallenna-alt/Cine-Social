@@ -21,12 +21,19 @@ export default function Carousel({
   const [canScrollLeft, setCanScrollLeft] = useState(false);
   const [canScrollRight, setCanScrollRight] = useState(false);
 
-  // Mouse drag state
+  // Mouse drag state (desktop only)
   const isMouseDown = useRef(false);
   const startX = useRef(0);
   const scrollLeftPos = useRef(0);
   const hasDragged = useRef(false);
   const [isDraggingState, setIsDraggingState] = useState(false);
+
+  // Touch state — used only to detect swipe direction so we can block
+  // accidental link-clicks after a horizontal swipe. We do NOT call
+  // preventDefault on touch events; the browser's native pan-x handles scroll.
+  const touchStartX = useRef(0);
+  const touchStartY = useRef(0);
+  const touchHasDragged = useRef(false);
 
   const checkScroll = useCallback(() => {
     const container = scrollRef.current;
@@ -87,7 +94,7 @@ export default function Carousel({
     };
   }, [checkScroll]);
 
-  // Mouse click-and-drag handlers
+  // ── Mouse drag handlers (desktop) ─────────────────────────────────────────
   const handleMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
     if (e.button !== 0) return;
     const container = scrollRef.current;
@@ -135,6 +142,43 @@ export default function Carousel({
     }
   };
 
+  // ── Touch handlers (mobile) ───────────────────────────────────────────────
+  // We do NOT call preventDefault here — touch-action: pan-x on the container
+  // tells the browser to handle horizontal swipe natively (scrolls the
+  // carousel) while vertical swipes are passed through to page scroll.
+  // These handlers only track whether a swipe happened so we can block
+  // accidental tap-through navigation after a horizontal swipe.
+  const handleTouchStart = (e: React.TouchEvent<HTMLDivElement>) => {
+    touchStartX.current = e.touches[0].clientX;
+    touchStartY.current = e.touches[0].clientY;
+    touchHasDragged.current = false;
+  };
+
+  const handleTouchMove = (e: React.TouchEvent<HTMLDivElement>) => {
+    const dx = Math.abs(e.touches[0].clientX - touchStartX.current);
+    const dy = Math.abs(e.touches[0].clientY - touchStartY.current);
+    // Mark as a horizontal drag only when horizontal movement dominates
+    if (dx > dy && dx > 8) {
+      touchHasDragged.current = true;
+    }
+  };
+
+  const handleTouchEnd = () => {
+    // Reset after a short delay (same pattern as mouse drag)
+    setTimeout(() => {
+      touchHasDragged.current = false;
+    }, 50);
+  };
+
+  // Capture touch-originated clicks that followed a horizontal swipe
+  const handleTouchClickCapture = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (touchHasDragged.current) {
+      e.preventDefault();
+      e.stopPropagation();
+      touchHasDragged.current = false;
+    }
+  };
+
   const scrollByAmount = (direction: "left" | "right") => {
     const container = scrollRef.current;
     if (!container) return;
@@ -171,7 +215,12 @@ export default function Carousel({
         </button>
       )}
 
-      {/* Scroll Container */}
+      {/* Scroll Container
+          touch-action: pan-x  →  browser handles horizontal swipe natively
+                                   (scrolls this container) while vertical
+                                   swipes pass through to the page scroller.
+          We apply it both inline and via the .touch-pan-x CSS class to
+          maximise compatibility across Safari/Chrome/Firefox on iOS & Android. */}
       <div
         ref={scrollRef}
         onScroll={handleScroll}
@@ -179,11 +228,19 @@ export default function Carousel({
         onMouseMove={handleMouseMove}
         onMouseUp={handleMouseUpOrLeave}
         onMouseLeave={handleMouseUpOrLeave}
-        onClickCapture={handleClickCapture}
-        className={`flex overflow-x-auto no-scrollbar select-none ${
+        onClickCapture={(e) => {
+          handleClickCapture(e);
+          handleTouchClickCapture(e);
+        }}
+        onTouchStart={handleTouchStart}
+        onTouchMove={handleTouchMove}
+        onTouchEnd={handleTouchEnd}
+        className={`flex overflow-x-auto no-scrollbar touch-pan-x select-none ${
           isDraggingState ? "cursor-grabbing" : "cursor-grab"
         } ${containerClassName}`}
         style={{
+          // Belt-and-braces: also set via inline style so JS-disabled SSR
+          // and any CSS-specificity fights don't clobber it.
           touchAction: "pan-x",
           WebkitOverflowScrolling: "touch",
         }}

@@ -116,6 +116,7 @@ function MovieDetailsView({ movieId }: { movieId: string }) {
   const [scrollY, setScrollY] = useState(0);
   const [movie, setMovie] = useState<any>(null);
   const [cast, setCast] = useState<any[]>([]);
+  const [directors, setDirectors] = useState<any[]>([]);
   const [similarMovies, setSimilarMovies] = useState<any[]>([]);
   const [reviews, setReviews] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -533,6 +534,10 @@ function MovieDetailsView({ movieId }: { movieId: string }) {
         if (creditsData.cast) {
           setCast(creditsData.cast.slice(0, 10)); // Display top 10 cast members
         }
+        if (creditsData.crew) {
+          const dirs = creditsData.crew.filter((c: any) => c.job === "Director");
+          setDirectors(dirs);
+        }
         if (similarData.results) {
           setSimilarMovies(similarData.results.slice(0, 5)); // Display top 5 similar movies
         }
@@ -742,6 +747,25 @@ function MovieDetailsView({ movieId }: { movieId: string }) {
                 </div>
               </div>
 
+              {/* Director Info */}
+              {directors.length > 0 && (
+                <div className="flex items-center gap-2 mb-stack-lg flex-wrap text-body-md">
+                  <span className="text-on-surface-variant opacity-70">Directed by</span>
+                  {directors.map((dir: any, idx: number) => (
+                    <React.Fragment key={dir.id}>
+                      {idx > 0 && <span className="text-on-surface-variant opacity-40">,</span>}
+                      <Link
+                        href={`/person/${dir.id}`}
+                        className="text-primary font-semibold hover:underline cursor-pointer inline-flex items-center gap-1.5 bg-primary/10 hover:bg-primary/20 px-3.5 py-1 rounded-full border border-primary/30 transition-all text-xs"
+                      >
+                        <span className="material-symbols-outlined text-xs">movie_filter</span>
+                        {dir.name}
+                      </Link>
+                    </React.Fragment>
+                  ))}
+                </div>
+              )}
+
               {/* Action Buttons */}
               <div className="flex flex-wrap gap-stack-md">
                 <button
@@ -826,17 +850,21 @@ function MovieDetailsView({ movieId }: { movieId: string }) {
               </div>
               <Carousel containerClassName="gap-stack-lg pb-4">
                 {cast.map((actor: any) => (
-                  <div key={actor.id} className="flex-shrink-0 w-24 text-center group">
-                    <div className="w-24 h-24 rounded-full overflow-hidden border-2 border-transparent group-hover:border-primary transition-all mb-2 shadow-lg bg-white/5">
+                  <Link
+                    key={actor.id}
+                    href={`/person/${actor.id}`}
+                    className="flex-shrink-0 w-24 text-center group/card cursor-pointer block"
+                  >
+                    <div className="w-24 h-24 rounded-full overflow-hidden border-2 border-transparent group-hover/card:border-primary transition-all mb-2 shadow-lg bg-white/5">
                       <img
-                        className="w-full h-full object-cover"
+                        className="w-full h-full object-cover group-hover/card:scale-105 transition-transform duration-300"
                         alt={actor.name}
                         src={actor.profile_path ? `https://image.tmdb.org/t/p/w185${actor.profile_path}` : "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150"}
                       />
                     </div>
-                    <span className="block text-body-md text-on-surface font-semibold truncate">{actor.name}</span>
+                    <span className="block text-body-md text-on-surface font-semibold truncate group-hover/card:text-primary transition-colors">{actor.name}</span>
                     <span className="block text-label-sm text-on-surface-variant opacity-60 truncate">{actor.character}</span>
-                  </div>
+                  </Link>
                 ))}
               </Carousel>
             </section>

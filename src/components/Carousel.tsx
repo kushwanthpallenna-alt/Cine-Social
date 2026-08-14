@@ -28,13 +28,6 @@ export default function Carousel({
   const hasDragged = useRef(false);
   const [isDraggingState, setIsDraggingState] = useState(false);
 
-  // Touch state — used only to detect swipe direction so we can block
-  // accidental link-clicks after a horizontal swipe. We do NOT call
-  // preventDefault on touch events; the browser's native pan-x handles scroll.
-  const touchStartX = useRef(0);
-  const touchStartY = useRef(0);
-  const touchHasDragged = useRef(false);
-
   const checkScroll = useCallback(() => {
     const container = scrollRef.current;
     if (!container) return;
@@ -62,16 +55,12 @@ export default function Carousel({
     };
   }, [checkScroll, children]);
 
-  // Wheel event listener: only intercept Shift+scroll for horizontal scrolling.
-  // Plain vertical wheel events are intentionally ignored so the page scrolls normally.
+  // Wheel event listener: only intercept Shift+scroll for horizontal scrolling on desktop.
   useEffect(() => {
     const container = scrollRef.current;
     if (!container) return;
 
     const handleWheel = (e: WheelEvent) => {
-      // Only hijack the wheel event when Shift is held — this is the explicit
-      // "scroll carousel horizontally" gesture. Without Shift, let the event
-      // bubble up so the browser performs its normal vertical page scroll.
       if (!e.shiftKey) return;
 
       if (e.deltaY !== 0) {
@@ -87,15 +76,15 @@ export default function Carousel({
       }
     };
 
-    // passive: false is still required so we can call preventDefault() on Shift+wheel.
     container.addEventListener("wheel", handleWheel, { passive: false });
     return () => {
       container.removeEventListener("wheel", handleWheel);
     };
   }, [checkScroll]);
 
-  // ── Mouse drag handlers (desktop) ─────────────────────────────────────────
+  // ── Mouse drag handlers (Desktop Mouse Only) ──────────────────────────────
   const handleMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
+    // Only handle primary mouse button (not touch events or right/middle click)
     if (e.button !== 0) return;
     const container = scrollRef.current;
     if (!container) return;
@@ -142,43 +131,6 @@ export default function Carousel({
     }
   };
 
-  // ── Touch handlers (mobile) ───────────────────────────────────────────────
-  // We do NOT call preventDefault here — touch-action: pan-x on the container
-  // tells the browser to handle horizontal swipe natively (scrolls the
-  // carousel) while vertical swipes are passed through to page scroll.
-  // These handlers only track whether a swipe happened so we can block
-  // accidental tap-through navigation after a horizontal swipe.
-  const handleTouchStart = (e: React.TouchEvent<HTMLDivElement>) => {
-    touchStartX.current = e.touches[0].clientX;
-    touchStartY.current = e.touches[0].clientY;
-    touchHasDragged.current = false;
-  };
-
-  const handleTouchMove = (e: React.TouchEvent<HTMLDivElement>) => {
-    const dx = Math.abs(e.touches[0].clientX - touchStartX.current);
-    const dy = Math.abs(e.touches[0].clientY - touchStartY.current);
-    // Mark as a horizontal drag only when horizontal movement dominates
-    if (dx > dy && dx > 8) {
-      touchHasDragged.current = true;
-    }
-  };
-
-  const handleTouchEnd = () => {
-    // Reset after a short delay (same pattern as mouse drag)
-    setTimeout(() => {
-      touchHasDragged.current = false;
-    }, 50);
-  };
-
-  // Capture touch-originated clicks that followed a horizontal swipe
-  const handleTouchClickCapture = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (touchHasDragged.current) {
-      e.preventDefault();
-      e.stopPropagation();
-      touchHasDragged.current = false;
-    }
-  };
-
   const scrollByAmount = (direction: "left" | "right") => {
     const container = scrollRef.current;
     if (!container) return;
@@ -215,12 +167,11 @@ export default function Carousel({
         </button>
       )}
 
-      {/* Scroll Container
-          touch-action: pan-x  →  browser handles horizontal swipe natively
-                                   (scrolls this container) while vertical
-                                   swipes pass through to the page scroller.
-          We apply it both inline and via the .touch-pan-x CSS class to
-          maximise compatibility across Safari/Chrome/Firefox on iOS & Android. */}
+      {/* Scroll Container: Pure Native Touch Scrolling
+          - touch-action: pan-x  --> allows horizontal swipe inside container, vertical swipe propagates natively to window scroll
+          - overscroll-behavior-x: contain --> prevents horizontal swipe bounce from triggering browser page back/forward navigation
+          - no custom touch event listeners to interfere with browser touch gestures
+          - select-none removed so touch initiation is never blocked on WebKit/iOS */}
       <div
         ref={scrollRef}
         onScroll={handleScroll}
@@ -228,20 +179,13 @@ export default function Carousel({
         onMouseMove={handleMouseMove}
         onMouseUp={handleMouseUpOrLeave}
         onMouseLeave={handleMouseUpOrLeave}
-        onClickCapture={(e) => {
-          handleClickCapture(e);
-          handleTouchClickCapture(e);
-        }}
-        onTouchStart={handleTouchStart}
-        onTouchMove={handleTouchMove}
-        onTouchEnd={handleTouchEnd}
-        className={`flex overflow-x-auto no-scrollbar touch-pan-x select-none ${
+        onClickCapture={handleClickCapture}
+        className={`flex overflow-x-auto no-scrollbar touch-pan-x ${
           isDraggingState ? "cursor-grabbing" : "cursor-grab"
         } ${containerClassName}`}
         style={{
-          // Belt-and-braces: also set via inline style so JS-disabled SSR
-          // and any CSS-specificity fights don't clobber it.
           touchAction: "pan-x",
+          overscrollBehaviorX: "contain",
           WebkitOverflowScrolling: "touch",
         }}
       >

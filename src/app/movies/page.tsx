@@ -608,7 +608,7 @@ function MovieDetailsView({ movieId }: { movieId: string }) {
   const releaseYear = movie.release_date ? new Date(movie.release_date).getFullYear() : "";
 
   return (
-    <div className="bg-[#050505] text-[#e5e2e1] font-body-md overflow-x-hidden min-h-screen relative pb-32">
+    <div className="bg-[#050505] text-[#e5e2e1] font-body-md overflow-x-clip min-h-screen relative pb-32">
       {/* Top Navigation Bar */}
       <header className="fixed top-0 left-0 w-full z-50 bg-[#131313]/60 backdrop-blur-[40px] border-b border-white/10 flex justify-between items-center px-container-margin py-stack-md shadow-[0_8px_32px_0_rgba(255,180,170,0.05)]">
         <Link
@@ -1256,7 +1256,7 @@ function WatchlistView() {
   }, [user]);
 
   return (
-    <div className="bg-[#050505] text-[#e5e2e1] font-body-md overflow-x-hidden min-h-screen relative pb-32">
+    <div className="bg-[#050505] text-[#e5e2e1] font-body-md overflow-x-clip min-h-screen relative pb-32">
       <header className="fixed top-0 left-0 w-full z-50 bg-[#131313]/60 backdrop-blur-[40px] border-b border-white/10 flex justify-between items-center px-container-margin py-stack-md shadow-[0_8px_32px_0_rgba(255,180,170,0.05)]">
         <Link href="/" className="hover:opacity-90 active:scale-98 transition-all block">
           <h1 className="font-display-md text-[24px] text-primary tracking-tighter uppercase select-none font-serif">

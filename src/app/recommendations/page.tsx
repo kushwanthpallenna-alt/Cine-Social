@@ -241,7 +241,7 @@ export default function Recommendations() {
   }, [selectedMood]);
 
   return (
-    <div className="font-body-md text-body-md bg-[#050505] text-[#e5e2e1] min-h-screen relative pb-32 overflow-x-hidden">
+    <div className="font-body-md text-body-md bg-[#050505] text-[#e5e2e1] min-h-screen relative pb-32 overflow-x-clip">
       <div
         className="animated-bg"
         style={{

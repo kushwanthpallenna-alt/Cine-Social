@@ -764,13 +764,14 @@ export default function ProfilePage() {
       </header>
 
       {/* Letterboxd-Style Cinematic Profile Banner */}
-      <div className="relative w-full h-[280px] sm:h-[350px] md:h-[420px] overflow-hidden bg-[#050505]">
+      <div className="relative w-full h-[300px] sm:h-[380px] md:h-[460px] overflow-hidden bg-[#050505]">
         {bannerBackdropUrl ? (
           <>
             <img
               src={bannerBackdropUrl}
               alt={bannerMovieTitle || "Profile Banner"}
-              className="w-full h-full object-cover scale-105 filter brightness-[0.85] transition-all duration-700 animate-fade-in" style={{ objectPosition: 'center 30%' }}
+              className="w-full h-full object-cover scale-105 filter brightness-[0.9] transition-all duration-700 animate-fade-in"
+              style={{ objectPosition: 'center 35%' }}
             />
             {bannerMovieTitle && (
               <div className="absolute top-20 right-6 z-20 text-right pointer-events-none hidden md:block">
@@ -789,10 +790,10 @@ export default function ProfilePage() {
         )}
 
         {/* Top dark gradient overlay for fixed header readability */}
-        <div className="absolute top-0 inset-x-0 h-24 bg-gradient-to-b from-[#050505]/90 via-[#050505]/40 to-transparent z-10 pointer-events-none" />
+        <div className="absolute top-0 inset-x-0 h-28 bg-gradient-to-b from-[#050505]/90 via-[#050505]/40 to-transparent z-10 pointer-events-none" />
 
-        {/* Bottom dark gradient overlay fading smoothly to #050505 */}
-        <div className="absolute bottom-0 inset-x-0 h-[60%] bg-gradient-to-t from-[#050505] via-[#050505]/70 to-transparent z-10 pointer-events-none" />
+        {/* Bottom smooth cinematic gradient overlay fading into solid #050505 */}
+        <div className="absolute inset-0 profile-banner-fade z-10 pointer-events-none" />
       </div>
 
       {/* Main Container - Overlapping Banner Bottom (Letterboxd Style) */}

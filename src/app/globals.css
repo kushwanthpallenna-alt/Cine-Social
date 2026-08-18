@@ -71,11 +71,6 @@
     animation: skeletonPulse 1.5s ease-in-out infinite;
   }
 
-  /* Touch-action utilities for mobile carousels */
-  .touch-pan-x {
-    touch-action: pan-x;
-    -webkit-overflow-scrolling: touch;
-  }
 
   /* Profile Hero Banner smooth gradient overlay fading into #050505 */
   .profile-banner-fade {

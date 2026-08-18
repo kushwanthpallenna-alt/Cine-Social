@@ -21,7 +21,7 @@ export default function Carousel({
   const [canScrollLeft, setCanScrollLeft] = useState(false);
   const [canScrollRight, setCanScrollRight] = useState(false);
 
-  // Mouse drag state (desktop only)
+  // Mouse drag state — refs only, no touch state at all
   const isMouseDown = useRef(false);
   const startX = useRef(0);
   const scrollLeftPos = useRef(0);
@@ -40,34 +40,25 @@ export default function Carousel({
     checkScroll();
     const container = scrollRef.current;
     if (!container) return;
-
     const handleResize = () => checkScroll();
     window.addEventListener("resize", handleResize);
-
-    const resizeObserver = new ResizeObserver(() => {
-      checkScroll();
-    });
+    const resizeObserver = new ResizeObserver(() => checkScroll());
     resizeObserver.observe(container);
-
     return () => {
       window.removeEventListener("resize", handleResize);
       resizeObserver.disconnect();
     };
   }, [checkScroll, children]);
 
-  // Wheel event listener: only intercept Shift+scroll for horizontal scrolling on desktop.
+  // Shift+scroll → horizontal on desktop
   useEffect(() => {
     const container = scrollRef.current;
     if (!container) return;
-
     const handleWheel = (e: WheelEvent) => {
       if (!e.shiftKey) return;
-
       if (e.deltaY !== 0) {
         const canLeft = container.scrollLeft > 0;
-        const canRight =
-          container.scrollLeft + container.clientWidth < container.scrollWidth - 1;
-
+        const canRight = container.scrollLeft + container.clientWidth < container.scrollWidth - 1;
         if ((e.deltaY < 0 && canLeft) || (e.deltaY > 0 && canRight)) {
           e.preventDefault();
           container.scrollLeft += e.deltaY;
@@ -75,52 +66,44 @@ export default function Carousel({
         }
       }
     };
-
     container.addEventListener("wheel", handleWheel, { passive: false });
-    return () => {
-      container.removeEventListener("wheel", handleWheel);
-    };
+    return () => container.removeEventListener("wheel", handleWheel);
   }, [checkScroll]);
 
-  // ── Mouse drag handlers (Desktop Mouse Only) ──────────────────────────────
-  const handleMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
-    // Only handle primary mouse button (not touch events or right/middle click)
-    if (e.button !== 0) return;
+  // ── Pointer handlers — mouse only, never fires for touch/stylus ─────────────
+  // Using pointerType guard means zero interference with native touch scroll.
+  const handlePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (e.pointerType !== "mouse" || e.button !== 0) return;
     const container = scrollRef.current;
     if (!container) return;
-
     isMouseDown.current = true;
     hasDragged.current = false;
-    startX.current = e.pageX - container.offsetLeft;
+    startX.current = e.clientX;
     scrollLeftPos.current = container.scrollLeft;
+    // Capture pointer so drag works even if mouse leaves the element
+    (e.currentTarget as HTMLDivElement).setPointerCapture(e.pointerId);
   };
 
-  const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (!isMouseDown.current) return;
+  const handlePointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!isMouseDown.current || e.pointerType !== "mouse") return;
     const container = scrollRef.current;
     if (!container) return;
-
-    const x = e.pageX - container.offsetLeft;
-    const walk = (x - startX.current) * 1.2;
-
-    if (Math.abs(x - startX.current) > 5) {
+    const dx = e.clientX - startX.current;
+    if (Math.abs(dx) > 5) {
       if (!hasDragged.current) {
         hasDragged.current = true;
         setIsDraggingState(true);
       }
       e.preventDefault();
-      container.scrollLeft = scrollLeftPos.current - walk;
+      container.scrollLeft = scrollLeftPos.current - dx * 1.2;
       checkScroll();
     }
   };
 
-  const handleMouseUpOrLeave = () => {
-    if (isMouseDown.current) {
-      isMouseDown.current = false;
-      setTimeout(() => {
-        setIsDraggingState(false);
-      }, 50);
-    }
+  const handlePointerUp = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (e.pointerType !== "mouse") return;
+    isMouseDown.current = false;
+    setTimeout(() => setIsDraggingState(false), 50);
   };
 
   const handleClickCapture = (e: React.MouseEvent<HTMLDivElement>) => {
@@ -134,22 +117,36 @@ export default function Carousel({
   const scrollByAmount = (direction: "left" | "right") => {
     const container = scrollRef.current;
     if (!container) return;
-    const amount = container.clientWidth * 0.75;
     container.scrollBy({
-      left: direction === "left" ? -amount : amount,
+      left: direction === "left" ? -container.clientWidth * 0.75 : container.clientWidth * 0.75,
       behavior: "smooth",
     });
   };
 
   const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
     checkScroll();
-    if (onScroll) {
-      onScroll(e);
-    }
+    if (onScroll) onScroll(e);
   };
 
   return (
-    <div className={`relative group/carousel ${className}`}>
+    /*
+     * Outer wrapper: touch-action: pan-y
+     *
+     * WHY: iOS Safari classifies a touch gesture based on the element where
+     * the finger first lands. If the wrapper has no touch-action, and the
+     * inner scroll container says pan-x, iOS can decide the whole gesture
+     * tree is "horizontal only" and refuse to propagate vertical swipes to
+     * the document. Explicitly setting pan-y on the wrapper tells iOS:
+     * "vertical swipes starting anywhere in here should scroll the page."
+     *
+     * IMPORTANT: No overflow:hidden here. overflow:hidden on a parent creates
+     * a new scroll-blocking stacking context on iOS Safari that absorbs touch
+     * events before they reach the inner scroller.
+     */
+    <div
+      className={`relative group/carousel ${className}`}
+      style={{ touchAction: "pan-y" }}
+    >
       {/* Left Arrow Button */}
       {showArrows && (
         <button
@@ -167,24 +164,40 @@ export default function Carousel({
         </button>
       )}
 
-      {/* Scroll Container: Pure Native Touch Scrolling
-          - touch-action: pan-x  --> allows horizontal swipe inside container, vertical swipe propagates natively to window scroll
-          - overscroll-behavior-x: contain --> prevents horizontal swipe bounce from triggering browser page back/forward navigation
-          - no custom touch event listeners to interfere with browser touch gestures
-          - select-none removed so touch initiation is never blocked on WebKit/iOS */}
+      {/*
+       * Scroll Container — 100% native touch scroll, zero JS touch handlers.
+       *
+       * touch-action: pan-x pan-y
+       *   • pan-x  → this element scrolls horizontally on left/right swipe
+       *   • pan-y  → vertical swipes are NOT captured here; they propagate
+       *              upward to the document scroll
+       *
+       * Using only "pan-x" is the classic iOS bug: the browser then treats
+       * ALL gestures starting in this element as horizontal candidates and
+       * can refuse to hand off a vertical swipe to the page scroller.
+       *
+       * No onTouchStart/Move/End handlers anywhere. Even passive handlers
+       * can delay gesture classification on some WebKit builds and cause
+       * the browser to swallow the vertical component of a diagonal swipe.
+       *
+       * Pointer events are gated on pointerType === "mouse", so they are
+       * completely transparent to the touch gesture pipeline.
+       */}
       <div
         ref={scrollRef}
         onScroll={handleScroll}
-        onMouseDown={handleMouseDown}
-        onMouseMove={handleMouseMove}
-        onMouseUp={handleMouseUpOrLeave}
-        onMouseLeave={handleMouseUpOrLeave}
+        onPointerDown={handlePointerDown}
+        onPointerMove={handlePointerMove}
+        onPointerUp={handlePointerUp}
+        onPointerCancel={handlePointerUp}
         onClickCapture={handleClickCapture}
-        className={`flex overflow-x-auto no-scrollbar touch-pan-x ${
+        className={`flex overflow-x-auto no-scrollbar ${
           isDraggingState ? "cursor-grabbing" : "cursor-grab"
         } ${containerClassName}`}
         style={{
-          touchAction: "pan-x",
+          // pan-x: horizontal swipe scrolls this element
+          // pan-y: vertical swipe bubbles up to page — BOTH values are needed
+          touchAction: "pan-x pan-y",
           overscrollBehaviorX: "contain",
           WebkitOverflowScrolling: "touch",
         }}

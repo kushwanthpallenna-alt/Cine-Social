@@ -72,6 +72,7 @@
   }
 
 
+
   /* Profile Hero Banner smooth gradient overlay fading into #050505 */
   .profile-banner-fade {
     background: linear-gradient(to bottom,
@@ -82,8 +83,42 @@
         rgba(5, 5, 5, 0.96) 93%,
         #050505 100%);
   }
-}
 
+  /*
+   * Carousel image drag suppression
+   *
+   * WHY THIS IS NEEDED:
+   * Browsers (especially iOS Safari) treat <img> elements as natively draggable.
+   * When a touch starts on an <img>, the browser initiates an image-save/drag
+   * gesture that captures the entire touch sequence — preventing vertical scroll
+   * from propagating up, even when the parent has touch-action: pan-x pan-y.
+   *
+   * This class is applied to the carousel scroll container. It targets all img
+   * descendants and:
+   *   1. touch-action: pan-x pan-y → same as the container, ensures the img
+   *      itself doesn't override the container's scroll classification
+   *   2. -webkit-user-drag: none → disables native iOS image drag (WebKit)
+   *   3. user-drag: none → standard equivalent
+   *   4. user-select: none → prevents text/image selection on long-press
+   *      (which also captures the touch on iOS)
+   *   5. pointer-events: auto → keep pointer events so clicks/links still work;
+   *      we only suppress drag, not interaction
+   *
+   * draggable="false" must still be set on the HTML element directly for
+   * desktop browsers (CSS alone doesn't override the draggable IDL attribute).
+   */
+  .carousel-no-img-drag img {
+    touch-action: pan-x pan-y;
+    -webkit-user-drag: none;
+    user-drag: none;
+    user-select: none;
+    -webkit-user-select: none;
+    pointer-events: auto;
+    /* Prevent the native iOS callout (image save menu) from appearing
+       on long-press, which also steals the touch gesture */
+    -webkit-touch-callout: none;
+  }
+}
 
 @keyframes skeletonPulse {
 

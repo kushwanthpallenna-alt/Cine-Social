@@ -600,6 +600,7 @@ export default function Home() {
                   fill
                   loading="lazy"
                   sizes="(max-width: 768px) 280px, 340px"
+                  draggable={false}
                 />
                 <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover/card:opacity-100 transition-opacity">
                   <div className="w-12 h-12 rounded-full bg-primary/80 flex items-center justify-center">
@@ -633,6 +634,7 @@ export default function Home() {
                   fill
                   loading="lazy"
                   sizes="(max-width: 768px) 280px, 340px"
+                  draggable={false}
                 />
                 <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover/card:opacity-100 transition-opacity">
                   <div className="w-12 h-12 rounded-full bg-primary/80 flex items-center justify-center">
@@ -770,6 +772,7 @@ export default function Home() {
                               fill
                               loading="lazy"
                               sizes="(max-width: 768px) 160px, 200px"
+                              draggable={false}
                             />
                             <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-0 group-hover/card:opacity-100 transition-opacity flex flex-col justify-end p-stack-sm">
                               <span className="text-secondary text-sm flex items-center gap-1 font-bold">
@@ -918,6 +921,7 @@ export default function Home() {
                           fill
                           loading="lazy"
                           sizes="(max-width: 768px) 120px, 160px"
+                          draggable={false}
                         />
                       </Link>
                     </div>

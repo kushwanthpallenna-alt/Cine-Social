@@ -860,6 +860,7 @@ function MovieDetailsView({ movieId }: { movieId: string }) {
                         className="w-full h-full object-cover group-hover/card:scale-105 transition-transform duration-300"
                         alt={actor.name}
                         src={actor.profile_path ? `https://image.tmdb.org/t/p/w185${actor.profile_path}` : "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150"}
+                        draggable={false}
                       />
                     </div>
                     <span className="block text-body-md text-on-surface font-semibold truncate group-hover/card:text-primary transition-colors">{actor.name}</span>

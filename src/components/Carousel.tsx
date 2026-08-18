@@ -191,7 +191,7 @@ export default function Carousel({
         onPointerUp={handlePointerUp}
         onPointerCancel={handlePointerUp}
         onClickCapture={handleClickCapture}
-        className={`flex overflow-x-auto no-scrollbar ${
+        className={`flex overflow-x-auto no-scrollbar carousel-no-img-drag ${
           isDraggingState ? "cursor-grabbing" : "cursor-grab"
         } ${containerClassName}`}
         style={{

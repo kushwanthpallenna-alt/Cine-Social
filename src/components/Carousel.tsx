@@ -72,6 +72,10 @@ export default function Carousel({
 
   // ── Pointer handlers — mouse only, never fires for touch/stylus ─────────────
   // Using pointerType guard means zero interference with native touch scroll.
+  const pointerDownTime = useRef(0);
+
+  const activePointerId = useRef<number | null>(null);
+
   const handlePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
     if (e.pointerType !== "mouse" || e.button !== 0) return;
     const container = scrollRef.current;
@@ -80,8 +84,12 @@ export default function Carousel({
     hasDragged.current = false;
     startX.current = e.clientX;
     scrollLeftPos.current = container.scrollLeft;
-    // Capture pointer so drag works even if mouse leaves the element
-    (e.currentTarget as HTMLDivElement).setPointerCapture(e.pointerId);
+    pointerDownTime.current = Date.now();
+    activePointerId.current = e.pointerId;
+    // NOTE: pointer capture is now set later, only once real dragging starts
+    // (see handlePointerMove) — capturing immediately on every mousedown
+    // redirects the eventual click event to this container instead of the
+    // actual clicked child (poster/link), silently breaking navigation.
   };
 
   const handlePointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
@@ -89,10 +97,15 @@ export default function Carousel({
     const container = scrollRef.current;
     if (!container) return;
     const dx = e.clientX - startX.current;
-    if (Math.abs(dx) > 5) {
+    if (Math.abs(dx) > 15) {
       if (!hasDragged.current) {
         hasDragged.current = true;
         setIsDraggingState(true);
+        // Only capture the pointer once we know this is a real drag —
+        // this keeps normal clicks untouched by pointer capture entirely.
+        if (activePointerId.current !== null) {
+          (e.currentTarget as HTMLDivElement).setPointerCapture(activePointerId.current);
+        }
       }
       e.preventDefault();
       container.scrollLeft = scrollLeftPos.current - dx * 1.2;
@@ -107,11 +120,14 @@ export default function Carousel({
   };
 
   const handleClickCapture = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (hasDragged.current) {
+    const elapsed = Date.now() - pointerDownTime.current;
+    // Only block the click if it was a real drag (moved far) AND held for a bit —
+    // fast quick clicks should never be treated as drags, even with tiny jitter.
+    if (hasDragged.current && elapsed > 150) {
       e.preventDefault();
       e.stopPropagation();
-      hasDragged.current = false;
     }
+    hasDragged.current = false;
   };
 
   const scrollByAmount = (direction: "left" | "right") => {
@@ -154,11 +170,10 @@ export default function Carousel({
           onClick={() => scrollByAmount("left")}
           disabled={!canScrollLeft}
           aria-label="Scroll left"
-          className={`absolute left-2 top-1/2 -translate-y-1/2 z-20 w-10 h-10 md:w-12 md:h-12 rounded-full bg-black/70 hover:bg-black/90 text-white backdrop-blur-md flex items-center justify-center border border-white/20 shadow-2xl transition-all duration-300 cursor-pointer ${
-            canScrollLeft
-              ? "opacity-0 group-hover/carousel:opacity-100 hover:scale-110 active:scale-95"
-              : "opacity-0 pointer-events-none"
-          }`}
+          className={`absolute left-2 top-1/2 -translate-y-1/2 z-20 w-10 h-10 md:w-12 md:h-12 rounded-full bg-black/70 hover:bg-black/90 text-white backdrop-blur-md flex items-center justify-center border border-white/20 shadow-2xl transition-all duration-300 cursor-pointer ${canScrollLeft
+            ? "opacity-0 group-hover/carousel:opacity-100 hover:scale-110 active:scale-95"
+            : "opacity-0 pointer-events-none"
+            }`}
         >
           <span className="material-symbols-outlined text-2xl select-none">chevron_left</span>
         </button>
@@ -191,9 +206,8 @@ export default function Carousel({
         onPointerUp={handlePointerUp}
         onPointerCancel={handlePointerUp}
         onClickCapture={handleClickCapture}
-        className={`flex overflow-x-auto no-scrollbar carousel-no-img-drag ${
-          isDraggingState ? "cursor-grabbing" : "cursor-grab"
-        } ${containerClassName}`}
+        className={`flex overflow-x-auto no-scrollbar carousel-no-img-drag ${isDraggingState ? "cursor-grabbing" : "cursor-grab"
+          } ${containerClassName}`}
         style={{
           // pan-x: horizontal swipe scrolls this element
           // pan-y: vertical swipe bubbles up to page — BOTH values are needed
@@ -212,11 +226,10 @@ export default function Carousel({
           onClick={() => scrollByAmount("right")}
           disabled={!canScrollRight}
           aria-label="Scroll right"
-          className={`absolute right-2 top-1/2 -translate-y-1/2 z-20 w-10 h-10 md:w-12 md:h-12 rounded-full bg-black/70 hover:bg-black/90 text-white backdrop-blur-md flex items-center justify-center border border-white/20 shadow-2xl transition-all duration-300 cursor-pointer ${
-            canScrollRight
-              ? "opacity-0 group-hover/carousel:opacity-100 hover:scale-110 active:scale-95"
-              : "opacity-0 pointer-events-none"
-          }`}
+          className={`absolute right-2 top-1/2 -translate-y-1/2 z-20 w-10 h-10 md:w-12 md:h-12 rounded-full bg-black/70 hover:bg-black/90 text-white backdrop-blur-md flex items-center justify-center border border-white/20 shadow-2xl transition-all duration-300 cursor-pointer ${canScrollRight
+            ? "opacity-0 group-hover/carousel:opacity-100 hover:scale-110 active:scale-95"
+            : "opacity-0 pointer-events-none"
+            }`}
         >
           <span className="material-symbols-outlined text-2xl select-none">chevron_right</span>
         </button>

@@ -6,6 +6,7 @@ import { supabase } from "@/lib/supabase";
 import { useSession, signOut } from "next-auth/react";
 import ReviewCard from "@/components/ReviewCard";
 import { getSafeAvatarUrl, getAvatarUrlOrDefault } from "@/lib/avatar";
+import AvatarCropperModal from "@/components/AvatarCropperModal";
 
 type SortOption = 
   | "default"
@@ -122,6 +123,7 @@ export default function ProfilePage() {
   const [movieDetails, setMovieDetails] = useState<Record<string, any>>({});
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
+  const [selectedCropImage, setSelectedCropImage] = useState<string | null>(null);
 
   // Avatar modal state
   const [avatarModalOpen, setAvatarModalOpen] = useState(false);
@@ -324,21 +326,25 @@ export default function ProfilePage() {
     fetchUserData();
   }, [user]);
 
-  const handleAvatarUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+  const handleAvatarFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
+    if (!event.target.files || event.target.files.length === 0) return;
+    const file = event.target.files[0];
+    const objectUrl = URL.createObjectURL(file);
+    setSelectedCropImage(objectUrl);
+    event.target.value = "";
+  };
+
+  const handleCroppedAvatarSave = async (croppedFile: File) => {
+    if (!user?.id) return;
     try {
       setUploading(true);
-      if (!event.target.files || event.target.files.length === 0) {
-        throw new Error("You must select an image to upload.");
-      }
-
-      const file = event.target.files[0];
       const formData = new FormData();
-      formData.append("file", file);
+      formData.append("file", croppedFile);
       formData.append("userId", user.id);
 
       const res = await fetch("/api/profile/upload", {
         method: "POST",
-        body: formData
+        body: formData,
       });
 
       if (!res.ok) {
@@ -350,10 +356,23 @@ export default function ProfilePage() {
       if (data.avatar_url) {
         setAvatarUrl(data.avatar_url);
       }
+
+      if (selectedCropImage) {
+        URL.revokeObjectURL(selectedCropImage);
+        setSelectedCropImage(null);
+      }
+      setAvatarModalOpen(false);
     } catch (error: any) {
       alert(error.message);
     } finally {
       setUploading(false);
+    }
+  };
+
+  const handleCropCancel = () => {
+    if (selectedCropImage) {
+      URL.revokeObjectURL(selectedCropImage);
+      setSelectedCropImage(null);
     }
   };
 
@@ -813,17 +832,34 @@ export default function ProfilePage() {
           <>
             {/* User Info Header (Letterboxd Overlapping Style) */}
             <section className="flex flex-col md:flex-row items-center md:items-start gap-8 mb-12">
-              {/* Avatar — click to open full-screen modal */}
-              <button
-                onClick={() => setAvatarModalOpen(true)}
-                className="w-32 h-32 md:w-40 md:h-40 rounded-full overflow-hidden border-4 border-[#050505] shadow-[0_12px_40px_rgba(0,0,0,0.85)] relative group bg-[#131313] flex-shrink-0 cursor-pointer focus:outline-none"
-                aria-label="View or change profile picture"
-              >
-                <img src={getAvatarUrlOrDefault(avatarUrl || user?.image)} alt="Profile" className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105" />
-                <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                  <span className="material-symbols-outlined text-white text-3xl">zoom_in</span>
-                </div>
-              </button>
+              {/* Avatar — click image for zoom preview, or camera button for instant edit */}
+              <div className="relative group flex-shrink-0">
+                <button
+                  onClick={() => setAvatarModalOpen(true)}
+                  className="w-32 h-32 md:w-40 md:h-40 rounded-full overflow-hidden border-4 border-[#050505] shadow-[0_12px_40px_rgba(0,0,0,0.85)] relative group/avatar bg-[#131313] flex-shrink-0 cursor-pointer focus:outline-none block"
+                  aria-label="View profile picture"
+                >
+                  <img src={getAvatarUrlOrDefault(avatarUrl || user?.image)} alt="Profile" className="w-full h-full object-cover transition-transform duration-300 group-hover/avatar:scale-105" />
+                  <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover/avatar:opacity-100 transition-opacity">
+                    <span className="material-symbols-outlined text-white text-3xl">zoom_in</span>
+                  </div>
+                </button>
+
+                <label
+                  className="absolute bottom-1 right-1 bg-primary text-black p-2.5 rounded-full shadow-lg border-2 border-[#050505] cursor-pointer hover:scale-110 active:scale-95 transition-all z-20 flex items-center justify-center"
+                  title="Change Profile Picture"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <span className="material-symbols-outlined text-base">photo_camera</span>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    disabled={uploading}
+                    onChange={handleAvatarFileSelect}
+                  />
+                </label>
+              </div>
 
               <div className="text-center md:text-left flex-grow">
                 <div className="flex flex-wrap items-center gap-4 mb-1 justify-center md:justify-start">
@@ -1634,14 +1670,21 @@ export default function ProfilePage() {
               accept="image/*"
               className="hidden"
               disabled={uploading}
-              onChange={async (e) => {
-                await handleAvatarUpload(e);
-                setAvatarModalOpen(false);
-              }}
+              onChange={handleAvatarFileSelect}
             />
           </label>
           <p className="mt-3 text-white/30 text-xs">Click outside to close</p>
         </div>
+      )}
+
+      {/* Avatar Cropper / Adjuster Modal */}
+      {selectedCropImage && (
+        <AvatarCropperModal
+          imageSrc={selectedCropImage}
+          onCancel={handleCropCancel}
+          onConfirm={handleCroppedAvatarSave}
+          isSaving={uploading}
+        />
       )}
     </div>
   );

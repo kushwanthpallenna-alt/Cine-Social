@@ -404,13 +404,13 @@ const UserProfileSkeleton = () => (
 
   return (
     <div className="font-body-md text-body-md bg-[#050505] text-[#e5e2e1] min-h-screen pb-32">
-      {/* Header */}
-      <header className="fixed top-0 left-0 w-full z-50 bg-[#131313]/60 backdrop-blur-[40px] border-b border-white/10 flex justify-between items-center px-6 py-4 shadow-[0_8px_32px_0_rgba(255,180,170,0.05)]">
-        <Link href="/community" className="flex items-center gap-2 text-on-surface-variant hover:text-primary transition-colors">
+      {/* Header — Letterboxd-style transparent blended header */}
+      <header className="fixed top-0 left-0 w-full z-50 bg-gradient-to-b from-[#050505]/90 via-[#050505]/40 to-transparent flex justify-between items-center px-6 py-4 transition-all duration-300">
+        <Link href="/community" className="flex items-center gap-2 text-on-surface-variant hover:text-primary transition-colors drop-shadow-[0_1px_4px_rgba(0,0,0,0.8)]">
           <span className="material-symbols-outlined text-sm">arrow_back</span>
-          <span className="text-sm">Social</span>
+          <span className="text-sm font-semibold">Social</span>
         </Link>
-        <h1 className="font-serif text-lg text-primary tracking-tight">{displayName}</h1>
+        <h1 className="font-serif text-lg text-primary tracking-tight font-bold drop-shadow-[0_2px_6px_rgba(0,0,0,0.8)]">{displayName}</h1>
         <div className="w-16" />
       </header>
 

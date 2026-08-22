@@ -216,16 +216,16 @@ export default function PersonDetailClient({ personId }: PersonDetailClientProps
 
   return (
     <div className="bg-[#050505] text-[#e5e2e1] font-body-md overflow-x-clip min-h-screen relative pb-32">
-      {/* Top Header */}
-      <header className="fixed top-0 left-0 w-full z-50 bg-[#131313]/60 backdrop-blur-[40px] border-b border-white/10 flex justify-between items-center px-container-margin py-stack-md shadow-[0_8px_32px_0_rgba(255,180,170,0.05)]">
+      {/* Top Header — Letterboxd-style transparent blended header */}
+      <header className="fixed top-0 left-0 w-full z-50 bg-gradient-to-b from-[#050505]/90 via-[#050505]/40 to-transparent flex justify-between items-center px-container-margin py-stack-md transition-all duration-300">
         <button
           onClick={() => router.back()}
-          className="flex items-center gap-stack-sm hover:opacity-80 transition-opacity cursor-pointer text-primary bg-transparent border-none"
+          className="flex items-center gap-stack-sm hover:opacity-80 transition-opacity cursor-pointer text-primary bg-transparent border-none drop-shadow-[0_1px_4px_rgba(0,0,0,0.8)]"
         >
           <span className="material-symbols-outlined">arrow_back</span>
         </button>
         <Link href="/" className="hover:opacity-90 active:scale-98 transition-all block">
-          <h1 className="font-display-md text-[24px] text-primary tracking-tighter uppercase select-none font-serif">
+          <h1 className="font-display-md text-[24px] text-primary tracking-tighter uppercase select-none font-serif drop-shadow-[0_2px_6px_rgba(0,0,0,0.8)]">
             CINE SOCIAL
           </h1>
         </Link>

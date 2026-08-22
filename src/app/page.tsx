@@ -349,8 +349,10 @@ export default function Home() {
     <div className="font-body-md text-on-surface pb-32 bg-[#050505] min-h-screen relative">
       {/* TopAppBar */}
       <header
-        className={`fixed top-0 left-0 w-full z-50 backdrop-blur-[40px] border-b border-white/10 shadow-[0_8px_32px_0_rgba(255,180,170,0.05)] flex justify-between items-center px-container-margin transition-all duration-300 ${
-          scrolled ? "py-stack-sm bg-[#131313]/95" : "py-stack-md bg-[#131313]/60"
+        className={`fixed top-0 left-0 w-full z-50 flex justify-between items-center px-container-margin transition-all duration-300 ${
+          scrolled
+            ? "py-stack-sm bg-[#131313]/90 backdrop-blur-md border-b border-white/10 shadow-[0_8px_32px_0_rgba(0,0,0,0.5)]"
+            : "py-stack-md bg-gradient-to-b from-[#050505]/90 via-[#050505]/40 to-transparent border-none"
         }`}
       >
         <div className="flex items-center gap-stack-md">

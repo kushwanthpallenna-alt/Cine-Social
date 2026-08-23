@@ -7,6 +7,7 @@ import { supabase } from "@/lib/supabase";
 import { useToast } from "@/components/ToastProvider";
 import NotificationBell from "@/components/NotificationBell";
 import { getSafeAvatarUrl } from "@/lib/avatar";
+import ProfileBadges from "@/components/ProfileBadges";
 
 type SortOption = 
   | "default"
@@ -259,6 +260,17 @@ export default function PublicProfilePage({ params }: { params: { userId: string
     loadAll();
   }, [targetUserId, currentUser?.id]);
 
+  const distinctGenresCount = useMemo(() => {
+    const genresSet = new Set<number>();
+    watchedMovies.forEach(w => {
+      const movie = movieDetails[w.movie_id];
+      if (movie?.genres) {
+        movie.genres.forEach((g: any) => genresSet.add(g.id));
+      }
+    });
+    return genresSet.size;
+  }, [watchedMovies, movieDetails]);
+
   const toggleFollow = async () => {
     if (!currentUser?.id || isOwnProfile) return;
     setFollowLoading(true);
@@ -468,7 +480,14 @@ const UserProfileSkeleton = () => (
             </div>
           </button>
 
-          <h2 className="font-serif text-2xl font-bold text-on-surface mb-1">{displayName}</h2>
+          <div className="flex flex-wrap items-center justify-center gap-3 mb-1">
+            <h2 className="font-serif text-2xl font-bold text-on-surface">{displayName}</h2>
+            <ProfileBadges
+              watchedCount={watchCount}
+              distinctGenresCount={distinctGenresCount}
+              reviewCount={reviewCount}
+            />
+          </div>
           {profile.username && (
             <p className="text-primary/70 text-sm mb-1">@{profile.username}</p>
           )}

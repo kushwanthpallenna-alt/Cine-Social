@@ -12,9 +12,6 @@ export default function middleware(req: any, event: any) {
 
 export const config = {
   matcher: [
-    "/",
-    "/movies",
-    "/recommendations",
     "/api/tmdb",
   ],
 };

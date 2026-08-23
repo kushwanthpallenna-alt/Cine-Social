@@ -7,6 +7,7 @@ import { useSession, signOut } from "next-auth/react";
 import ReviewCard from "@/components/ReviewCard";
 import { getSafeAvatarUrl, getAvatarUrlOrDefault } from "@/lib/avatar";
 import AvatarCropperModal from "@/components/AvatarCropperModal";
+import ProfileBadges from "@/components/ProfileBadges";
 
 type SortOption = 
   | "default"
@@ -728,37 +729,17 @@ export default function ProfilePage() {
     });
   }, [watched, watchedSort, movieDetails, ratingsMap]);
 
-  // Calculate Badges
-  const badges: { name: string; icon: string; desc: string }[] = [];
-  
-  if (watchedCount >= 100) {
-    badges.push({ name: "Century Club", icon: "workspace_premium", desc: "Watched 100+ movies" });
-  }
-
-  const uniqueGenres = new Set<number>();
-  watched.forEach(w => {
-    const movie = movieDetails[w.movie_id];
-    if (movie?.genres) {
-      movie.genres.forEach((g: any) => uniqueGenres.add(g.id));
-    }
-  });
-  if (uniqueGenres.size >= 8) {
-    badges.push({ name: "Genre Explorer", icon: "explore", desc: "Watched across 8+ genres" });
-  }
-
-  const directorCounts: Record<string, number> = {};
-  watched.forEach(w => {
-    const movie = movieDetails[w.movie_id];
-    if (movie?.credits?.crew) {
-      const director = movie.credits.crew.find((c: any) => c.job === "Director");
-      if (director) {
-        directorCounts[director.name] = (directorCounts[director.name] || 0) + 1;
+  // Calculate Unique Genres Watched
+  const uniqueGenres = useMemo(() => {
+    const genresSet = new Set<number>();
+    watched.forEach(w => {
+      const movie = movieDetails[w.movie_id];
+      if (movie?.genres) {
+        movie.genres.forEach((g: any) => genresSet.add(g.id));
       }
-    }
-  });
-  if (Object.values(directorCounts).some(count => count >= 5)) {
-    badges.push({ name: "Tarkovsky Completionist", icon: "movie_filter", desc: "Watched 5+ films by a director" });
-  }
+    });
+    return genresSet;
+  }, [watched, movieDetails]);
 
   return (
     <div className="font-body-md text-body-md bg-[#050505] text-[#e5e2e1] min-h-screen relative pb-32 overflow-x-clip">
@@ -864,15 +845,11 @@ export default function ProfilePage() {
               <div className="text-center md:text-left flex-grow">
                 <div className="flex flex-wrap items-center gap-4 mb-1 justify-center md:justify-start">
                   <h2 className="font-display-lg text-headline-lg font-serif">{user.name || "Cine Member"}</h2>
-                  {badges.length > 0 && (
-                    <div className="flex gap-2">
-                      {badges.map(b => (
-                        <div key={b.name} title={b.desc} className="bg-primary/20 p-1.5 rounded-full flex items-center justify-center border border-primary/40 cursor-help">
-                          <span className="material-symbols-outlined text-primary text-sm">{b.icon}</span>
-                        </div>
-                      ))}
-                    </div>
-                  )}
+                  <ProfileBadges
+                    watchedCount={watched.length}
+                    distinctGenresCount={uniqueGenres.size}
+                    reviewCount={reviews.length}
+                  />
                 </div>
 
                 {/* Username row */}

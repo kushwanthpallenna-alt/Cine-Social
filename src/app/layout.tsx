@@ -16,8 +16,8 @@ const playfairDisplay = Playfair_Display({
 });
 
 export const metadata: Metadata = {
-  title: "CineSocial",
-  description: "Discover, track, and review movies with friends.",
+  title: "CineSocial - Track, Rate & Discover Movies Like Letterboxd",
+  description: "Track movies you've watched, rate and review films, build your watchlist, and get AI-powered recommendations. Follow friends and see what they're watching. Your personal cinema social network.",
   manifest: "/manifest.json",
   appleWebApp: {
     capable: true,

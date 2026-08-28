@@ -2,14 +2,15 @@
 
 import React, { useState, useEffect, useMemo } from "react";
 import Link from "next/link";
+import { useParams } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { supabase } from "@/lib/supabase";
 import { useToast } from "@/components/ToastProvider";
-import NotificationBell from "@/components/NotificationBell";
 import { getSafeAvatarUrl } from "@/lib/avatar";
 import ProfileBadges from "@/components/ProfileBadges";
+import ReviewCard from "@/components/ReviewCard";
 
-type SortOption = 
+type SortOption =
   | "default"
   | "rating_desc"
   | "rating_asc"
@@ -122,10 +123,52 @@ function TasteMatchWidget({ userA, userB }: { userA: string; userB: string }) {
   );
 }
 
-export default function PublicProfilePage({ params }: { params: { userId: string } }) {
+function UserProfileSkeleton() {
+  return (
+    <div className="min-h-screen bg-[#050505] text-[#e5e2e1] pt-[80px] px-6 max-w-2xl mx-auto space-y-8 animate-skeleton-pulse">
+      {/* Profile Header Skeleton */}
+      <div className="flex flex-col items-center text-center space-y-4 py-6">
+        <div className="w-24 h-24 rounded-full bg-white/10 border-2 border-white/10 animate-skeleton-pulse"></div>
+        <div className="h-7 bg-white/15 rounded-md w-40 animate-skeleton-pulse"></div>
+        <div className="h-4 bg-white/10 rounded-md w-28 animate-skeleton-pulse"></div>
+
+        {/* Stats Skeleton */}
+        <div className="flex justify-center gap-6 pt-2">
+          <div className="text-center space-y-1">
+            <div className="h-6 bg-white/15 rounded w-10 mx-auto animate-skeleton-pulse"></div>
+            <div className="h-3 bg-white/10 rounded w-14 animate-skeleton-pulse"></div>
+          </div>
+          <div className="h-8 w-px bg-white/10"></div>
+          <div className="text-center space-y-1">
+            <div className="h-6 bg-white/15 rounded w-10 mx-auto animate-skeleton-pulse"></div>
+            <div className="h-3 bg-white/10 rounded w-14 animate-skeleton-pulse"></div>
+          </div>
+          <div className="h-8 w-px bg-white/10"></div>
+          <div className="text-center space-y-1">
+            <div className="h-6 bg-white/15 rounded w-10 mx-auto animate-skeleton-pulse"></div>
+            <div className="h-3 bg-white/10 rounded w-14 animate-skeleton-pulse"></div>
+          </div>
+        </div>
+      </div>
+
+      {/* Watched Grid Skeleton */}
+      <div className="space-y-4 pt-4">
+        <div className="h-4 bg-white/10 rounded w-32 animate-skeleton-pulse"></div>
+        <div className="grid grid-cols-3 gap-2">
+          {Array.from({ length: 9 }).map((_, i) => (
+            <div key={i} className="aspect-[2/3] rounded-xl bg-white/10 border border-white/5 animate-skeleton-pulse"></div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export default function PublicProfilePage() {
+  const routeParams = useParams();
+  const targetUserId = (routeParams?.userId as string) || "";
   const { data: session } = useSession();
   const currentUser = session?.user as any;
-  const targetUserId = params.userId;
   const { showToast } = useToast();
 
   const [profile, setProfile] = useState<any>(null);
@@ -134,6 +177,7 @@ export default function PublicProfilePage({ params }: { params: { userId: string
   const [followLoading, setFollowLoading] = useState(false);
   const [followCounts, setFollowCounts] = useState({ followers: 0, following: 0 });
   const [reviews, setReviews] = useState<any[]>([]);
+  const [ratings, setRatings] = useState<any[]>([]);
   const [movieDetails, setMovieDetails] = useState<Record<string, any>>({});
   const [watchCount, setWatchCount] = useState(0);
   const [watchlistCount, setWatchlistCount] = useState(0);
@@ -142,15 +186,23 @@ export default function PublicProfilePage({ params }: { params: { userId: string
   const [watchedMovies, setWatchedMovies] = useState<any[]>([]);
   const [watchedSort, setWatchedSort] = useState<SortOption>("default");
   const [followListModal, setFollowListModal] = useState<{ type: "followers" | "following"; users: any[]; loading: boolean } | null>(null);
-
-  const isOwnProfile = currentUser?.id === targetUserId;
-
-  // Avatar modal
   const [avatarModalOpen, setAvatarModalOpen] = useState(false);
-
-  // Cinematic Profile Banner State
   const [bannerBackdropUrl, setBannerBackdropUrl] = useState<string | null>(null);
   const [bannerMovieTitle, setBannerMovieTitle] = useState<string | null>(null);
+
+  const realUserId = profile?.user_id || targetUserId;
+  const isOwnProfile = currentUser?.id === realUserId;
+
+  // Map of movie_id -> rating number (1-10)
+  const ratingsMap = useMemo(() => {
+    const map: Record<string, number> = {};
+    ratings.forEach((r: any) => {
+      if (r?.movie_id && r?.rating) {
+        map[r.movie_id] = r.rating;
+      }
+    });
+    return map;
+  }, [ratings]);
 
   // Fetch TMDB backdrop_path for Film 1 in Top 5
   useEffect(() => {
@@ -193,52 +245,58 @@ export default function PublicProfilePage({ params }: { params: { userId: string
   }, [favorites]);
 
   useEffect(() => {
+    if (!targetUserId) {
+      setLoading(false);
+      return;
+    }
+
     async function loadAll() {
       setLoading(true);
       try {
-        // Detect whether slug is a UUID or a username
-        const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(targetUserId);
-        const profileUrl = isUUID
+        const isUserId =
+          /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(targetUserId) ||
+          /^cred_[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(targetUserId) ||
+          /^\d+$/.test(targetUserId);
+        const profileUrl = isUserId
           ? `/api/user-profile?userId=${targetUserId}`
           : `/api/user-profile?username=${encodeURIComponent(targetUserId)}`;
         const pRes = await fetch(profileUrl);
         if (!pRes.ok) { setProfile(null); setLoading(false); return; }
         const profileData = await pRes.json();
         setProfile(profileData);
-        // Resolve real userId for all subsequent queries
-        const realUserId = profileData.user_id;
 
-        // Follow status and counts in parallel
-        const [followStatusRes, followCountsRes, reviewsRes, watchedRes, watchlistRes, watchedListRes, favoritesRes] = await Promise.all([
-          currentUser?.id && !isOwnProfile
-            ? fetch(`/api/follows?followerId=${currentUser.id}&followingId=${realUserId}`).then((r) => r.json())
+        const activeId = profileData.user_id;
+
+        const [followStatusRes, followCountsRes, reviewsRes, ratingsRes, watchedRes, watchlistRes, watchedListRes, favoritesRes] = await Promise.all([
+          currentUser?.id && currentUser?.id !== activeId
+            ? fetch(`/api/follows?followerId=${currentUser.id}&followingId=${activeId}`).then((r) => r.json())
             : Promise.resolve(null),
-          fetch(`/api/follows?userId=${realUserId}`).then((r) => r.json()),
-          supabase.from("reviews").select("*").eq("user_id", realUserId).order("created_at", { ascending: false }).limit(5),
-          supabase.from("watched").select("id", { count: "exact" }).eq("user_id", realUserId),
-          supabase.from("watchlist").select("id", { count: "exact" }).eq("user_id", realUserId),
-          supabase.from("watched").select("movie_id, poster_path, movie_title, watched_at").eq("user_id", realUserId).order("watched_at", { ascending: false }).limit(30),
-          fetch(`/api/favorites?userId=${realUserId}`).then(r => r.ok ? r.json() : []),
+          fetch(`/api/follows?userId=${activeId}`).then((r) => r.json()),
+          supabase.from("reviews").select("*").eq("user_id", activeId).order("created_at", { ascending: false }).limit(10),
+          supabase.from("ratings").select("*").eq("user_id", activeId).order("created_at", { ascending: false }),
+          supabase.from("watched").select("id", { count: "exact" }).eq("user_id", activeId),
+          supabase.from("watchlist").select("id", { count: "exact" }).eq("user_id", activeId),
+          supabase.from("watched").select("movie_id, poster_path, movie_title, watched_at").eq("user_id", activeId).order("watched_at", { ascending: false }).limit(30),
+          fetch(`/api/favorites?userId=${activeId}`).then(r => r.ok ? r.json() : []),
         ]);
 
         if (followStatusRes) setFollowing(followStatusRes.isFollowing);
-        setFollowCounts({ followers: followCountsRes.followerCount || 0, following: followCountsRes.followingCount || 0 });
-        setWatchCount(watchedRes.count || 0);
-        setWatchlistCount(watchlistRes.count || 0);
+        setFollowCounts({ followers: followCountsRes?.followerCount || 0, following: followCountsRes?.followingCount || 0 });
+        setWatchCount(watchedRes?.count || 0);
+        setWatchlistCount(watchlistRes?.count || 0);
 
         const revs = reviewsRes.data || [];
+        const rats = ratingsRes.data || [];
         setReviews(revs);
+        setRatings(rats);
         setReviewCount(revs.length);
 
-        // Watched movies grid
         const watchedList = watchedListRes.data || [];
         setWatchedMovies(watchedList);
 
-        // Favorites — map slot_type → fav
         const favsArray = Array.isArray(favoritesRes) ? favoritesRes : [];
         setFavorites(favsArray);
 
-        // Fetch movie details for reviews AND watched grid
         const ids = Array.from(new Set([
           ...revs.map((r: any) => r.movie_id),
           ...watchedList.map((w: any) => w.movie_id),
@@ -248,7 +306,7 @@ export default function PublicProfilePage({ params }: { params: { userId: string
           try {
             const r = await fetch(`/api/tmdb?endpoint=movie/${id}`);
             if (r.ok) det[id] = await r.json();
-          } catch {}
+          } catch { }
         }));
         setMovieDetails(det);
       } catch (err) {
@@ -271,117 +329,14 @@ export default function PublicProfilePage({ params }: { params: { userId: string
     return genresSet.size;
   }, [watchedMovies, movieDetails]);
 
-  const toggleFollow = async () => {
-    if (!currentUser?.id || isOwnProfile) return;
-    setFollowLoading(true);
-    if (following) {
-      await fetch(`/api/follows?followerId=${currentUser.id}&followingId=${targetUserId}`, { method: "DELETE" });
-      setFollowing(false);
-      setFollowCounts((prev) => ({ ...prev, followers: prev.followers - 1 }));
-      showToast("Unfollowed");
-    } else {
-      await fetch("/api/follows", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          follower_id: currentUser.id,
-          following_id: targetUserId,
-          follower_name: currentUser.name || currentUser.email || "Someone",
-          follower_avatar: currentUser.image || null,
-        }),
-      });
-      setFollowing(true);
-      setFollowCounts((prev) => ({ ...prev, followers: prev.followers + 1 }));
-      showToast("Following user");
-    }
-    setFollowLoading(false);
-  };
-
-  const openFollowList = async (type: "followers" | "following") => {
-    setFollowListModal({ type, users: [], loading: true });
-    try {
-      const res = await fetch(`/api/follows?userId=${targetUserId}`);
-      const data = await res.json();
-      const ids: string[] = type === "followers" ? (data.followers || []) : (data.following || []);
-      const profiles = await Promise.all(
-        ids.map(async (uid: string) => {
-          try {
-            const r = await fetch(`/api/user-profile?userId=${uid}`);
-            if (r.ok) return await r.json();
-          } catch {}
-          return null;
-        })
-      );
-      setFollowListModal({ type, users: profiles.filter(Boolean), loading: false });
-    } catch {
-      setFollowListModal(prev => prev ? { ...prev, loading: false } : null);
-    }
-  };
-
-const UserProfileSkeleton = () => (
-  <div className="min-h-screen bg-[#050505] text-[#e5e2e1] pt-[80px] px-6 max-w-2xl mx-auto space-y-8 animate-skeleton-pulse">
-    {/* Profile Header Skeleton */}
-    <div className="flex flex-col items-center text-center space-y-4 py-6">
-      <div className="w-24 h-24 rounded-full bg-white/10 border-2 border-white/10 animate-skeleton-pulse"></div>
-      <div className="h-7 bg-white/15 rounded-md w-40 animate-skeleton-pulse"></div>
-      <div className="h-4 bg-white/10 rounded-md w-28 animate-skeleton-pulse"></div>
-      
-      {/* Stats Skeleton */}
-      <div className="flex justify-center gap-6 pt-2">
-        <div className="text-center space-y-1">
-          <div className="h-6 bg-white/15 rounded w-10 mx-auto animate-skeleton-pulse"></div>
-          <div className="h-3 bg-white/10 rounded w-14 animate-skeleton-pulse"></div>
-        </div>
-        <div className="h-8 w-px bg-white/10"></div>
-        <div className="text-center space-y-1">
-          <div className="h-6 bg-white/15 rounded w-10 mx-auto animate-skeleton-pulse"></div>
-          <div className="h-3 bg-white/10 rounded w-14 animate-skeleton-pulse"></div>
-        </div>
-        <div className="h-8 w-px bg-white/10"></div>
-        <div className="text-center space-y-1">
-          <div className="h-6 bg-white/15 rounded w-10 mx-auto animate-skeleton-pulse"></div>
-          <div className="h-3 bg-white/10 rounded w-14 animate-skeleton-pulse"></div>
-        </div>
-      </div>
-    </div>
-
-    {/* Watched Grid Skeleton */}
-    <div className="space-y-4 pt-4">
-      <div className="h-4 bg-white/10 rounded w-32 animate-skeleton-pulse"></div>
-      <div className="grid grid-cols-3 gap-2">
-        {Array.from({ length: 9 }).map((_, i) => (
-          <div key={i} className="aspect-[2/3] rounded-xl bg-white/10 border border-white/5 animate-skeleton-pulse"></div>
-        ))}
-      </div>
-    </div>
-  </div>
-);
-
-  if (loading) {
-    return <UserProfileSkeleton />;
-  }
-
-  if (!profile) {
-    return (
-      <div className="min-h-screen bg-[#050505] text-[#e5e2e1] flex flex-col items-center justify-center gap-4">
-        <span className="material-symbols-outlined text-[48px] text-on-surface-variant">person_off</span>
-        <h1 className="font-serif text-2xl">User Not Found</h1>
-        <Link href="/community" className="text-primary hover:underline text-sm">← Back to Community</Link>
-      </div>
-    );
-  }
-
-  const displayName = profile.display_name || profile.username || "Cine Member";
-  const initials = displayName.slice(0, 2).toUpperCase();
-
   const sortedWatched = useMemo(() => {
     if (!watchedMovies || watchedMovies.length === 0) return [];
     const list = [...watchedMovies];
 
     return list.sort((a, b) => {
       if (watchedSort === "rating_desc" || watchedSort === "rating_asc") {
-        const ratingA = movieDetails[a.movie_id]?.vote_average ?? 0;
-        const ratingB = movieDetails[b.movie_id]?.vote_average ?? 0;
+        const ratingA = ratingsMap[a.movie_id] ?? movieDetails[a.movie_id]?.vote_average ?? 0;
+        const ratingB = ratingsMap[b.movie_id] ?? movieDetails[b.movie_id]?.vote_average ?? 0;
         if (ratingA !== ratingB) {
           return watchedSort === "rating_desc" ? ratingB - ratingA : ratingA - ratingB;
         }
@@ -412,11 +367,84 @@ const UserProfileSkeleton = () => (
       const timeB = b.watched_at ? new Date(b.watched_at).getTime() : 0;
       return timeB - timeA;
     });
-  }, [watchedMovies, watchedSort, movieDetails]);
+  }, [watchedMovies, watchedSort, movieDetails, ratingsMap]);
+
+  const toggleFollow = async () => {
+    const activeUserId = profile?.user_id || targetUserId;
+    if (!currentUser?.id || isOwnProfile || !activeUserId) return;
+    setFollowLoading(true);
+    if (following) {
+      await fetch(`/api/follows?followerId=${currentUser.id}&followingId=${activeUserId}`, { method: "DELETE" });
+      setFollowing(false);
+      setFollowCounts((prev) => ({ ...prev, followers: Math.max(0, prev.followers - 1) }));
+      showToast("Unfollowed");
+    } else {
+      await fetch("/api/follows", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          follower_id: currentUser.id,
+          following_id: activeUserId,
+          follower_name: currentUser.name || currentUser.email || "Someone",
+          follower_avatar: currentUser.image || null,
+        }),
+      });
+      setFollowing(true);
+      setFollowCounts((prev) => ({ ...prev, followers: prev.followers + 1 }));
+      showToast("Following user");
+    }
+    setFollowLoading(false);
+  };
+
+  const openFollowList = async (type: "followers" | "following") => {
+    const activeUserId = profile?.user_id || targetUserId;
+    setFollowListModal({ type, users: [], loading: true });
+    try {
+      const res = await fetch(`/api/follows?userId=${activeUserId}`);
+      const data = await res.json();
+      const ids: string[] = type === "followers" ? (data.followers || []) : (data.following || []);
+      const profiles = await Promise.all(
+        ids.map(async (uid: string) => {
+          try {
+            const isUserId =
+              /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(uid) ||
+              /^cred_[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(uid) ||
+              /^\d+$/.test(uid);
+            const profileUrl = isUserId
+              ? `/api/user-profile?userId=${uid}`
+              : `/api/user-profile?username=${encodeURIComponent(uid)}`;
+            const r = await fetch(profileUrl);
+            if (r.ok) return await r.json();
+          } catch { }
+          return null;
+        })
+      );
+      setFollowListModal({ type, users: profiles.filter(Boolean), loading: false });
+    } catch {
+      setFollowListModal(prev => prev ? { ...prev, loading: false } : null);
+    }
+  };
+
+  if (loading) {
+    return <UserProfileSkeleton />;
+  }
+
+  if (!profile) {
+    return (
+      <div className="min-h-screen bg-[#050505] text-[#e5e2e1] flex flex-col items-center justify-center gap-4">
+        <span className="material-symbols-outlined text-[48px] text-on-surface-variant">person_off</span>
+        <h1 className="font-serif text-2xl">User Not Found</h1>
+        <Link href="/community" className="text-primary hover:underline text-sm">← Back to Community</Link>
+      </div>
+    );
+  }
+
+  const displayName = profile.display_name || profile.username || "Cine Member";
+  const initials = displayName.slice(0, 2).toUpperCase();
 
   return (
     <div className="font-body-md text-body-md bg-[#050505] text-[#e5e2e1] min-h-screen pb-32">
-      {/* Header — Letterboxd-style transparent blended header */}
+      {/* Header */}
       <header className="fixed top-0 left-0 w-full z-50 bg-gradient-to-b from-[#050505]/90 via-[#050505]/40 to-transparent flex justify-between items-center px-6 py-4 transition-all duration-300">
         <Link href="/community" className="flex items-center gap-2 text-on-surface-variant hover:text-primary transition-colors drop-shadow-[0_1px_4px_rgba(0,0,0,0.8)]">
           <span className="material-symbols-outlined text-sm">arrow_back</span>
@@ -426,7 +454,7 @@ const UserProfileSkeleton = () => (
         <div className="w-16" />
       </header>
 
-      {/* Letterboxd-Style Cinematic Profile Banner */}
+      {/* Profile Banner */}
       <div className="relative w-full h-[300px] sm:h-[380px] md:h-[460px] overflow-hidden bg-[#050505]">
         {bannerBackdropUrl ? (
           <>
@@ -444,7 +472,6 @@ const UserProfileSkeleton = () => (
             )}
           </>
         ) : (
-          /* Default Dark Cinematic Gradient Placeholder */
           <div className="w-full h-full bg-gradient-to-r from-[#0d0d14] via-[#1a0a14] to-[#0a121a] relative overflow-hidden">
             <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,#e50914_0%,transparent_70%)] opacity-20" />
             <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_bottom,#e9c349_0%,transparent_70%)] opacity-10" />
@@ -452,10 +479,7 @@ const UserProfileSkeleton = () => (
           </div>
         )}
 
-        {/* Top dark gradient overlay for fixed header readability */}
         <div className="absolute top-0 inset-x-0 h-28 bg-gradient-to-b from-[#050505]/90 via-[#050505]/40 to-transparent z-10 pointer-events-none" />
-
-        {/* Bottom smooth cinematic gradient overlay fading into solid #050505 */}
         <div className="absolute inset-0 profile-banner-fade z-10 pointer-events-none" />
       </div>
 
@@ -530,11 +554,10 @@ const UserProfileSkeleton = () => (
             <button
               onClick={toggleFollow}
               disabled={followLoading}
-              className={`px-8 py-2.5 rounded-full font-semibold text-sm transition-all duration-200 cursor-pointer border ${
-                following
-                  ? "border-white/20 text-on-surface-variant hover:border-red-400/40 hover:text-red-400"
-                  : "bg-primary text-black border-primary hover:opacity-90 shadow-[0_0_20px_rgba(255,180,170,0.3)]"
-              } disabled:opacity-50`}
+              className={`px-8 py-2.5 rounded-full font-semibold text-sm transition-all duration-200 cursor-pointer border ${following
+                ? "border-white/20 text-on-surface-variant hover:border-red-400/40 hover:text-red-400"
+                : "bg-primary text-black border-primary hover:opacity-90 shadow-[0_0_20px_rgba(255,180,170,0.3)]"
+                } disabled:opacity-50`}
             >
               {followLoading ? "..." : following ? "Following ✓" : "Follow"}
             </button>
@@ -549,7 +572,7 @@ const UserProfileSkeleton = () => (
         {/* Taste Match */}
         {!isOwnProfile && currentUser && (
           <div className="mb-6">
-            <TasteMatchWidget userA={currentUser.id} userB={targetUserId} />
+            <TasteMatchWidget userA={currentUser.id} userB={realUserId} />
           </div>
         )}
 
@@ -584,32 +607,21 @@ const UserProfileSkeleton = () => (
 
         {/* Recent Reviews */}
         {reviews.length > 0 && (
-          <section>
+          <section className="mb-8">
             <h3 className="text-xs text-on-surface-variant uppercase tracking-widest mb-4">Recent Reviews</h3>
             <div className="space-y-4">
-              {reviews.map((rev) => {
+              {reviews.map((rev: any) => {
                 const movie = movieDetails[rev.movie_id];
+                const userRating = ratingsMap[rev.movie_id];
                 return (
-                  <div key={rev.id} className="glass-card p-5 rounded-xl border border-white/10">
-                    <div className="flex gap-4">
-                      {movie && (
-                        <Link href={`/movies?id=${movie.id}`} className="w-14 flex-shrink-0">
-                          <div className="aspect-[2/3] rounded-lg overflow-hidden border border-white/5">
-                            <img
-                              className="w-full h-full object-cover"
-                              alt={movie.title}
-                              src={movie.poster_path ? `https://image.tmdb.org/t/p/w185${movie.poster_path}` : "https://images.unsplash.com/photo-1594909122845-11baa439b7bf?w=185"}
-                            />
-                          </div>
-                        </Link>
-                      )}
-                      <div className="flex-grow">
-                        {movie && <p className="font-semibold text-on-surface text-sm mb-1">{movie.title}</p>}
-                        <p className="text-on-surface-variant italic text-sm line-clamp-3">&ldquo;{rev.review_text}&rdquo;</p>
-                        <p className="text-[10px] text-on-surface-variant opacity-40 mt-2">{timeAgo(rev.created_at)}</p>
-                      </div>
-                    </div>
-                  </div>
+                  <ReviewCard
+                    key={rev.id}
+                    review={rev}
+                    userRating={userRating}
+                    movieTitle={movie?.title || rev.movie_title}
+                    posterPath={movie?.poster_path}
+                    avatarUrl={profile.avatar_url}
+                  />
                 );
               })}
             </div>
@@ -627,8 +639,8 @@ const UserProfileSkeleton = () => (
         {watchedMovies.length > 0 && (
           <section className="mt-8">
             <h3 className="text-xs text-on-surface-variant uppercase tracking-widest mb-3">Recently Watched</h3>
-            
-            {/* Sort/Filter Bar */}
+
+            {/* Sort Bar */}
             <div className="flex items-center gap-2 overflow-x-auto pb-3 mb-4 no-scrollbar scroll-smooth">
               <span className="text-xs text-on-surface-variant uppercase tracking-widest font-semibold flex items-center gap-1 shrink-0 mr-1 opacity-70">
                 <span className="material-symbols-outlined text-[15px]">sort</span>
@@ -640,11 +652,10 @@ const UserProfileSkeleton = () => (
                   <button
                     key={option.id}
                     onClick={() => setWatchedSort(option.id)}
-                    className={`px-3 py-1 rounded-full text-xs font-semibold whitespace-nowrap transition-all duration-200 cursor-pointer border flex items-center gap-1.5 select-none shrink-0 ${
-                      isActive
-                        ? "bg-[#e50914] text-white border-[#e50914] shadow-[0_0_12px_rgba(229,9,20,0.4)] font-bold scale-[1.02]"
-                        : "bg-white/5 text-on-surface-variant border-white/10 hover:bg-white/10 hover:text-white hover:border-white/20"
-                    }`}
+                    className={`px-3 py-1 rounded-full text-xs font-semibold whitespace-nowrap transition-all duration-200 cursor-pointer border flex items-center gap-1.5 select-none shrink-0 ${isActive
+                      ? "bg-[#e50914] text-white border-[#e50914] shadow-[0_0_12px_rgba(229,9,20,0.4)] font-bold scale-[1.02]"
+                      : "bg-white/5 text-on-surface-variant border-white/10 hover:bg-white/10 hover:text-white hover:border-white/20"
+                      }`}
                   >
                     {isActive && <span className="material-symbols-outlined text-[13px] font-bold">check</span>}
                     {option.label}
@@ -657,6 +668,7 @@ const UserProfileSkeleton = () => (
               {sortedWatched.map(item => {
                 const movie = movieDetails[item.movie_id];
                 const poster = movie?.poster_path || item.poster_path;
+                const userRating = ratingsMap[item.movie_id];
                 return (
                   <Link key={item.movie_id} href={`/movies?id=${item.movie_id}`} className="group aspect-[2/3] rounded-xl overflow-hidden border border-white/10 relative bg-white/5 block">
                     <img
@@ -664,6 +676,14 @@ const UserProfileSkeleton = () => (
                       alt={movie?.title || item.movie_title || ""}
                       className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
                     />
+                    {userRating !== undefined && (
+                      <div className="absolute top-2 right-2 flex items-center gap-0.5 bg-black/75 backdrop-blur-md px-1.5 py-0.5 rounded-md border border-[#e9c349]/40 shadow-md z-10">
+                        <span className="text-[#e9c349] text-[11px] leading-none">★</span>
+                        <span className="text-[#e9c349] text-[11px] font-bold leading-none">
+                          {userRating % 1 === 0 ? userRating : userRating.toFixed(1)}
+                        </span>
+                      </div>
+                    )}
                     <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex items-end p-2">
                       <p className="text-[10px] text-white font-bold line-clamp-2 leading-tight">{movie?.title || item.movie_title}</p>
                     </div>
@@ -768,21 +788,8 @@ const UserProfileSkeleton = () => (
               </div>
             )}
           </div>
-
-          {isOwnProfile && (
-            <Link
-              href="/profile"
-              className="flex items-center gap-2 bg-white/10 hover:bg-white/20 border border-white/20 text-white font-semibold px-6 py-3 rounded-full transition-all duration-200 text-sm"
-              onClick={e => e.stopPropagation()}
-            >
-              <span className="material-symbols-outlined text-sm">edit</span>
-              Edit Profile
-            </Link>
-          )}
-          <p className="mt-3 text-white/30 text-xs">Click outside to close</p>
         </div>
       )}
     </div>
   );
 }
-

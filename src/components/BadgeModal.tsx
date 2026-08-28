@@ -84,6 +84,16 @@ export default function BadgeModal({ badge, onClose }: BadgeModalProps) {
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [onClose]);
 
+  // Lock body scroll while modal is open
+  useEffect(() => {
+    if (!badge) return;
+    const originalStyle = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = originalStyle;
+    };
+  }, [badge]);
+
   if (!badge) return null;
 
   // Determine current tier based on currentValue
@@ -130,9 +140,10 @@ export default function BadgeModal({ badge, onClose }: BadgeModalProps) {
       aria-modal="true"
     >
       <div
-        className="relative w-full max-w-md bg-[#121214] border border-white/10 rounded-2xl p-6 shadow-2xl overflow-hidden"
+        className="relative w-full max-w-md bg-[#121214] border border-white/10 rounded-2xl shadow-2xl overflow-y-auto max-h-[85dvh] flex flex-col"
         onClick={(e) => e.stopPropagation()}
       >
+        <div className="p-6 flex flex-col min-h-0">
         {/* Background Subtle Gradient */}
         <div className="absolute -top-24 -right-24 w-48 h-48 bg-primary/10 rounded-full blur-3xl pointer-events-none" />
 
@@ -258,6 +269,7 @@ export default function BadgeModal({ badge, onClose }: BadgeModalProps) {
               </div>
             );
           })}
+        </div>
         </div>
       </div>
     </div>

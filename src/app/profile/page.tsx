@@ -157,6 +157,7 @@ export default function ProfilePage() {
   const [profileEditSubmitting, setProfileEditSubmitting] = useState(false);
 
   // Followers / Following
+  const [profileUserId, setProfileUserId] = useState<string | null>(null);
   const [followCounts, setFollowCounts] = useState({ followers: 0, following: 0 });
   const [followListModal, setFollowListModal] = useState<{ type: "followers" | "following"; users: any[]; loading: boolean } | null>(null);
 
@@ -215,38 +216,23 @@ export default function ProfilePage() {
 
     async function fetchUserData() {
       try {
-        const [watchlistRes, ratingsRes, reviewsRes] = await Promise.all([
-          supabase.from("watchlist").select("*").eq("user_id", user.id),
-          supabase.from("ratings").select("*").eq("user_id", user.id).order("created_at", { ascending: false }),
-          supabase.from("reviews").select("*").eq("user_id", user.id).order("created_at", { ascending: false })
-        ]);
-
-        // Fetch follow counts
+        // Resolve real user_id from profile API
+        let realUserId = user.id;
         try {
-          const fRes = await fetch(`/api/follows?userId=${user.id}`);
-          if (fRes.ok) {
-            const fData = await fRes.json();
-            setFollowCounts({ followers: fData.followerCount || 0, following: fData.followingCount || 0 });
-          }
-        } catch {}
-
-        const watchlistData = watchlistRes.data || [];
-        const ratingsData = ratingsRes.data || [];
-        const reviewsData = reviewsRes.data || [];
-
-        // Fetch watched movies and profile via API routes to bypass RLS issues
-        let watchedData: any[] = [];
-        try {
-          const wRes = await fetch(`/api/watched?userId=${user.id}`);
-          if (wRes.ok) watchedData = await wRes.json();
-        } catch (e) {
-          console.error("Failed to fetch watched list via API", e);
-        }
-
-        try {
-          const pRes = await fetch(`/api/profile/upload?userId=${user.id}`);
+          const isUserId =
+            /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(user.id) ||
+            /^cred_[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(user.id) ||
+            /^\d+$/.test(user.id);
+          const profileUrl = isUserId
+            ? `/api/user-profile?userId=${user.id}`
+            : `/api/user-profile?username=${encodeURIComponent(user.id)}`;
+          const pRes = await fetch(profileUrl);
           if (pRes.ok) {
             const pData = await pRes.json();
+            if (pData?.user_id) {
+              realUserId = pData.user_id;
+              setProfileUserId(pData.user_id);
+            }
             if (pData?.avatar_url) setAvatarUrl(pData.avatar_url);
             if (pData?.bio != null) setBio(pData.bio);
             if (pData?.username != null) setUsername(pData.username);
@@ -255,25 +241,34 @@ export default function ProfilePage() {
           console.error("Failed to fetch profile via API", e);
         }
 
-        // Fetch favorites
-        let favoritesData: any[] = [];
-        try {
-          const fRes = await fetch(`/api/favorites?userId=${user.id}`);
-          if (fRes.ok) {
-            favoritesData = await fRes.json();
-          }
-        } catch (e) {
-          console.error("Failed to fetch favorites", e);
+        const [watchlistRes, ratingsRes, reviewsRes, followCountsRes, watchedData, favoritesData] = await Promise.all([
+          supabase.from("watchlist").select("*").eq("user_id", realUserId),
+          supabase.from("ratings").select("*").eq("user_id", realUserId).order("created_at", { ascending: false }),
+          supabase.from("reviews").select("*").eq("user_id", realUserId).order("created_at", { ascending: false }),
+          fetch(`/api/follows?userId=${realUserId}`).then(r => r.ok ? r.json() : null).catch(() => null),
+          fetch(`/api/watched?userId=${realUserId}`).then(r => r.ok ? r.json() : []).catch(() => []),
+          fetch(`/api/favorites?userId=${realUserId}`).then(r => r.ok ? r.json() : []).catch(() => []),
+        ]);
+
+        if (followCountsRes) {
+          setFollowCounts({
+            followers: followCountsRes.followerCount || 0,
+            following: followCountsRes.followingCount || 0,
+          });
         }
 
+        const watchlistData = watchlistRes.data || [];
+        const ratingsData = ratingsRes.data || [];
+        const reviewsData = reviewsRes.data || [];
+
         const favsMap: Record<string, any> = {};
-        favoritesData.forEach(fav => {
+        (favoritesData || []).forEach((fav: any) => {
           favsMap[fav.slot_type] = fav;
         });
         setFavorites(favsMap);
 
         setWatchlist(watchlistData);
-        setWatched(watchedData);
+        setWatched(watchedData || []);
         setRatings(ratingsData);
         setReviews(reviewsData);
 
@@ -281,7 +276,7 @@ export default function ProfilePage() {
         const uniqueIds = new Set<string>();
         ratingsData.forEach(r => uniqueIds.add(r.movie_id));
         reviewsData.forEach(r => uniqueIds.add(r.movie_id));
-        watchedData.forEach(w => uniqueIds.add(w.movie_id));
+        (watchedData || []).forEach((w: any) => uniqueIds.add(w.movie_id));
         watchlistData.forEach(wl => uniqueIds.add(wl.movie_id));
 
         const details: Record<string, any> = {};
@@ -532,14 +527,22 @@ export default function ProfilePage() {
   const openFollowList = async (type: "followers" | "following") => {
     setFollowListModal({ type, users: [], loading: true });
     try {
-      const res = await fetch(`/api/follows?userId=${user.id}`);
+      const realUserId = profileUserId || user?.id;
+      const res = await fetch(`/api/follows?userId=${realUserId}`);
       const data = await res.json();
       const ids: string[] = type === "followers" ? (data.followers || []) : (data.following || []);
       // Fetch each user's profile
       const profiles = await Promise.all(
         ids.map(async (uid: string) => {
           try {
-            const r = await fetch(`/api/user-profile?userId=${uid}`);
+            const isUserId =
+              /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(uid) ||
+              /^cred_[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(uid) ||
+              /^\d+$/.test(uid);
+            const profileUrl = isUserId
+              ? `/api/user-profile?userId=${uid}`
+              : `/api/user-profile?username=${encodeURIComponent(uid)}`;
+            const r = await fetch(profileUrl);
             if (r.ok) return await r.json();
           } catch {}
           return null;

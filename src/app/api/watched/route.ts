@@ -9,6 +9,7 @@ export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const userId = searchParams.get("userId");
   const movieId = searchParams.get("movieId");
+  const contentType = searchParams.get("contentType") || "movie";
 
   if (!userId) {
     return NextResponse.json({ error: "Missing userId" }, { status: 400 });
@@ -16,7 +17,7 @@ export async function GET(request: Request) {
 
   let query = supabaseAdmin.from("watched").select("*").eq("user_id", userId);
   if (movieId) {
-    query = query.eq("movie_id", movieId);
+    query = query.eq("movie_id", movieId).eq("content_type", contentType);
   }
 
   const { data, error } = await query;
@@ -31,13 +32,14 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const { user_id, movie_id, movie_title, poster_path } = body;
+    const { user_id, movie_id, movie_title, poster_path, content_type = "movie" } = body;
 
     const { data, error } = await supabaseAdmin.from("watched").insert({
       user_id,
       movie_id,
       movie_title,
       poster_path,
+      content_type,
       watched_at: new Date().toISOString()
     }).select();
 
@@ -52,6 +54,7 @@ export async function DELETE(request: Request) {
   const { searchParams } = new URL(request.url);
   const userId = searchParams.get("userId");
   const movieId = searchParams.get("movieId");
+  const contentType = searchParams.get("contentType") || "movie";
 
   if (!userId || !movieId) {
     return NextResponse.json({ error: "Missing userId or movieId" }, { status: 400 });
@@ -61,7 +64,8 @@ export async function DELETE(request: Request) {
     .from("watched")
     .delete()
     .eq("user_id", userId)
-    .eq("movie_id", movieId);
+    .eq("movie_id", movieId)
+    .eq("content_type", contentType);
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   return NextResponse.json({ success: true });

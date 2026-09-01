@@ -76,8 +76,8 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "TMDB API key is not configured" }, { status: 500 });
   }
 
-  // Handle movie searches with query normalization and variant merging
-  if ((endpoint === "search/movie" || endpoint === "search/multi") && searchParams.has("query")) {
+  // Handle searches with query normalization and variant merging
+  if ((endpoint === "search/movie" || endpoint === "search/tv" || endpoint === "search/multi") && searchParams.has("query")) {
     const rawQuery = searchParams.get("query") || "";
     const queryVariants = getSearchQueryVariants(rawQuery);
 

@@ -198,13 +198,14 @@ export default function Recommendations() {
     const delayDebounceFn = setTimeout(async () => {
       setSearching(true);
       try {
-        const res = await fetch(`/api/tmdb?endpoint=search/movie&query=${encodeURIComponent(searchQuery)}`);
+        const res = await fetch(`/api/tmdb?endpoint=search/multi&query=${encodeURIComponent(searchQuery)}`);
         if (res.ok) {
           const data = await res.json();
-          setSearchResults(data.results || []);
+          const filtered = (data.results || []).filter((item: any) => item.media_type === "movie" || item.media_type === "tv" || (!item.media_type && (item.title || item.name)));
+          setSearchResults(filtered);
         }
       } catch (err) {
-        console.error("Error searching movies:", err);
+        console.error("Error searching movies and TV shows:", err);
       } finally {
         setSearching(false);
       }
@@ -346,22 +347,27 @@ export default function Recommendations() {
               </div>
             ) : searchResults.length > 0 ? (
               <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-stack-md">
-                {searchResults.map((movie: any) => {
-                  const rating = movie.vote_average ? movie.vote_average.toFixed(1) : "N/A";
-                  const year = movie.release_date ? new Date(movie.release_date).getFullYear() : "";
-                  const genres = movie.genre_ids ? movie.genre_ids.slice(0, 2).map((id: number) => GENRE_MAP[id]).filter(Boolean).join(", ") : "";
-                  const isSaved = watchlistIds.has(String(movie.id));
-                  const isLoading = watchlistLoadingId === String(movie.id);
+                {searchResults.map((item: any) => {
+                  const isTv = item.media_type === "tv" || (item.name && !item.title);
+                  const rating = item.vote_average ? item.vote_average.toFixed(1) : "N/A";
+                  const dateStr = item.release_date || item.first_air_date || "";
+                  const year = dateStr ? new Date(dateStr).getFullYear() : "";
+                  const genres = item.genre_ids ? item.genre_ids.slice(0, 2).map((id: number) => GENRE_MAP[id]).filter(Boolean).join(", ") : "";
+                  const isSaved = watchlistIds.has(String(item.id));
+                  const isLoading = watchlistLoadingId === String(item.id);
 
                   return (
-                    <div key={movie.id} className="group/card relative block animate-fade-in">
-                      <Link href={`/movies?id=${movie.id}`} className="cursor-pointer block">
+                    <div key={item.id} className="group/card relative block animate-fade-in">
+                      <Link href={isTv ? `/tv?id=${item.id}` : `/movies?id=${item.id}`} className="cursor-pointer block">
                         <div className="aspect-[2/3] rounded-lg overflow-hidden border border-white/5 relative mb-2 bg-white/5">
                           <img
                             className="w-full h-full object-cover group-hover/card:scale-105 transition-transform duration-500"
-                            alt={movie.title || "Movie Poster"}
-                            src={movie.poster_path ? `https://image.tmdb.org/t/p/w342${movie.poster_path}` : "https://images.unsplash.com/photo-1594909122845-11baa439b7bf?w=500"}
+                            alt={item.title || item.name || "Poster"}
+                            src={item.poster_path ? `https://image.tmdb.org/t/p/w342${item.poster_path}` : "https://images.unsplash.com/photo-1594909122845-11baa439b7bf?w=500"}
                           />
+                          <span className={`absolute top-2 left-2 z-10 text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded backdrop-blur-md shadow-md ${isTv ? "bg-purple-600/90 text-white border border-purple-400/30" : "bg-primary/90 text-black border border-primary/30"}`}>
+                            {isTv ? "TV Show" : "Movie"}
+                          </span>
                           <div className="absolute bottom-0 left-0 right-0 h-1/2 bg-gradient-to-t from-black to-transparent"></div>
                           <div className="absolute bottom-2 left-2 flex items-center gap-1 text-secondary text-[10px]">
                             <span className="material-symbols-outlined text-[12px]" style={{ fontVariationSettings: "'FILL' 1" }}>
@@ -370,7 +376,7 @@ export default function Recommendations() {
                             {rating}
                           </div>
                         </div>
-                        <span className="block text-body-md font-bold truncate group-hover/card:text-primary transition-colors">{movie.title || movie.name}</span>
+                        <span className="block text-body-md font-bold truncate group-hover/card:text-primary transition-colors">{item.title || item.name}</span>
                         <span className="block text-label-sm text-on-surface-variant opacity-60 truncate">
                           {year ? `${year} • ` : ""}{genres}
                         </span>
@@ -381,7 +387,7 @@ export default function Recommendations() {
                         onClick={(e) => {
                           e.preventDefault();
                           e.stopPropagation();
-                          handleWatchlistToggle(movie);
+                          handleWatchlistToggle(item);
                         }}
                         disabled={isLoading}
                         className="absolute top-2 right-2 z-10 w-8 h-8 rounded-full bg-black/60 hover:bg-black/80 backdrop-blur-md flex items-center justify-center text-white border border-white/10 transition-all duration-200 cursor-pointer shadow-lg hover:scale-110 active:scale-95 group-hover/card:opacity-100 md:opacity-0"

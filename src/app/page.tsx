@@ -93,6 +93,7 @@ export default function Home() {
   const [heroMovie, setHeroMovie] = useState<any>(null);
   const [trendingMovies, setTrendingMovies] = useState<any[]>([]);
   const [topRatedMovies, setTopRatedMovies] = useState<any[]>([]);
+  const [trendingTv, setTrendingTv] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
  
   const [page, setPage] = useState(1);
@@ -147,13 +148,14 @@ export default function Home() {
     const delayDebounceFn = setTimeout(async () => {
       setSearching(true);
       try {
-        const res = await fetch(`/api/tmdb?endpoint=search/movie&query=${encodeURIComponent(searchQuery)}`);
+        const res = await fetch(`/api/tmdb?endpoint=search/multi&query=${encodeURIComponent(searchQuery)}`);
         if (res.ok) {
           const data = await res.json();
-          setSearchResults(data.results || []);
+          const filtered = (data.results || []).filter((item: any) => item.media_type === "movie" || item.media_type === "tv" || (!item.media_type && (item.title || item.name)));
+          setSearchResults(filtered);
         }
       } catch (err) {
-        console.error("Error searching movies on home page:", err);
+        console.error("Error searching movies and TV shows on home page:", err);
       } finally {
         setSearching(false);
       }
@@ -277,13 +279,15 @@ export default function Home() {
   useEffect(() => {
     async function fetchData() {
       try {
-        const [trendingRes, topRatedRes] = await Promise.all([
+        const [trendingRes, topRatedRes, trendingTvRes] = await Promise.all([
           fetch("/api/tmdb?endpoint=trending/movie/day"),
-          fetch("/api/tmdb?endpoint=movie/top_rated")
+          fetch("/api/tmdb?endpoint=movie/top_rated"),
+          fetch("/api/tmdb?endpoint=trending/tv/week")
         ]);
 
         const trendingData = await trendingRes.json();
         const topRatedData = await topRatedRes.json();
+        const trendingTvData = await trendingTvRes.json();
 
         if (trendingData.results && trendingData.results.length > 0) {
           setHeroMovie(trendingData.results[0]);
@@ -291,6 +295,9 @@ export default function Home() {
         }
         if (topRatedData.results) {
           setTopRatedMovies(topRatedData.results.slice(0, 5)); // Top 5 movies
+        }
+        if (trendingTvData.results) {
+          setTrendingTv(trendingTvData.results.slice(0, 10)); // Top 10 TV shows
         }
       } catch (error) {
         console.error("Error fetching home page data:", error);
@@ -438,30 +445,34 @@ export default function Home() {
               </div>
             ) : searchResults.length > 0 ? (
               <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-stack-md animate-fade-in">
-                {searchResults.map((movie: any) => {
-                  const isSaved = watchlistIds.has(String(movie.id));
-                  const isLoading = watchlistLoadingId === String(movie.id);
+                {searchResults.map((item: any) => {
+                  const isTv = item.media_type === "tv" || (item.name && !item.title);
+                  const isSaved = watchlistIds.has(String(item.id));
+                  const isLoading = watchlistLoadingId === String(item.id);
 
                   return (
-                    <div key={movie.id} className="group/card relative block animate-fade-in">
-                      <Link href={`/movies?id=${movie.id}`} className="cursor-pointer block">
+                    <div key={item.id} className="group/card relative block animate-fade-in">
+                      <Link href={isTv ? `/tv?id=${item.id}` : `/movies?id=${item.id}`} className="cursor-pointer block">
                         <div className="relative aspect-[2/3] rounded-xl overflow-hidden glass-panel mb-stack-sm bg-white/5">
                           <img
-                            alt={movie.title || "Movie Poster"}
+                            alt={item.title || item.name || "Poster"}
                             className="w-full h-full object-cover transition-transform duration-700 group-hover/card:scale-105"
-                            src={movie.poster_path ? `https://image.tmdb.org/t/p/w500${movie.poster_path}` : "https://images.unsplash.com/photo-1594909122845-11baa439b7bf?w=500"}
+                            src={item.poster_path ? `https://image.tmdb.org/t/p/w500${item.poster_path}` : "https://images.unsplash.com/photo-1594909122845-11baa439b7bf?w=500"}
                           />
+                          <span className={`absolute top-2 left-2 z-10 text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded backdrop-blur-md shadow-md ${isTv ? "bg-purple-600/90 text-white border border-purple-400/30" : "bg-primary/90 text-black border border-primary/30"}`}>
+                            {isTv ? "TV Show" : "Movie"}
+                          </span>
                           <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-0 group-hover/card:opacity-100 transition-opacity flex flex-col justify-end p-stack-sm">
                             <span className="text-secondary text-sm flex items-center gap-1 font-bold">
                               <span className="material-symbols-outlined text-xs" style={{ fontVariationSettings: "'FILL' 1" }}>
                                 star
                               </span>
-                              {movie.vote_average ? movie.vote_average.toFixed(1) : "N/A"}
+                              {item.vote_average ? item.vote_average.toFixed(1) : "N/A"}
                             </span>
                           </div>
                         </div>
                         <h4 className="text-body-md font-semibold group-hover/card:text-primary truncate transition-colors font-body-md">
-                          {movie.title || movie.name}
+                          {item.title || item.name}
                         </h4>
                       </Link>
                       
@@ -470,7 +481,7 @@ export default function Home() {
                         onClick={(e) => {
                           e.preventDefault();
                           e.stopPropagation();
-                          handleWatchlistToggle(movie);
+                          handleWatchlistToggle(item);
                         }}
                         disabled={isLoading}
                         className="absolute top-2 right-2 z-10 w-8 h-8 rounded-full bg-black/60 hover:bg-black/80 backdrop-blur-md flex items-center justify-center text-white border border-white/10 transition-all duration-200 cursor-pointer shadow-lg hover:scale-110 active:scale-95 group-hover/card:opacity-100 md:opacity-0 animate-fade-in"
@@ -894,6 +905,77 @@ export default function Home() {
               </div>
             </div>
           )}
+        </section>
+
+        {/* Trending TV Shows Carousel */}
+        <section className="mt-stack-xl px-container-margin max-w-screen-xl mx-auto">
+          <div className="flex justify-between items-end mb-stack-md">
+            <h3 className="font-headline-lg text-headline-lg font-serif">Trending TV Shows</h3>
+          </div>
+
+          <Carousel containerClassName="gap-gutter pb-4 -mx-container-margin px-container-margin md:mx-0 md:px-0 snap-x snap-mandatory scroll-px-container-margin md:scroll-px-0">
+            {loading ? (
+              Array.from({ length: 6 }).map((_, i) => <PosterSkeleton key={i} />)
+            ) : trendingTv.length > 0 ? (
+              trendingTv.map((show: any) => {
+                const isSaved = watchlistIds.has(String(show.id));
+                const isLoading = watchlistLoadingId === String(show.id);
+
+                return (
+                  <div key={show.id} className="w-[160px] md:w-[200px] flex-shrink-0 group/card relative snap-start">
+                    <Link href={`/tv?id=${show.id}`} className="cursor-pointer block">
+                      <div className="relative aspect-[2/3] rounded-xl overflow-hidden glass-panel mb-stack-sm bg-white/5">
+                        <Image
+                          alt={show.name || "TV Show Poster"}
+                          className="object-cover transition-transform duration-700 group-hover/card:scale-105"
+                          src={show.poster_path ? `https://image.tmdb.org/t/p/w500${show.poster_path}` : "https://images.unsplash.com/photo-1594909122845-11baa439b7bf?w=500"}
+                          fill
+                          loading="lazy"
+                          sizes="(max-width: 768px) 160px, 200px"
+                          draggable={false}
+                        />
+                        <span className="absolute top-2 left-2 z-10 text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded bg-purple-600/90 text-white backdrop-blur-md border border-purple-400/30 shadow-md">
+                          TV Show
+                        </span>
+                        <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-0 group-hover/card:opacity-100 transition-opacity flex flex-col justify-end p-stack-sm">
+                          <span className="text-secondary text-sm flex items-center gap-1 font-bold">
+                            <span className="material-symbols-outlined text-xs" style={{ fontVariationSettings: "'FILL' 1" }}>
+                              star
+                            </span>
+                            {show.vote_average ? show.vote_average.toFixed(1) : "N/A"}
+                          </span>
+                        </div>
+                      </div>
+                      <h4 className="text-body-md font-semibold group-hover/card:text-primary truncate transition-colors font-body-md">
+                        {show.name || show.title}
+                      </h4>
+                    </Link>
+
+                    {/* Watchlist Toggle Button Overlay */}
+                    <button
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        handleWatchlistToggle(show);
+                      }}
+                      disabled={isLoading}
+                      className="absolute top-2 right-2 z-10 w-8 h-8 rounded-full bg-black/60 hover:bg-black/80 backdrop-blur-md flex items-center justify-center text-white border border-white/10 transition-all duration-200 cursor-pointer shadow-lg hover:scale-110 active:scale-95 group-hover/card:opacity-100 md:opacity-0 animate-fade-in"
+                    >
+                      {isLoading ? (
+                        <div className="w-3 h-3 border-2 border-primary border-t-transparent rounded-full animate-spin"></div>
+                      ) : (
+                        <span className="material-symbols-outlined text-sm" style={{ fontVariationSettings: isSaved ? "'FILL' 1" : "" }}>
+                          {isSaved ? "bookmark" : "bookmark_border"}
+                        </span>
+                      )}
+                    </button>
+                  </div>
+                );
+              })
+            ) : (
+              <p className="text-on-surface-variant py-4">No trending TV shows available.</p>
+            )}
+          </Carousel>
         </section>
 
         {/* Top Rated (Numbered Posters) */}

@@ -167,7 +167,7 @@ function MovieDetailsView({ movieId }: { movieId: string }) {
       .then((data) => {
         if (data?.poster_path) setPreferredPoster(data.poster_path);
       })
-      .catch(() => {});
+      .catch(() => { });
   }, [user, movieId]);
 
   const handlePosterSelect = useCallback((posterPath: string | null) => {
@@ -324,7 +324,8 @@ function MovieDetailsView({ movieId }: { movieId: string }) {
           movie_id: movieId,
           rating: ratingVal,
           created_at: new Date().toISOString(),
-        }, { onConflict: "user_id,movie_id" });
+          content_type: "movie",
+        }, { onConflict: "user_id,movie_id,content_type" });
 
       if (!error) {
         setUserRating(ratingVal);
@@ -350,10 +351,10 @@ function MovieDetailsView({ movieId }: { movieId: string }) {
           .order("created_at", { ascending: false });
         if (data && data.length > 0) {
           setDbReviews(data);
-          
+
           // Fetch avatars & ratings for reviewers
           const userIds = Array.from(new Set(data.map((r: any) => r.user_id)));
-          
+
           const [profilesRes, ratingsRes] = await Promise.all([
             supabase.from("profiles").select("user_id, avatar_url").in("user_id", userIds),
             supabase.from("ratings").select("user_id, rating").eq("movie_id", movieId).in("user_id", userIds)
@@ -414,7 +415,7 @@ function MovieDetailsView({ movieId }: { movieId: string }) {
               message: `${actorName} found your review of "${movieTitle}" helpful`,
               link: `/movies?id=${movieId}`,
             }),
-          }).catch(() => {});
+          }).catch(() => { });
         }
       }
       return next;
@@ -551,7 +552,7 @@ function MovieDetailsView({ movieId }: { movieId: string }) {
             if (anyVideo) setTrailerKey(anyVideo.key);
           }
         }
-        
+
         // Use TMDB reviews if available, otherwise set default fallback reviews
         if (reviewsData.results && reviewsData.results.length > 0) {
           setReviews(reviewsData.results.slice(0, 2));
@@ -640,7 +641,7 @@ function MovieDetailsView({ movieId }: { movieId: string }) {
                 src={getAvatarUrlOrDefault(user?.image)}
               />
             </button>
-            
+
             {showProfileMenu && (
               <div className="absolute right-0 mt-2 w-56 rounded-xl bg-[#131313]/90 border border-white/10 backdrop-blur-md p-2 shadow-[0_10px_30px_rgba(0,0,0,0.5)] z-50 animate-fade-in text-left">
                 <div className="px-3 py-2 border-b border-white/10 mb-1">
@@ -771,11 +772,10 @@ function MovieDetailsView({ movieId }: { movieId: string }) {
                 <button
                   onClick={handleWatchlistToggle}
                   disabled={watchlistLoading}
-                  className={`px-6 py-3 rounded-full font-title-lg flex items-center gap-2 active:scale-95 transition-all duration-200 cursor-pointer border-none ${
-                    isInWatchlist
-                      ? "bg-primary text-black shadow-[0_0_20px_rgba(255,180,170,0.35)]"
-                      : "bg-primary-container text-on-primary-container"
-                  }`}
+                  className={`px-6 py-3 rounded-full font-title-lg flex items-center gap-2 active:scale-95 transition-all duration-200 cursor-pointer border-none ${isInWatchlist
+                    ? "bg-primary text-black shadow-[0_0_20px_rgba(255,180,170,0.35)]"
+                    : "bg-primary-container text-on-primary-container"
+                    }`}
                 >
                   <span className="material-symbols-outlined" style={{ fontVariationSettings: isInWatchlist ? "'FILL' 1" : "" }}>
                     {isInWatchlist ? "bookmark_added" : "bookmark_add"}
@@ -785,11 +785,10 @@ function MovieDetailsView({ movieId }: { movieId: string }) {
                 <button
                   onClick={handleWatchedToggle}
                   disabled={watchedLoading}
-                  className={`px-6 py-3 rounded-full font-title-lg flex items-center gap-2 active:scale-95 transition-all duration-200 cursor-pointer border-none ${
-                    isWatched
-                      ? "bg-secondary text-black shadow-[0_0_20px_rgba(233,195,73,0.35)]"
-                      : "bg-primary-container text-on-primary-container"
-                  }`}
+                  className={`px-6 py-3 rounded-full font-title-lg flex items-center gap-2 active:scale-95 transition-all duration-200 cursor-pointer border-none ${isWatched
+                    ? "bg-secondary text-black shadow-[0_0_20px_rgba(233,195,73,0.35)]"
+                    : "bg-primary-container text-on-primary-container"
+                    }`}
                 >
                   <span className="material-symbols-outlined" style={{ fontVariationSettings: isWatched ? "'FILL' 1" : "" }}>
                     {isWatched ? "visibility" : "visibility_off"}
@@ -812,11 +811,10 @@ function MovieDetailsView({ movieId }: { movieId: string }) {
                     setHoverRating(userRating || 5);
                     setShowRatingModal(true);
                   }}
-                  className={`px-6 py-3 rounded-full font-title-lg flex items-center gap-2 active:scale-95 transition-all duration-200 glass-card cursor-pointer border ${
-                    userRating
-                      ? "border-primary text-primary shadow-[0_0_15px_rgba(255,180,170,0.15)]"
-                      : "border-secondary text-secondary"
-                  }`}
+                  className={`px-6 py-3 rounded-full font-title-lg flex items-center gap-2 active:scale-95 transition-all duration-200 glass-card cursor-pointer border ${userRating
+                    ? "border-primary text-primary shadow-[0_0_15px_rgba(255,180,170,0.15)]"
+                    : "border-secondary text-secondary"
+                    }`}
                 >
                   <span className="material-symbols-outlined" style={{ fontVariationSettings: "'FILL' 1" }}>
                     grade
@@ -1272,7 +1270,7 @@ function WatchlistView() {
                   setPosterPrefs(map);
                 }
               })
-              .catch(() => {});
+              .catch(() => { });
           }
         }
       } catch (err) {
@@ -1335,7 +1333,7 @@ function WatchlistView() {
           </div>
         )}
       </main>
-      
+
       {/* Bottom Navigation Bar */}
       <nav className="fixed bottom-0 left-0 right-0 h-[60px] z-50 mb-container-margin mx-container-margin rounded-full bg-surface/40 backdrop-blur-[100px] border border-white/10 flex justify-around items-center px-6 shadow-[0_0_20px_rgba(255,180,170,0.1)] max-w-md md:left-1/2 md:-translate-x-1/2">
         <Link className="flex items-center justify-center text-on-surface-variant opacity-60 hover:text-primary transition-colors active:scale-90" href="/"><span className="material-symbols-outlined">home</span></Link>

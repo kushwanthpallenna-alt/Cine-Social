@@ -27,17 +27,6 @@ const SORT_OPTIONS: { id: SortOption; label: string }[] = [
   { id: "title_asc", label: "Title (A-Z)" },
 ];
 
-function timeAgo(dateStr: string): string {
-  const diff = Date.now() - new Date(dateStr).getTime();
-  const mins = Math.floor(diff / 60000);
-  if (mins < 1) return "just now";
-  if (mins < 60) return `${mins}m ago`;
-  const hrs = Math.floor(mins / 60);
-  if (hrs < 24) return `${hrs}h ago`;
-  const days = Math.floor(hrs / 24);
-  return `${days}d ago`;
-}
-
 function TasteMatchWidget({ userA, userB }: { userA: string; userB: string }) {
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
@@ -80,7 +69,7 @@ function TasteMatchWidget({ userA, userB }: { userA: string; userB: string }) {
           <span className="material-symbols-outlined text-on-surface-variant text-sm">compare_arrows</span>
           <h3 className="text-xs text-on-surface-variant uppercase tracking-widest font-semibold">Taste Match</h3>
         </div>
-        <p className="text-on-surface-variant text-sm italic">Not enough shared ratings yet — rate some movies to compare tastes.</p>
+        <p className="text-on-surface-variant text-sm italic">Not enough shared ratings yet — rate some movies or TV shows to compare tastes.</p>
       </div>
     );
   }
@@ -178,13 +167,12 @@ export default function PublicProfilePage() {
   const [followCounts, setFollowCounts] = useState({ followers: 0, following: 0 });
   const [reviews, setReviews] = useState<any[]>([]);
   const [ratings, setRatings] = useState<any[]>([]);
-  const [movieDetails, setMovieDetails] = useState<Record<string, any>>({});
-  const [watchCount, setWatchCount] = useState(0);
-  const [watchlistCount, setWatchlistCount] = useState(0);
-  const [reviewCount, setReviewCount] = useState(0);
+  const [mediaDetails, setMediaDetails] = useState<Record<string, any>>({});
+  const [watchItems, setWatchItems] = useState<any[]>([]);
+  const [watchlistItems, setWatchlistItems] = useState<any[]>([]);
   const [favorites, setFavorites] = useState<any[]>([]);
-  const [watchedMovies, setWatchedMovies] = useState<any[]>([]);
   const [watchedSort, setWatchedSort] = useState<SortOption>("default");
+  const [mediaFilter, setMediaFilter] = useState<"movie" | "tv">("movie");
   const [followListModal, setFollowListModal] = useState<{ type: "followers" | "following"; users: any[]; loading: boolean } | null>(null);
   const [avatarModalOpen, setAvatarModalOpen] = useState(false);
   const [bannerBackdropUrl, setBannerBackdropUrl] = useState<string | null>(null);
@@ -193,21 +181,27 @@ export default function PublicProfilePage() {
   const realUserId = profile?.user_id || targetUserId;
   const isOwnProfile = currentUser?.id === realUserId;
 
-  // Map of movie_id -> rating number (1-10)
+  // Map of (type_movieId) -> rating number (1-10)
   const ratingsMap = useMemo(() => {
     const map: Record<string, number> = {};
     ratings.forEach((r: any) => {
       if (r?.movie_id && r?.rating) {
+        const type = r.content_type || "movie";
+        map[`${type}_${r.movie_id}`] = r.rating;
         map[r.movie_id] = r.rating;
       }
     });
     return map;
   }, [ratings]);
 
-  // Fetch TMDB backdrop_path for Film 1 in Top 5
+  // Fetch TMDB backdrop_path for Film 1 or TV 1 in Top 5
   useEffect(() => {
     const film1 = favorites.find((f: any) => f.slot_type === "movie_1");
-    if (!film1?.tmdb_id) {
+    const tv1 = favorites.find((f: any) => f.slot_type === "tv_1");
+    const bannerItem = film1 || tv1;
+    const isTv = !film1 && !!tv1;
+
+    if (!bannerItem?.tmdb_id) {
       setBannerBackdropUrl(null);
       setBannerMovieTitle(null);
       return;
@@ -216,14 +210,15 @@ export default function PublicProfilePage() {
     let isMounted = true;
     async function fetchBannerBackdrop() {
       try {
-        const res = await fetch(`/api/tmdb?endpoint=movie/${film1.tmdb_id}&append_to_response=images`);
+        const endpoint = isTv ? `tv/${bannerItem.tmdb_id}` : `movie/${bannerItem.tmdb_id}`;
+        const res = await fetch(`/api/tmdb?endpoint=${endpoint}&append_to_response=images`);
         if (res.ok) {
           const data = await res.json();
           if (!isMounted) return;
           const backdropPath = data.backdrop_path || data.images?.backdrops?.[0]?.file_path;
           if (backdropPath) {
             setBannerBackdropUrl(`https://image.tmdb.org/t/p/w1280${backdropPath}`);
-            setBannerMovieTitle(data.title || film1.name);
+            setBannerMovieTitle(data.title || data.name || bannerItem.name);
           } else {
             setBannerBackdropUrl(null);
             setBannerMovieTitle(null);
@@ -267,48 +262,58 @@ export default function PublicProfilePage() {
 
         const activeId = profileData.user_id;
 
-        const [followStatusRes, followCountsRes, reviewsRes, ratingsRes, watchedRes, watchlistRes, watchedListRes, favoritesRes] = await Promise.all([
+        const [followStatusRes, followCountsRes, reviewsRes, ratingsRes, watchedRes, watchlistRes, favoritesRes] = await Promise.all([
           currentUser?.id && currentUser?.id !== activeId
             ? fetch(`/api/follows?followerId=${currentUser.id}&followingId=${activeId}`).then((r) => r.json())
             : Promise.resolve(null),
           fetch(`/api/follows?userId=${activeId}`).then((r) => r.json()),
-          supabase.from("reviews").select("*").eq("user_id", activeId).order("created_at", { ascending: false }).limit(10),
+          supabase.from("reviews").select("*").eq("user_id", activeId).order("created_at", { ascending: false }).limit(20),
           supabase.from("ratings").select("*").eq("user_id", activeId).order("created_at", { ascending: false }),
-          supabase.from("watched").select("id", { count: "exact" }).eq("user_id", activeId),
-          supabase.from("watchlist").select("id", { count: "exact" }).eq("user_id", activeId),
-          supabase.from("watched").select("movie_id, poster_path, movie_title, watched_at").eq("user_id", activeId).order("watched_at", { ascending: false }).limit(30),
+          supabase.from("watched").select("*").eq("user_id", activeId).order("watched_at", { ascending: false }),
+          supabase.from("watchlist").select("*").eq("user_id", activeId),
           fetch(`/api/favorites?userId=${activeId}`).then(r => r.ok ? r.json() : []),
         ]);
 
         if (followStatusRes) setFollowing(followStatusRes.isFollowing);
         setFollowCounts({ followers: followCountsRes?.followerCount || 0, following: followCountsRes?.followingCount || 0 });
-        setWatchCount(watchedRes?.count || 0);
-        setWatchlistCount(watchlistRes?.count || 0);
 
         const revs = reviewsRes.data || [];
         const rats = ratingsRes.data || [];
+        const watchedList = watchedRes.data || [];
+        const watchlistList = watchlistRes.data || [];
+
         setReviews(revs);
         setRatings(rats);
-        setReviewCount(revs.length);
-
-        const watchedList = watchedListRes.data || [];
-        setWatchedMovies(watchedList);
+        setWatchItems(watchedList);
+        setWatchlistItems(watchlistList);
 
         const favsArray = Array.isArray(favoritesRes) ? favoritesRes : [];
         setFavorites(favsArray);
 
-        const ids = Array.from(new Set([
-          ...revs.map((r: any) => r.movie_id),
-          ...watchedList.map((w: any) => w.movie_id),
-        ]));
+        // Fetch TMDB details for movies and TV shows
+        const uniqueMedia = new Map<string, { id: string; type: "movie" | "tv" }>();
+        const registerMedia = (item: any) => {
+          if (!item?.movie_id) return;
+          const id = String(item.movie_id);
+          const type: "movie" | "tv" = item.content_type === "tv" ? "tv" : "movie";
+          uniqueMedia.set(`${type}_${id}`, { id, type });
+        };
+
+        revs.forEach(registerMedia);
+        watchedList.forEach(registerMedia);
+
         const det: Record<string, any> = {};
-        await Promise.all(ids.map(async (id: any) => {
+        await Promise.all(Array.from(uniqueMedia.values()).map(async ({ id, type }) => {
           try {
-            const r = await fetch(`/api/tmdb?endpoint=movie/${id}`);
-            if (r.ok) det[id] = await r.json();
+            const r = await fetch(`/api/tmdb?endpoint=${type}/${id}`);
+            if (r.ok) {
+              const d = await r.json();
+              det[`${type}_${id}`] = d;
+              if (!det[id]) det[id] = d;
+            }
           } catch { }
         }));
-        setMovieDetails(det);
+        setMediaDetails(det);
       } catch (err) {
         console.error(err);
       } finally {
@@ -318,35 +323,52 @@ export default function PublicProfilePage() {
     loadAll();
   }, [targetUserId, currentUser?.id]);
 
+  // Split Counts
+  const watchedMovies = useMemo(() => watchItems.filter(w => (w.content_type || "movie") !== "tv"), [watchItems]);
+  const watchedTv = useMemo(() => watchItems.filter(w => w.content_type === "tv"), [watchItems]);
+
+  const watchlistMovies = useMemo(() => watchlistItems.filter(w => (w.content_type || "movie") !== "tv"), [watchlistItems]);
+  const watchlistTv = useMemo(() => watchlistItems.filter(w => w.content_type === "tv"), [watchlistItems]);
+
+  const reviewsMovies = useMemo(() => reviews.filter(r => (r.content_type || "movie") !== "tv"), [reviews]);
+  const reviewsTv = useMemo(() => reviews.filter(r => r.content_type === "tv"), [reviews]);
+
   const distinctGenresCount = useMemo(() => {
     const genresSet = new Set<number>();
-    watchedMovies.forEach(w => {
-      const movie = movieDetails[w.movie_id];
+    watchItems.forEach(w => {
+      const type = w.content_type === "tv" ? "tv" : "movie";
+      const movie = mediaDetails[`${type}_${w.movie_id}`] || mediaDetails[w.movie_id];
       if (movie?.genres) {
         movie.genres.forEach((g: any) => genresSet.add(g.id));
       }
     });
     return genresSet.size;
-  }, [watchedMovies, movieDetails]);
+  }, [watchItems, mediaDetails]);
+
+  const currentWatched = mediaFilter === "tv" ? watchedTv : watchedMovies;
+  const currentReviews = mediaFilter === "tv" ? reviewsTv : reviewsMovies;
 
   const sortedWatched = useMemo(() => {
-    if (!watchedMovies || watchedMovies.length === 0) return [];
-    const list = [...watchedMovies];
+    if (!currentWatched || currentWatched.length === 0) return [];
+    const list = [...currentWatched];
 
     return list.sort((a, b) => {
+      const typeA = a.content_type === "tv" ? "tv" : "movie";
+      const typeB = b.content_type === "tv" ? "tv" : "movie";
+      const itemA = mediaDetails[`${typeA}_${a.movie_id}`] || mediaDetails[a.movie_id] || a;
+      const itemB = mediaDetails[`${typeB}_${b.movie_id}`] || mediaDetails[b.movie_id] || b;
+
       if (watchedSort === "rating_desc" || watchedSort === "rating_asc") {
-        const ratingA = ratingsMap[a.movie_id] ?? movieDetails[a.movie_id]?.vote_average ?? 0;
-        const ratingB = ratingsMap[b.movie_id] ?? movieDetails[b.movie_id]?.vote_average ?? 0;
+        const ratingA = ratingsMap[`${typeA}_${a.movie_id}`] ?? itemA?.vote_average ?? 0;
+        const ratingB = ratingsMap[`${typeB}_${b.movie_id}`] ?? itemB?.vote_average ?? 0;
         if (ratingA !== ratingB) {
           return watchedSort === "rating_desc" ? ratingB - ratingA : ratingA - ratingB;
         }
       }
 
       if (watchedSort === "year_desc" || watchedSort === "year_asc") {
-        const movieA = movieDetails[a.movie_id] || a;
-        const movieB = movieDetails[b.movie_id] || b;
-        const dateA = movieA.release_date || movieA.year || "";
-        const dateB = movieB.release_date || movieB.year || "";
+        const dateA = itemA.release_date || itemA.first_air_date || itemA.year || "";
+        const dateB = itemB.release_date || itemB.first_air_date || itemB.year || "";
         const yearA = dateA ? parseInt(String(dateA).substring(0, 4), 10) || 0 : 0;
         const yearB = dateB ? parseInt(String(dateB).substring(0, 4), 10) || 0 : 0;
         if (yearA !== yearB) {
@@ -355,10 +377,8 @@ export default function PublicProfilePage() {
       }
 
       if (watchedSort === "title_asc") {
-        const movieA = movieDetails[a.movie_id] || a;
-        const movieB = movieDetails[b.movie_id] || b;
-        const titleA = String(movieA.title || movieA.movie_title || "").toLowerCase();
-        const titleB = String(movieB.title || movieB.movie_title || "").toLowerCase();
+        const titleA = String(itemA.title || itemA.name || itemA.movie_title || "").toLowerCase();
+        const titleB = String(itemB.title || itemB.name || itemB.movie_title || "").toLowerCase();
         const comp = titleA.localeCompare(titleB);
         if (comp !== 0) return comp;
       }
@@ -367,7 +387,7 @@ export default function PublicProfilePage() {
       const timeB = b.watched_at ? new Date(b.watched_at).getTime() : 0;
       return timeB - timeA;
     });
-  }, [watchedMovies, watchedSort, movieDetails, ratingsMap]);
+  }, [currentWatched, watchedSort, mediaDetails, ratingsMap]);
 
   const toggleFollow = async () => {
     const activeUserId = profile?.user_id || targetUserId;
@@ -466,7 +486,7 @@ export default function PublicProfilePage() {
             />
             {bannerMovieTitle && (
               <div className="absolute top-20 right-6 z-20 text-right pointer-events-none hidden md:block">
-                <span className="text-[10px] uppercase tracking-widest text-white/50 block font-bold">Top Film Backdrop</span>
+                <span className="text-[10px] uppercase tracking-widest text-white/50 block font-bold">Top Backdrop</span>
                 <span className="text-xs text-white/80 font-serif italic drop-shadow-md">{bannerMovieTitle}</span>
               </div>
             )}
@@ -507,9 +527,9 @@ export default function PublicProfilePage() {
           <div className="flex flex-wrap items-center justify-center gap-3 mb-1">
             <h2 className="font-serif text-2xl font-bold text-on-surface">{displayName}</h2>
             <ProfileBadges
-              watchedCount={watchCount}
+              watchedCount={watchItems.length}
               distinctGenresCount={distinctGenresCount}
-              reviewCount={reviewCount}
+              reviewCount={reviews.length}
             />
           </div>
           {profile.username && (
@@ -519,19 +539,22 @@ export default function PublicProfilePage() {
             <p className="text-on-surface-variant text-sm max-w-xs leading-relaxed mb-4">{profile.bio}</p>
           )}
 
-          {/* Stats row */}
-          <div className="flex flex-wrap gap-6 justify-center mb-5">
+          {/* Stats row with Breakdown (Film · TV) */}
+          <div className="flex flex-wrap gap-5 justify-center mb-5">
             <div className="text-center">
-              <p className="font-bold text-lg text-on-surface">{watchCount}</p>
+              <p className="font-bold text-lg text-on-surface">{watchItems.length}</p>
               <p className="text-xs text-on-surface-variant uppercase tracking-wide">Watched</p>
+              <span className="text-[10px] text-white/50 block font-mono">{watchedMovies.length}m · {watchedTv.length}tv</span>
             </div>
             <div className="text-center">
-              <p className="font-bold text-lg text-on-surface">{watchlistCount}</p>
+              <p className="font-bold text-lg text-on-surface">{watchlistItems.length}</p>
               <p className="text-xs text-on-surface-variant uppercase tracking-wide">Watchlist</p>
+              <span className="text-[10px] text-white/50 block font-mono">{watchlistMovies.length}m · {watchlistTv.length}tv</span>
             </div>
             <div className="text-center">
-              <p className="font-bold text-lg text-on-surface">{reviewCount}</p>
+              <p className="font-bold text-lg text-on-surface">{reviews.length}</p>
               <p className="text-xs text-on-surface-variant uppercase tracking-wide">Reviews</p>
+              <span className="text-[10px] text-white/50 block font-mono">{reviewsMovies.length}m · {reviewsTv.length}tv</span>
             </div>
             <button
               onClick={() => openFollowList("followers")}
@@ -579,7 +602,9 @@ export default function PublicProfilePage() {
         {/* Top 5 Favourite Films */}
         {favorites.filter(f => f.slot_type?.startsWith("movie_")).length > 0 && (
           <section className="mb-8">
-            <h3 className="text-xs text-on-surface-variant uppercase tracking-widest mb-4">Top 5 Favourite Films</h3>
+            <h3 className="text-xs text-on-surface-variant uppercase tracking-widest mb-4 border-l-2 border-[#e50914] pl-2">
+              Top 5 Favourite Films
+            </h3>
             <div className="grid grid-cols-5 gap-2">
               {["movie_1", "movie_2", "movie_3", "movie_4", "movie_5"].map(slot => {
                 const fav = favorites.find(f => f.slot_type === slot);
@@ -589,7 +614,7 @@ export default function PublicProfilePage() {
                   </div>
                 );
                 return (
-                  <div key={slot} className="aspect-[2/3] rounded-xl overflow-hidden border border-white/10 group relative" title={fav.name}>
+                  <Link href={`/movies?id=${fav.tmdb_id}`} key={slot} className="aspect-[2/3] rounded-xl overflow-hidden border border-white/10 group relative block" title={fav.name}>
                     <img
                       src={fav.image_url ? `https://image.tmdb.org/t/p/w342${fav.image_url}` : "https://images.unsplash.com/photo-1594909122845-11baa439b7bf?w=342"}
                       alt={fav.name}
@@ -598,28 +623,90 @@ export default function PublicProfilePage() {
                     <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex items-end p-1.5">
                       <p className="text-[9px] text-white font-bold line-clamp-2 leading-tight">{fav.name}</p>
                     </div>
-                  </div>
+                  </Link>
                 );
               })}
             </div>
           </section>
         )}
 
-        {/* Recent Reviews */}
-        {reviews.length > 0 && (
+        {/* Top 5 Favourite TV Shows */}
+        {favorites.filter(f => f.slot_type?.startsWith("tv_")).length > 0 && (
           <section className="mb-8">
-            <h3 className="text-xs text-on-surface-variant uppercase tracking-widest mb-4">Recent Reviews</h3>
+            <h3 className="text-xs text-on-surface-variant uppercase tracking-widest mb-4 border-l-2 border-[#a855f7] pl-2">
+              Top 5 Favourite TV Shows
+            </h3>
+            <div className="grid grid-cols-5 gap-2">
+              {["tv_1", "tv_2", "tv_3", "tv_4", "tv_5"].map(slot => {
+                const fav = favorites.find(f => f.slot_type === slot);
+                if (!fav) return (
+                  <div key={slot} className="aspect-[2/3] rounded-xl bg-white/5 border border-white/5 flex items-center justify-center">
+                    <span className="material-symbols-outlined text-on-surface-variant/20 text-[20px]">tv</span>
+                  </div>
+                );
+                return (
+                  <Link href={`/tv?id=${fav.tmdb_id}`} key={slot} className="aspect-[2/3] rounded-xl overflow-hidden border border-white/10 group relative block" title={fav.name}>
+                    <img
+                      src={fav.image_url ? `https://image.tmdb.org/t/p/w342${fav.image_url}` : "https://images.unsplash.com/photo-1594909122845-11baa439b7bf?w=342"}
+                      alt={fav.name}
+                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                    />
+                    <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex items-end p-1.5">
+                      <p className="text-[9px] text-white font-bold line-clamp-2 leading-tight">{fav.name}</p>
+                    </div>
+                  </Link>
+                );
+              })}
+            </div>
+          </section>
+        )}
+
+        {/* Media Filter Tabs for Watched & Reviews */}
+        <div className="flex items-center gap-2 mb-6 pt-4 border-t border-white/10">
+          <button
+            onClick={() => setMediaFilter("movie")}
+            className={`px-3.5 py-1.5 rounded-full text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer border ${
+              mediaFilter === "movie"
+                ? "bg-[#e50914] text-white border-[#e50914] shadow-[0_0_12px_rgba(229,9,20,0.4)]"
+                : "bg-white/5 text-on-surface-variant border-white/10 hover:bg-white/10 hover:text-white"
+            }`}
+          >
+            <span className="material-symbols-outlined text-[15px]">movie</span>
+            Movies ({watchedMovies.length})
+          </button>
+          <button
+            onClick={() => setMediaFilter("tv")}
+            className={`px-3.5 py-1.5 rounded-full text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer border ${
+              mediaFilter === "tv"
+                ? "bg-[#a855f7] text-white border-[#a855f7] shadow-[0_0_12px_rgba(168,85,247,0.4)]"
+                : "bg-white/5 text-on-surface-variant border-white/10 hover:bg-white/10 hover:text-white"
+            }`}
+          >
+            <span className="material-symbols-outlined text-[15px]">tv</span>
+            TV Shows ({watchedTv.length})
+          </button>
+        </div>
+
+        {/* Recent Reviews */}
+        {currentReviews.length > 0 && (
+          <section className="mb-8">
+            <h3 className="text-xs text-on-surface-variant uppercase tracking-widest mb-4">
+              Recent {mediaFilter === "tv" ? "TV Show" : "Movie"} Reviews
+            </h3>
             <div className="space-y-4">
-              {reviews.map((rev: any) => {
-                const movie = movieDetails[rev.movie_id];
-                const userRating = ratingsMap[rev.movie_id];
+              {currentReviews.map((rev: any) => {
+                const type = rev.content_type === "tv" ? "tv" : "movie";
+                const detail = mediaDetails[`${type}_${rev.movie_id}`] || mediaDetails[rev.movie_id];
+                const userRating = ratingsMap[`${type}_${rev.movie_id}`] ?? ratingsMap[rev.movie_id];
+                const displayTitle = detail?.title || detail?.name || rev.movie_title || "Untitled";
+
                 return (
                   <ReviewCard
                     key={rev.id}
                     review={rev}
                     userRating={userRating}
-                    movieTitle={movie?.title || rev.movie_title}
-                    posterPath={movie?.poster_path}
+                    movieTitle={displayTitle}
+                    posterPath={detail?.poster_path || rev.poster_path}
                     avatarUrl={profile.avatar_url}
                   />
                 );
@@ -628,17 +715,12 @@ export default function PublicProfilePage() {
           </section>
         )}
 
-        {reviews.length === 0 && !loading && (
-          <div className="text-center py-8 text-on-surface-variant">
-            <span className="material-symbols-outlined text-[36px] opacity-30 mb-2">rate_review</span>
-            <p className="text-sm">No reviews yet.</p>
-          </div>
-        )}
-
-        {/* Watched Movies Grid */}
-        {watchedMovies.length > 0 && (
+        {/* Recently Watched */}
+        {currentWatched.length > 0 ? (
           <section className="mt-8">
-            <h3 className="text-xs text-on-surface-variant uppercase tracking-widest mb-3">Recently Watched</h3>
+            <h3 className="text-xs text-on-surface-variant uppercase tracking-widest mb-3">
+              Recently Watched {mediaFilter === "tv" ? "TV Shows" : "Films"}
+            </h3>
 
             {/* Sort Bar */}
             <div className="flex items-center gap-2 overflow-x-auto pb-3 mb-4 no-scrollbar scroll-smooth">
@@ -653,7 +735,7 @@ export default function PublicProfilePage() {
                     key={option.id}
                     onClick={() => setWatchedSort(option.id)}
                     className={`px-3 py-1 rounded-full text-xs font-semibold whitespace-nowrap transition-all duration-200 cursor-pointer border flex items-center gap-1.5 select-none shrink-0 ${isActive
-                      ? "bg-[#e50914] text-white border-[#e50914] shadow-[0_0_12px_rgba(229,9,20,0.4)] font-bold scale-[1.02]"
+                      ? (mediaFilter === "tv" ? "bg-[#a855f7] text-white border-[#a855f7] shadow-[0_0_12px_rgba(168,85,247,0.4)] font-bold scale-[1.02]" : "bg-[#e50914] text-white border-[#e50914] shadow-[0_0_12px_rgba(229,9,20,0.4)] font-bold scale-[1.02]")
                       : "bg-white/5 text-on-surface-variant border-white/10 hover:bg-white/10 hover:text-white hover:border-white/20"
                       }`}
                   >
@@ -664,16 +746,20 @@ export default function PublicProfilePage() {
               })}
             </div>
 
-            <div key={watchedSort} className="grid grid-cols-3 gap-2 animate-fade-in">
+            <div key={`${mediaFilter}_${watchedSort}`} className="grid grid-cols-3 gap-2 animate-fade-in">
               {sortedWatched.map(item => {
-                const movie = movieDetails[item.movie_id];
-                const poster = movie?.poster_path || item.poster_path;
-                const userRating = ratingsMap[item.movie_id];
+                const type = item.content_type === "tv" ? "tv" : "movie";
+                const detail = mediaDetails[`${type}_${item.movie_id}`] || mediaDetails[item.movie_id];
+                const poster = detail?.poster_path || item.poster_path;
+                const userRating = ratingsMap[`${type}_${item.movie_id}`] ?? ratingsMap[item.movie_id];
+                const linkHref = type === "tv" ? `/tv?id=${item.movie_id}` : `/movies?id=${item.movie_id}`;
+                const displayTitle = detail?.title || detail?.name || item.movie_title || "";
+
                 return (
-                  <Link key={item.movie_id} href={`/movies?id=${item.movie_id}`} className="group aspect-[2/3] rounded-xl overflow-hidden border border-white/10 relative bg-white/5 block">
+                  <Link key={`${type}_${item.movie_id}`} href={linkHref} className="group aspect-[2/3] rounded-xl overflow-hidden border border-white/10 relative bg-white/5 block">
                     <img
                       src={poster ? `https://image.tmdb.org/t/p/w342${poster}` : "https://images.unsplash.com/photo-1594909122845-11baa439b7bf?w=342"}
-                      alt={movie?.title || item.movie_title || ""}
+                      alt={displayTitle}
                       className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
                     />
                     {userRating !== undefined && (
@@ -685,13 +771,18 @@ export default function PublicProfilePage() {
                       </div>
                     )}
                     <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex items-end p-2">
-                      <p className="text-[10px] text-white font-bold line-clamp-2 leading-tight">{movie?.title || item.movie_title}</p>
+                      <p className="text-[10px] text-white font-bold line-clamp-2 leading-tight">{displayTitle}</p>
                     </div>
                   </Link>
                 );
               })}
             </div>
           </section>
+        ) : (
+          <div className="text-center py-8 text-on-surface-variant">
+            <span className="material-symbols-outlined text-[36px] opacity-30 mb-2">{mediaFilter === "tv" ? "tv_off" : "movie"}</span>
+            <p className="text-sm">No {mediaFilter === "tv" ? "TV shows" : "movies"} marked as watched yet.</p>
+          </div>
         )}
       </main>
 
@@ -793,3 +884,4 @@ export default function PublicProfilePage() {
     </div>
   );
 }
+

@@ -27,6 +27,7 @@ const SORT_OPTIONS: { id: SortOption; label: string }[] = [
 ];
 
 const GENRE_MAP: { [key: number]: string } = {
+  // Movie genres
   28: "Action",
   12: "Adventure",
   16: "Animation",
@@ -45,7 +46,16 @@ const GENRE_MAP: { [key: number]: string } = {
   10770: "TV Movie",
   53: "Thriller",
   10752: "War",
-  37: "Western"
+  37: "Western",
+  // TV genres
+  10759: "Action & Adventure",
+  10762: "Kids",
+  10763: "News",
+  10764: "Reality",
+  10765: "Sci-Fi & Fantasy",
+  10766: "Soap",
+  10767: "Talk",
+  10768: "War & Politics",
 };
 
 const ProfileSkeleton = () => (
@@ -121,7 +131,7 @@ export default function ProfilePage() {
   const [watched, setWatched] = useState<any[]>([]);
   const [ratings, setRatings] = useState<any[]>([]);
   const [reviews, setReviews] = useState<any[]>([]);
-  const [movieDetails, setMovieDetails] = useState<Record<string, any>>({});
+  const [mediaDetails, setMediaDetails] = useState<Record<string, any>>({});
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
   const [selectedCropImage, setSelectedCropImage] = useState<string | null>(null);
@@ -145,10 +155,11 @@ export default function ProfilePage() {
   
   // Favorites State
   const [favorites, setFavorites] = useState<Record<string, any>>({});
-  const [searchModal, setSearchModal] = useState<{ isOpen: boolean; type: "movie" | "person"; slotType: string } | null>(null);
+  const [searchModal, setSearchModal] = useState<{ isOpen: boolean; type: "movie" | "tv" | "person"; slotType: string } | null>(null);
   const [optionsModal, setOptionsModal] = useState<{ isOpen: boolean; slotType: string; name: string } | null>(null);
   
   const [activeTab, setActiveTab] = useState<"watched" | "watchlist" | "reviews" | "stats">("watched");
+  const [mediaType, setMediaType] = useState<"movie" | "tv">("movie");
   const [watchedSort, setWatchedSort] = useState<SortOption>("default");
 
   // Profile Reviews Edit State
@@ -168,10 +179,14 @@ export default function ProfilePage() {
   // Poster preferences map: movie_id -> preferred poster_path
   const [posterPrefs, setPosterPrefs] = useState<Record<string, string>>({});
 
-  // Fetch TMDB backdrop_path for Film 1 in Top 5
+  // Fetch TMDB backdrop_path for Film 1 or TV 1 in Top 5
   useEffect(() => {
     const film1 = favorites["movie_1"];
-    if (!film1?.tmdb_id) {
+    const tv1 = favorites["tv_1"];
+    const bannerItem = film1 || tv1;
+    const isTv = !film1 && !!tv1;
+
+    if (!bannerItem?.tmdb_id) {
       setBannerBackdropUrl(null);
       setBannerMovieTitle(null);
       return;
@@ -180,14 +195,15 @@ export default function ProfilePage() {
     let isMounted = true;
     async function fetchBannerBackdrop() {
       try {
-        const res = await fetch(`/api/tmdb?endpoint=movie/${film1.tmdb_id}&append_to_response=images`);
+        const endpoint = isTv ? `tv/${bannerItem.tmdb_id}` : `movie/${bannerItem.tmdb_id}`;
+        const res = await fetch(`/api/tmdb?endpoint=${endpoint}&append_to_response=images`);
         if (res.ok) {
           const data = await res.json();
           if (!isMounted) return;
           const backdropPath = data.backdrop_path || data.images?.backdrops?.[0]?.file_path;
           if (backdropPath) {
             setBannerBackdropUrl(`https://image.tmdb.org/t/p/w1280${backdropPath}`);
-            setBannerMovieTitle(data.title || film1.name);
+            setBannerMovieTitle(data.title || data.name || bannerItem.name);
           } else {
             setBannerBackdropUrl(null);
             setBannerMovieTitle(null);
@@ -272,35 +288,49 @@ export default function ProfilePage() {
         setRatings(ratingsData);
         setReviews(reviewsData);
 
-        // Fetch TMDB details for rated, watched, reviews and watchlist movies
-        const uniqueIds = new Set<string>();
-        ratingsData.forEach(r => uniqueIds.add(r.movie_id));
-        reviewsData.forEach(r => uniqueIds.add(r.movie_id));
-        (watchedData || []).forEach((w: any) => uniqueIds.add(w.movie_id));
-        watchlistData.forEach(wl => uniqueIds.add(wl.movie_id));
+        // Fetch TMDB details for rated, watched, reviews and watchlist items (movies + tv)
+        const uniqueMedia = new Map<string, { id: string; type: "movie" | "tv" }>();
+        const registerMedia = (item: any) => {
+          if (!item?.movie_id) return;
+          const id = String(item.movie_id);
+          const type: "movie" | "tv" = item.content_type === "tv" ? "tv" : "movie";
+          uniqueMedia.set(`${type}_${id}`, { id, type });
+        };
+
+        ratingsData.forEach(registerMedia);
+        reviewsData.forEach(registerMedia);
+        (watchedData || []).forEach(registerMedia);
+        watchlistData.forEach(registerMedia);
 
         const details: Record<string, any> = {};
         await Promise.all(
-          Array.from(uniqueIds).map(async (id) => {
+          Array.from(uniqueMedia.values()).map(async ({ id, type }) => {
             try {
-              const res = await fetch(`/api/tmdb?endpoint=movie/${id}&append_to_response=credits`);
+              const res = await fetch(`/api/tmdb?endpoint=${type}/${id}&append_to_response=credits`);
               if (res.ok) {
-                details[id] = await res.json();
+                const data = await res.json();
+                details[`${type}_${id}`] = data;
+                if (!details[id]) {
+                  details[id] = data;
+                }
               }
             } catch (e) {
-              console.error(`Failed to fetch TMDB for ${id}`, e);
+              console.error(`Failed to fetch TMDB for ${type} ${id}`, e);
             }
           })
         );
         
-        setMovieDetails(details);
+        setMediaDetails(details);
 
-        // Batch-fetch poster preferences for all movies the user has interacted with
-        if (uniqueIds.size > 0) {
+        // Batch-fetch poster preferences for movies
+        const movieIds = Array.from(uniqueMedia.values())
+          .filter(m => m.type === "movie")
+          .map(m => m.id);
+        if (movieIds.length > 0) {
           fetch("/api/poster-preference/batch", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ user_id: user.id, movie_ids: Array.from(uniqueIds) }),
+            body: JSON.stringify({ user_id: user.id, movie_ids: movieIds }),
           })
             .then((r) => r.json())
             .then((prefs: { movie_id: string; poster_path: string }[]) => {
@@ -414,16 +444,24 @@ export default function ProfilePage() {
     }
   };
 
-  const handleRemoveFromWatchlist = async (movieId: string) => {
+  const handleRemoveFromWatchlist = async (movieId: string, itemContentType: string = "movie") => {
     if (!user?.id) return;
     try {
-      const { error } = await supabase
+      let query = supabase
         .from("watchlist")
         .delete()
         .eq("user_id", user.id)
         .eq("movie_id", movieId);
+
+      if (itemContentType === "tv") {
+        query = query.eq("content_type", "tv");
+      } else {
+        query = query.or("content_type.eq.movie,content_type.is.null");
+      }
+
+      const { error } = await query;
       if (!error) {
-        setWatchlist(prev => prev.filter(item => item.movie_id !== movieId));
+        setWatchlist(prev => prev.filter(item => !(item.movie_id === movieId && (item.content_type || "movie") === itemContentType)));
       }
     } catch (err) {
       console.error("Error removing from watchlist:", err);
@@ -444,7 +482,12 @@ export default function ProfilePage() {
     const delayDebounceFn = setTimeout(async () => {
       setSearching(true);
       try {
-        const endpoint = searchModal.type === "movie" ? "search/movie" : "search/person";
+        let endpoint = "search/movie";
+        if (searchModal.type === "tv") {
+          endpoint = "search/tv";
+        } else if (searchModal.type === "person") {
+          endpoint = "search/person";
+        }
         const res = await fetch(`/api/tmdb?endpoint=${endpoint}&query=${encodeURIComponent(searchQuery)}`);
         if (res.ok) {
           const data = await res.json();
@@ -462,13 +505,11 @@ export default function ProfilePage() {
 
   const handleSaveFavorite = async (item: any) => {
     if (!user?.id || !searchModal) return;
-    // Capture slot info before any async state changes
     const slot_type = searchModal.slotType;
     const tmdb_id = item.id.toString();
     const name = item.title || item.name;
     const image_url = item.poster_path || item.profile_path || "";
 
-    // Optimistically close the modal and update UI immediately
     setSearchModal(null);
     setSearchQuery("");
     setSearchResults([]);
@@ -492,7 +533,6 @@ export default function ProfilePage() {
 
       if (res.ok) {
         const savedItem = await res.json();
-        // If the API returned the saved row, use it; otherwise keep the optimistic value
         if (savedItem) {
           setFavorites(prev => ({ ...prev, [slot_type]: savedItem }));
         }
@@ -531,7 +571,6 @@ export default function ProfilePage() {
       const res = await fetch(`/api/follows?userId=${realUserId}`);
       const data = await res.json();
       const ids: string[] = type === "followers" ? (data.followers || []) : (data.following || []);
-      // Fetch each user's profile
       const profiles = await Promise.all(
         ids.map(async (uid: string) => {
           try {
@@ -554,9 +593,25 @@ export default function ProfilePage() {
     }
   };
 
-  // Calculate Stats
-  const watchedCount = watched.length;
-  
+  // Filtered lists for Movies vs TV
+  const watchedMovies = useMemo(() => watched.filter(w => (w.content_type || "movie") !== "tv"), [watched]);
+  const watchedTv = useMemo(() => watched.filter(w => w.content_type === "tv"), [watched]);
+
+  const watchlistMovies = useMemo(() => watchlist.filter(w => (w.content_type || "movie") !== "tv"), [watchlist]);
+  const watchlistTv = useMemo(() => watchlist.filter(w => w.content_type === "tv"), [watchlist]);
+
+  const reviewsMovies = useMemo(() => reviews.filter(r => (r.content_type || "movie") !== "tv"), [reviews]);
+  const reviewsTv = useMemo(() => reviews.filter(r => r.content_type === "tv"), [reviews]);
+
+  const ratingsMovies = useMemo(() => ratings.filter(r => (r.content_type || "movie") !== "tv"), [ratings]);
+  const ratingsTv = useMemo(() => ratings.filter(r => r.content_type === "tv"), [ratings]);
+
+  // Current active filtered list
+  const currentWatched = mediaType === "tv" ? watchedTv : watchedMovies;
+  const currentWatchlist = mediaType === "tv" ? watchlistTv : watchlistMovies;
+  const currentReviews = mediaType === "tv" ? reviewsTv : reviewsMovies;
+  const currentRatings = mediaType === "tv" ? ratingsTv : ratingsMovies;
+
   // Profile review edit/delete handlers
   const handleProfileDeleteReview = async (reviewId: string) => {
     if (!confirm("Are you sure you want to delete this review?")) return;
@@ -589,9 +644,18 @@ export default function ProfilePage() {
     }
   };
 
-  // Cinema DNA Computations from watched movies & TMDB details
+  // Helper to fetch details for an item
+  const getItemDetails = (item: any) => {
+    const type = item.content_type === "tv" ? "tv" : "movie";
+    return mediaDetails[`${type}_${item.movie_id}`] || mediaDetails[item.movie_id] || item;
+  };
+
+  // Cinema DNA Computations for current mediaType
   const cinemaDnaData = useMemo(() => {
-    if (!watched || watched.length === 0) {
+    const list = mediaType === "tv" ? watchedTv : watchedMovies;
+    const activeRatings = mediaType === "tv" ? ratingsTv : ratingsMovies;
+
+    if (!list || list.length === 0) {
       return {
         topGenres: [],
         topDecade: "N/A",
@@ -602,19 +666,20 @@ export default function ProfilePage() {
       };
     }
 
-    // 1. Genre Counts across watched movies
+    // 1. Genre Counts
     const genreCounts: Record<string, number> = {};
     let totalGenreHits = 0;
 
-    watched.forEach(w => {
-      const movie = movieDetails[w.movie_id];
-      if (movie?.genres && Array.isArray(movie.genres)) {
-        movie.genres.forEach((g: any) => {
+    list.forEach(w => {
+      const type = w.content_type === "tv" ? "tv" : "movie";
+      const item = mediaDetails[`${type}_${w.movie_id}`] || mediaDetails[w.movie_id];
+      if (item?.genres && Array.isArray(item.genres)) {
+        item.genres.forEach((g: any) => {
           genreCounts[g.name] = (genreCounts[g.name] || 0) + 1;
           totalGenreHits++;
         });
-      } else if (movie?.genre_ids && Array.isArray(movie.genre_ids)) {
-        movie.genre_ids.forEach((gid: number) => {
+      } else if (item?.genre_ids && Array.isArray(item.genre_ids)) {
+        item.genre_ids.forEach((gid: number) => {
           const name = GENRE_MAP[gid] || "Other";
           genreCounts[name] = (genreCounts[name] || 0) + 1;
           totalGenreHits++;
@@ -634,11 +699,12 @@ export default function ProfilePage() {
         color: genreColorPalette[index % genreColorPalette.length]
       }));
 
-    // 2. Cinema Era / Decades
+    // 2. Era / Decades
     const decadeCounts: Record<string, number> = {};
-    watched.forEach(w => {
-      const movie = movieDetails[w.movie_id] || w;
-      const releaseDate = movie?.release_date || movie?.year;
+    list.forEach(w => {
+      const type = w.content_type === "tv" ? "tv" : "movie";
+      const item = mediaDetails[`${type}_${w.movie_id}`] || mediaDetails[w.movie_id] || w;
+      const releaseDate = item?.release_date || item?.first_air_date || item?.year;
       if (releaseDate) {
         const year = parseInt(String(releaseDate).substring(0, 4), 10);
         if (!isNaN(year) && year > 1900) {
@@ -656,21 +722,28 @@ export default function ProfilePage() {
         topDecade = decade;
       }
     });
-    const decadePercent = watched.length > 0 ? Math.round((maxDecadeCount / watched.length) * 100) : 0;
+    const decadePercent = list.length > 0 ? Math.round((maxDecadeCount / list.length) * 100) : 0;
 
     // 3. Average Rating
     let avgRatingVal = 0;
-    if (ratings.length > 0) {
-      const sum = ratings.reduce((acc, curr) => acc + (curr.rating || 0), 0);
-      avgRatingVal = parseFloat((sum / ratings.length).toFixed(1));
+    if (activeRatings.length > 0) {
+      const sum = activeRatings.reduce((acc, curr) => acc + (curr.rating || 0), 0);
+      avgRatingVal = parseFloat((sum / activeRatings.length).toFixed(1));
     }
 
     // 4. Total Watch Time (Runtime)
     let totalRuntimeMinutes = 0;
-    watched.forEach(w => {
-      const movie = movieDetails[w.movie_id];
-      const runtime = movie?.runtime ? parseInt(movie.runtime, 10) : 110;
-      totalRuntimeMinutes += runtime;
+    list.forEach(w => {
+      const type = w.content_type === "tv" ? "tv" : "movie";
+      const item = mediaDetails[`${type}_${w.movie_id}`] || mediaDetails[w.movie_id];
+      if (type === "tv") {
+        const epRuntime = (item?.episode_run_time && item.episode_run_time.length > 0) ? item.episode_run_time[0] : 45;
+        const eps = item?.number_of_episodes || 10;
+        totalRuntimeMinutes += epRuntime * eps;
+      } else {
+        const runtime = item?.runtime ? parseInt(item.runtime, 10) : 110;
+        totalRuntimeMinutes += runtime;
+      }
     });
 
     const hours = Math.floor(totalRuntimeMinutes / 60);
@@ -685,30 +758,33 @@ export default function ProfilePage() {
       totalRuntimeMinutes,
       formattedRuntime,
     };
-  }, [watched, movieDetails, ratings]);
+  }, [watchedMovies, watchedTv, mediaDetails, ratingsMovies, ratingsTv, mediaType]);
 
   // Build a movie_id → rating lookup map for the watched grid overlay
   const ratingsMap: Record<string, number> = {};
-  ratings.forEach(r => { ratingsMap[r.movie_id] = r.rating; });
+  ratings.forEach(r => { ratingsMap[`${r.content_type || 'movie'}_${r.movie_id}`] = r.rating; ratingsMap[r.movie_id] = r.rating; });
 
   const sortedWatched = useMemo(() => {
-    if (!watched || watched.length === 0) return [];
-    const list = [...watched];
+    if (!currentWatched || currentWatched.length === 0) return [];
+    const list = [...currentWatched];
 
     return list.sort((a, b) => {
+      const typeA = a.content_type === "tv" ? "tv" : "movie";
+      const typeB = b.content_type === "tv" ? "tv" : "movie";
+      const itemA = mediaDetails[`${typeA}_${a.movie_id}`] || mediaDetails[a.movie_id] || a;
+      const itemB = mediaDetails[`${typeB}_${b.movie_id}`] || mediaDetails[b.movie_id] || b;
+
       if (watchedSort === "rating_desc" || watchedSort === "rating_asc") {
-        const ratingA = ratingsMap[a.movie_id] ?? movieDetails[a.movie_id]?.vote_average ?? 0;
-        const ratingB = ratingsMap[b.movie_id] ?? movieDetails[b.movie_id]?.vote_average ?? 0;
+        const ratingA = ratingsMap[`${typeA}_${a.movie_id}`] ?? itemA?.vote_average ?? 0;
+        const ratingB = ratingsMap[`${typeB}_${b.movie_id}`] ?? itemB?.vote_average ?? 0;
         if (ratingA !== ratingB) {
           return watchedSort === "rating_desc" ? ratingB - ratingA : ratingA - ratingB;
         }
       }
 
       if (watchedSort === "year_desc" || watchedSort === "year_asc") {
-        const movieA = movieDetails[a.movie_id] || a;
-        const movieB = movieDetails[b.movie_id] || b;
-        const dateA = movieA.release_date || movieA.year || "";
-        const dateB = movieB.release_date || movieB.year || "";
+        const dateA = itemA.release_date || itemA.first_air_date || itemA.year || "";
+        const dateB = itemB.release_date || itemB.first_air_date || itemB.year || "";
         const yearA = dateA ? parseInt(String(dateA).substring(0, 4), 10) || 0 : 0;
         const yearB = dateB ? parseInt(String(dateB).substring(0, 4), 10) || 0 : 0;
         if (yearA !== yearB) {
@@ -717,10 +793,8 @@ export default function ProfilePage() {
       }
 
       if (watchedSort === "title_asc") {
-        const movieA = movieDetails[a.movie_id] || a;
-        const movieB = movieDetails[b.movie_id] || b;
-        const titleA = String(movieA.movie_title || movieA.title || "").toLowerCase();
-        const titleB = String(movieB.movie_title || movieB.title || "").toLowerCase();
+        const titleA = String(itemA.movie_title || itemA.title || itemA.name || "").toLowerCase();
+        const titleB = String(itemB.movie_title || itemB.title || itemB.name || "").toLowerCase();
         const comp = titleA.localeCompare(titleB);
         if (comp !== 0) return comp;
       }
@@ -730,19 +804,20 @@ export default function ProfilePage() {
       const timeB = b.watched_at ? new Date(b.watched_at).getTime() : 0;
       return timeB - timeA;
     });
-  }, [watched, watchedSort, movieDetails, ratingsMap]);
+  }, [currentWatched, watchedSort, mediaDetails, ratingsMap]);
 
   // Calculate Unique Genres Watched
   const uniqueGenres = useMemo(() => {
     const genresSet = new Set<number>();
     watched.forEach(w => {
-      const movie = movieDetails[w.movie_id];
-      if (movie?.genres) {
-        movie.genres.forEach((g: any) => genresSet.add(g.id));
+      const type = w.content_type === "tv" ? "tv" : "movie";
+      const item = mediaDetails[`${type}_${w.movie_id}`] || mediaDetails[w.movie_id];
+      if (item?.genres) {
+        item.genres.forEach((g: any) => genresSet.add(g.id));
       }
     });
     return genresSet;
-  }, [watched, movieDetails]);
+  }, [watched, mediaDetails]);
 
   return (
     <div className="font-body-md text-body-md bg-[#050505] text-[#e5e2e1] min-h-screen relative pb-32 overflow-x-clip">
@@ -778,7 +853,7 @@ export default function ProfilePage() {
             />
             {bannerMovieTitle && (
               <div className="absolute top-20 right-6 z-20 text-right pointer-events-none hidden md:block">
-                <span className="text-[10px] uppercase tracking-widest text-white/50 block font-bold">Top Film Backdrop</span>
+                <span className="text-[10px] uppercase tracking-widest text-white/50 block font-bold">Top Backdrop</span>
                 <span className="text-xs text-white/80 font-serif italic drop-shadow-md">{bannerMovieTitle}</span>
               </div>
             )}
@@ -946,36 +1021,40 @@ export default function ProfilePage() {
                   )}
                 </div>
                 
-                <div className="flex justify-center md:justify-start gap-6 flex-wrap">
+                {/* Stats Row with Split Breakdown (Movies · TV) */}
+                <div className="flex justify-center md:justify-start gap-5 md:gap-6 flex-wrap">
                   <div className="text-center">
-                    <span className="block font-headline-md text-headline-sm text-primary">{watchedCount}</span>
-                    <span className="text-label-sm uppercase tracking-widest text-on-surface-variant opacity-60">Watched</span>
+                    <span className="block font-headline-md text-headline-sm text-primary">{watched.length}</span>
+                    <span className="text-label-sm uppercase tracking-widest text-on-surface-variant opacity-60 block">Watched</span>
+                    <span className="text-[10px] text-white/50 block font-mono">{watchedMovies.length} Film · {watchedTv.length} TV</span>
                   </div>
-                  <div className="h-10 w-px bg-white/10"></div>
+                  <div className="h-10 w-px bg-white/10 self-center"></div>
                   <div className="text-center">
                     <span className="block font-headline-md text-headline-sm text-primary">{watchlist.length}</span>
-                    <span className="text-label-sm uppercase tracking-widest text-on-surface-variant opacity-60">Watchlist</span>
+                    <span className="text-label-sm uppercase tracking-widest text-on-surface-variant opacity-60 block">Watchlist</span>
+                    <span className="text-[10px] text-white/50 block font-mono">{watchlistMovies.length} Film · {watchlistTv.length} TV</span>
                   </div>
-                  <div className="h-10 w-px bg-white/10"></div>
+                  <div className="h-10 w-px bg-white/10 self-center"></div>
                   <div className="text-center">
                     <span className="block font-headline-md text-headline-sm text-primary">{reviews.length}</span>
-                    <span className="text-label-sm uppercase tracking-widest text-on-surface-variant opacity-60">Reviews</span>
+                    <span className="text-label-sm uppercase tracking-widest text-on-surface-variant opacity-60 block">Reviews</span>
+                    <span className="text-[10px] text-white/50 block font-mono">{reviewsMovies.length} Film · {reviewsTv.length} TV</span>
                   </div>
-                  <div className="h-10 w-px bg-white/10"></div>
+                  <div className="h-10 w-px bg-white/10 self-center"></div>
                   <button
                     onClick={() => openFollowList("followers")}
                     className="text-center cursor-pointer hover:opacity-80 transition-opacity bg-transparent border-none p-0"
                   >
                     <span className="block font-headline-md text-headline-sm text-primary">{followCounts.followers}</span>
-                    <span className="text-label-sm uppercase tracking-widest text-on-surface-variant opacity-60">Followers</span>
+                    <span className="text-label-sm uppercase tracking-widest text-on-surface-variant opacity-60 block">Followers</span>
                   </button>
-                  <div className="h-10 w-px bg-white/10"></div>
+                  <div className="h-10 w-px bg-white/10 self-center"></div>
                   <button
                     onClick={() => openFollowList("following")}
                     className="text-center cursor-pointer hover:opacity-80 transition-opacity bg-transparent border-none p-0"
                   >
                     <span className="block font-headline-md text-headline-sm text-primary">{followCounts.following}</span>
-                    <span className="text-label-sm uppercase tracking-widest text-on-surface-variant opacity-60">Following</span>
+                    <span className="text-label-sm uppercase tracking-widest text-on-surface-variant opacity-60 block">Following</span>
                   </button>
                 </div>
               </div>
@@ -983,6 +1062,7 @@ export default function ProfilePage() {
 
             {/* Favorites Sections */}
             <section className="mb-12">
+              {/* Top 5 Films */}
               <h3 className="font-serif text-[#e5e2e1] text-headline-sm uppercase tracking-wider mb-6 border-l-4 border-[#e50914] pl-3">
                 My Top 5 Films
               </h3>
@@ -1023,6 +1103,48 @@ export default function ProfilePage() {
                 })}
               </div>
 
+              {/* Top 5 TV Shows (New Section) */}
+              <h3 className="font-serif text-[#e5e2e1] text-headline-sm uppercase tracking-wider mb-6 border-l-4 border-[#a855f7] pl-3">
+                My Top 5 TV Shows
+              </h3>
+              <div className="grid grid-cols-5 gap-3 md:gap-4 mb-10">
+                {['tv_1', 'tv_2', 'tv_3', 'tv_4', 'tv_5'].map((slot, index) => {
+                  const fav = favorites[slot];
+                  return (
+                    <div 
+                      key={slot}
+                      onClick={() => {
+                        if (fav) {
+                          setOptionsModal({ isOpen: true, slotType: slot, name: fav.name });
+                        } else {
+                          setSearchModal({ isOpen: true, type: "tv", slotType: slot });
+                        }
+                      }}
+                      className="group aspect-[2/3] rounded-xl overflow-hidden border border-white/10 relative bg-white/5 cursor-pointer hover:border-[#a855f7] transition-all duration-300 flex flex-col items-center justify-center"
+                    >
+                      {fav ? (
+                        <>
+                          <img
+                            src={fav.image_url ? `https://image.tmdb.org/t/p/w500${fav.image_url}` : "https://images.unsplash.com/photo-1594909122845-11baa439b7bf?w=500"}
+                            alt={fav.name}
+                            className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
+                          />
+                          <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex items-end p-2 justify-center">
+                            <span className="text-[10px] text-[#a855f7] uppercase tracking-wider font-bold">Edit Show</span>
+                          </div>
+                        </>
+                      ) : (
+                        <div className="flex flex-col items-center justify-center text-center p-2 text-white/40 group-hover:text-[#a855f7] transition-colors">
+                          <span className="material-symbols-outlined text-[32px] mb-1">add</span>
+                          <span className="text-[10px] uppercase tracking-wider font-bold">Show {index + 1}</span>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* Favorite Creatives */}
               <h3 className="font-serif text-[#e5e2e1] text-headline-sm uppercase tracking-wider mb-6 border-l-4 border-[#e9c349] pl-3">
                 Favorite Creatives
               </h3>
@@ -1080,7 +1202,7 @@ export default function ProfilePage() {
             </section>
 
             {/* Navigation Tabs */}
-            <div className="flex gap-4 border-b border-white/10 mb-8 pb-2 overflow-x-auto hide-scrollbar">
+            <div className="flex gap-4 border-b border-white/10 mb-6 pb-2 overflow-x-auto hide-scrollbar">
               <button 
                 onClick={() => setActiveTab("watched")}
                 className={`pb-2 px-2 font-bold uppercase tracking-widest text-[12px] whitespace-nowrap transition-colors relative border-none bg-transparent cursor-pointer ${activeTab === "watched" ? "text-primary" : "text-on-surface-variant hover:text-white"}`}
@@ -1110,12 +1232,46 @@ export default function ProfilePage() {
                 {activeTab === "stats" && <div className="absolute bottom-[-10px] left-0 w-full h-0.5 bg-primary shadow-[0_0_8px_rgba(255,180,170,0.8)]"></div>}
               </button>
             </div>
+
+            {/* Media Type Split Toggle (Movies vs TV Shows) */}
+            <div className="flex items-center gap-2 mb-6">
+              <button
+                onClick={() => setMediaType("movie")}
+                className={`px-4 py-2 rounded-full text-xs font-bold transition-all flex items-center gap-2 cursor-pointer border select-none ${
+                  mediaType === "movie"
+                    ? "bg-[#e50914] text-white border-[#e50914] shadow-[0_0_15px_rgba(229,9,20,0.4)] scale-[1.02]"
+                    : "bg-white/5 text-on-surface-variant border-white/10 hover:bg-white/10 hover:text-white"
+                }`}
+              >
+                <span className="material-symbols-outlined text-[16px]">movie</span>
+                Movies ({activeTab === "watched" ? watchedMovies.length : activeTab === "watchlist" ? watchlistMovies.length : activeTab === "reviews" ? reviewsMovies.length : watchedMovies.length})
+              </button>
+
+              <button
+                onClick={() => setMediaType("tv")}
+                className={`px-4 py-2 rounded-full text-xs font-bold transition-all flex items-center gap-2 cursor-pointer border select-none ${
+                  mediaType === "tv"
+                    ? "bg-[#a855f7] text-white border-[#a855f7] shadow-[0_0_15px_rgba(168,85,247,0.4)] scale-[1.02]"
+                    : "bg-white/5 text-on-surface-variant border-white/10 hover:bg-white/10 hover:text-white"
+                }`}
+              >
+                <span className="material-symbols-outlined text-[16px]">tv</span>
+                TV Shows ({activeTab === "watched" ? watchedTv.length : activeTab === "watchlist" ? watchlistTv.length : activeTab === "reviews" ? reviewsTv.length : watchedTv.length})
+              </button>
+            </div>
  
             {/* Tab Content */}
             {activeTab === "watched" && (
               <section className="animate-fade-in">
-                {watched.length === 0 ? (
-                  <p className="text-on-surface-variant text-center py-10">You haven't marked any movies as watched yet.</p>
+                {currentWatched.length === 0 ? (
+                  <div className="text-center py-12 glass-card rounded-2xl border border-white/5 p-8 max-w-md mx-auto">
+                    <span className="material-symbols-outlined text-[40px] text-on-surface-variant/40 mb-2">
+                      {mediaType === "tv" ? "tv_off" : "movie"}
+                    </span>
+                    <p className="text-on-surface-variant text-body-md">
+                      You haven't marked any {mediaType === "tv" ? "TV shows" : "movies"} as watched yet.
+                    </p>
+                  </div>
                 ) : (
                   <>
                     {/* Sort/Filter Bar */}
@@ -1132,7 +1288,7 @@ export default function ProfilePage() {
                             onClick={() => setWatchedSort(option.id)}
                             className={`px-3.5 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap transition-all duration-200 cursor-pointer border flex items-center gap-1.5 select-none shrink-0 ${
                               isActive
-                                ? "bg-[#e50914] text-white border-[#e50914] shadow-[0_0_12px_rgba(229,9,20,0.4)] font-bold scale-[1.02]"
+                                ? (mediaType === "tv" ? "bg-[#a855f7] text-white border-[#a855f7] shadow-[0_0_12px_rgba(168,85,247,0.4)] font-bold scale-[1.02]" : "bg-[#e50914] text-white border-[#e50914] shadow-[0_0_12px_rgba(229,9,20,0.4)] font-bold scale-[1.02]")
                                 : "bg-white/5 text-on-surface-variant border-white/10 hover:bg-white/10 hover:text-white hover:border-white/20"
                             }`}
                           >
@@ -1143,21 +1299,27 @@ export default function ProfilePage() {
                       })}
                     </div>
 
-                    {/* Movie Grid */}
-                    <div key={watchedSort} className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-stack-md animate-fade-in">
+                    {/* Media Grid */}
+                    <div key={`${mediaType}_${watchedSort}`} className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-stack-md animate-fade-in">
                       {sortedWatched.map(item => {
-                        const movie = movieDetails[item.movie_id] || item;
-                        const userRating = ratingsMap[item.movie_id];
+                        const itemType = item.content_type === "tv" ? "tv" : "movie";
+                        const detail = getItemDetails(item);
+                        const userRating = ratingsMap[`${itemType}_${item.movie_id}`] ?? ratingsMap[item.movie_id];
+                        const linkHref = itemType === "tv" ? `/tv?id=${item.movie_id}` : `/movies?id=${item.movie_id}`;
+                        const displayTitle = detail?.title || detail?.name || detail?.movie_title || item.movie_title || "Untitled";
+                        const poster = (itemType === "movie" && posterPrefs[item.movie_id]) ? posterPrefs[item.movie_id] : (detail.poster_path || item.poster_path);
+
                         return (
-                          <div key={item.movie_id} className="group relative block">
-                            <Link href={`/movies?id=${item.movie_id}`} className="cursor-pointer block relative">
+                          <div key={`${itemType}_${item.movie_id}`} className="group relative block">
+                            <Link href={linkHref} className="cursor-pointer block relative">
                               <div className="aspect-[2/3] rounded-xl overflow-hidden border border-white/10 relative mb-2 bg-white/5">
                                 <img
                                   className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
-                                  alt={movie.movie_title || movie.title || "Movie Poster"}
-                                  src={(posterPrefs[item.movie_id] ?? movie.poster_path) ? `https://image.tmdb.org/t/p/w500${posterPrefs[item.movie_id] ?? movie.poster_path}` : "https://images.unsplash.com/photo-1594909122845-11baa439b7bf?w=500"}
+                                  alt={displayTitle}
+                                  src={poster ? `https://image.tmdb.org/t/p/w500${poster}` : "https://images.unsplash.com/photo-1594909122845-11baa439b7bf?w=500"}
                                 />
                                 <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/20 to-transparent"></div>
+                                
                                 {/* User Rating Overlay */}
                                 {userRating !== undefined && (
                                   <div className="absolute top-2 right-2 flex items-center gap-0.5 bg-black/70 backdrop-blur-md px-1.5 py-0.5 rounded-md border border-[#e9c349]/30 shadow-lg">
@@ -1165,11 +1327,21 @@ export default function ProfilePage() {
                                     <span className="text-[#e9c349] text-[11px] font-bold leading-none">{userRating % 1 === 0 ? userRating : userRating.toFixed(1)}</span>
                                   </div>
                                 )}
+
+                                {/* Media Badge */}
+                                <div className="absolute top-2 left-2">
+                                  <span className={`text-[9px] uppercase tracking-wider font-bold px-1.5 py-0.5 rounded backdrop-blur-md ${
+                                    itemType === "tv" ? "bg-purple-900/70 text-purple-200 border border-purple-500/30" : "bg-red-950/70 text-red-200 border border-red-500/30"
+                                  }`}>
+                                    {itemType === "tv" ? "TV" : "Movie"}
+                                  </span>
+                                </div>
+
                                 <div className="absolute bottom-2 left-0 right-0 flex justify-center text-[10px] text-white bg-black/60 backdrop-blur-md px-2 py-1 rounded mx-2 shadow border border-white/10" suppressHydrationWarning>
                                   {new Date(item.watched_at).toLocaleDateString()}
                                 </div>
                               </div>
-                              <h4 className="text-body-md font-bold truncate group-hover:text-primary transition-colors">{movie.movie_title || movie.title}</h4>
+                              <h4 className="text-body-md font-bold truncate group-hover:text-primary transition-colors">{displayTitle}</h4>
                             </Link>
                           </div>
                         );
@@ -1182,27 +1354,44 @@ export default function ProfilePage() {
 
             {activeTab === "watchlist" && (
               <section className="animate-fade-in">
-                {watchlist.length === 0 ? (
-                  <p className="text-on-surface-variant text-center py-10">Your watchlist is empty.</p>
+                {currentWatchlist.length === 0 ? (
+                  <div className="text-center py-12 glass-card rounded-2xl border border-white/5 p-8 max-w-md mx-auto">
+                    <span className="material-symbols-outlined text-[40px] text-on-surface-variant/40 mb-2">bookmark_border</span>
+                    <p className="text-on-surface-variant text-body-md">
+                      Your {mediaType === "tv" ? "TV show" : "movie"} watchlist is empty.
+                    </p>
+                  </div>
                 ) : (
                   <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-stack-md">
-                    {watchlist.map(item => {
-                      const movie = movieDetails[item.movie_id] || item;
+                    {currentWatchlist.map(item => {
+                      const itemType = item.content_type === "tv" ? "tv" : "movie";
+                      const detail = getItemDetails(item);
+                      const displayTitle = detail?.title || detail?.name || detail?.movie_title || item.movie_title || "Untitled";
+                      const linkHref = itemType === "tv" ? `/tv?id=${item.movie_id}` : `/movies?id=${item.movie_id}`;
+                      const poster = (itemType === "movie" && posterPrefs[item.movie_id]) ? posterPrefs[item.movie_id] : (detail.poster_path || item.poster_path);
+
                       return (
-                        <div key={item.movie_id} className="group relative block">
-                          <Link href={`/movies?id=${item.movie_id}`} className="cursor-pointer block relative">
+                        <div key={`${itemType}_${item.movie_id}`} className="group relative block">
+                          <Link href={linkHref} className="cursor-pointer block relative">
                             <div className="aspect-[2/3] rounded-xl overflow-hidden border border-white/10 relative mb-2 bg-white/5">
                               <img
                                 className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
-                                alt={movie.movie_title || movie.title || "Movie Poster"}
-                                src={(posterPrefs[item.movie_id] ?? movie.poster_path) ? `https://image.tmdb.org/t/p/w500${posterPrefs[item.movie_id] ?? movie.poster_path}` : "https://images.unsplash.com/photo-1594909122845-11baa439b7bf?w=500"}
+                                alt={displayTitle}
+                                src={poster ? `https://image.tmdb.org/t/p/w500${poster}` : "https://images.unsplash.com/photo-1594909122845-11baa439b7bf?w=500"}
                               />
                               <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/20 to-transparent"></div>
+                              <div className="absolute top-2 left-2">
+                                <span className={`text-[9px] uppercase tracking-wider font-bold px-1.5 py-0.5 rounded backdrop-blur-md ${
+                                  itemType === "tv" ? "bg-purple-900/70 text-purple-200 border border-purple-500/30" : "bg-red-950/70 text-red-200 border border-red-500/30"
+                                }`}>
+                                  {itemType === "tv" ? "TV" : "Movie"}
+                                </span>
+                              </div>
                             </div>
-                            <h4 className="text-body-md font-bold truncate group-hover:text-primary transition-colors">{movie.movie_title || movie.title}</h4>
+                            <h4 className="text-body-md font-bold truncate group-hover:text-primary transition-colors">{displayTitle}</h4>
                           </Link>
                           <button
-                            onClick={() => handleRemoveFromWatchlist(item.movie_id)}
+                            onClick={() => handleRemoveFromWatchlist(item.movie_id, item.content_type || "movie")}
                             className="mt-1 w-full bg-red-500/10 hover:bg-red-500/20 text-red-400 py-1.5 rounded-lg text-label-sm font-bold transition-all border border-red-500/20 active:scale-95 cursor-pointer flex items-center justify-center gap-1"
                           >
                             <span className="material-symbols-outlined text-[14px]">delete</span>
@@ -1218,14 +1407,21 @@ export default function ProfilePage() {
 
             {activeTab === "reviews" && (
               <section className="animate-fade-in max-w-3xl space-y-stack-md">
-                {reviews.length === 0 ? (
-                  <p className="text-on-surface-variant text-center py-10">You haven't written any reviews yet.</p>
+                {currentReviews.length === 0 ? (
+                  <div className="text-center py-12 glass-card rounded-2xl border border-white/5 p-8 max-w-md mx-auto">
+                    <span className="material-symbols-outlined text-[40px] text-on-surface-variant/40 mb-2">rate_review</span>
+                    <p className="text-on-surface-variant text-body-md">
+                      You haven't written any {mediaType === "tv" ? "TV show" : "movie"} reviews yet.
+                    </p>
+                  </div>
                 ) : (
-                  reviews.map(review => {
-                    const movie = movieDetails[review.movie_id];
-                    const rating = ratings.find(r => r.movie_id === review.movie_id)?.rating;
-                    const poster = movie?.poster_path || review.poster_path;
+                  currentReviews.map(review => {
+                    const itemType = review.content_type === "tv" ? "tv" : "movie";
+                    const detail = getItemDetails(review);
+                    const rating = ratings.find(r => r.movie_id === review.movie_id && (r.content_type || "movie") === itemType)?.rating;
+                    const poster = detail?.poster_path || review.poster_path;
                     const isEditing = profileEditReviewId === review.id;
+                    const displayTitle = detail?.title || detail?.name || review.movie_title || "Untitled";
 
                     return (
                       <ReviewCard
@@ -1236,7 +1432,7 @@ export default function ProfilePage() {
                         currentUserAvatar={avatarUrl || user?.image}
                         avatarUrl={avatarUrl || user?.image}
                         userRating={rating}
-                        movieTitle={movie?.title || review.movie_title}
+                        movieTitle={displayTitle}
                         posterPath={poster}
                         onEdit={() => {
                           setProfileEditReviewId(review.id);
@@ -1260,11 +1456,16 @@ export default function ProfilePage() {
               <section className="animate-fade-in space-y-stack-lg max-w-4xl mx-auto">
                 {/* Main Donut & Top Genres Card */}
                 <div className="glass-card p-6 md:p-8 rounded-2xl border border-[#e9c349]/30 shadow-[0_8px_32px_rgba(233,195,73,0.08)] bg-gradient-to-br from-[#181818] via-[#121212] to-[#0a0a0a]">
-                  <div className="flex items-center gap-2 mb-6">
-                    <span className="material-symbols-outlined text-[#e9c349] text-2xl">genetics</span>
-                    <h3 className="font-title-lg text-title-lg font-serif text-[#e9c349] uppercase tracking-wider">
-                      Cinematic Genome
-                    </h3>
+                  <div className="flex items-center justify-between mb-6">
+                    <div className="flex items-center gap-2">
+                      <span className="material-symbols-outlined text-[#e9c349] text-2xl">genetics</span>
+                      <h3 className="font-title-lg text-title-lg font-serif text-[#e9c349] uppercase tracking-wider">
+                        {mediaType === "tv" ? "TV Series Genome" : "Cinematic Genome"}
+                      </h3>
+                    </div>
+                    <span className="text-xs uppercase tracking-widest px-3 py-1 rounded-full bg-white/5 border border-white/10 text-white/70 font-mono">
+                      {mediaType === "tv" ? "TV Shows" : "Movies"}
+                    </span>
                   </div>
 
                   {cinemaDnaData.topGenres.length > 0 ? (
@@ -1309,9 +1510,9 @@ export default function ProfilePage() {
                           </svg>
                           
                           <div className="absolute inset-0 flex flex-col items-center justify-center text-center">
-                            <span className="text-[10px] font-bold text-[#e9c349] uppercase tracking-widest">Cinema</span>
+                            <span className="text-[10px] font-bold text-[#e9c349] uppercase tracking-widest">{mediaType === "tv" ? "TV" : "Cinema"}</span>
                             <span className="text-xl font-serif font-bold text-white tracking-tighter">DNA</span>
-                            <span className="text-[10px] text-on-surface-variant opacity-70 mt-0.5">{watched.length} Watched</span>
+                            <span className="text-[10px] text-on-surface-variant opacity-70 mt-0.5">{currentWatched.length} Watched</span>
                           </div>
                         </div>
                       </div>
@@ -1342,28 +1543,30 @@ export default function ProfilePage() {
                     </div>
                   ) : (
                     <p className="text-on-surface-variant text-center py-8">
-                      Mark movies as watched to generate your Cinema DNA chart.
+                      Mark {mediaType === "tv" ? "TV shows" : "movies"} as watched to generate your {mediaType === "tv" ? "TV" : "Cinema"} DNA chart.
                     </p>
                   )}
                 </div>
 
                 {/* Bottom 3 Stat Cards Grid */}
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-stack-lg">
-                  {/* Card 1: Your Cinema Era */}
+                  {/* Card 1: Your Era */}
                   <div className="glass-card p-6 rounded-2xl border border-white/10 hover:border-[#e9c349]/40 transition-all flex flex-col justify-between space-y-4 relative overflow-hidden group">
                     <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
                       <span className="material-symbols-outlined text-6xl text-[#e9c349]">history_edu</span>
                     </div>
                     <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-on-surface-variant">
-                      <span className="material-symbols-outlined text-[#e9c349] text-lg">movie_filter</span>
-                      Your Cinema Era
+                      <span className="material-symbols-outlined text-[#e9c349] text-lg">
+                        {mediaType === "tv" ? "tv" : "movie_filter"}
+                      </span>
+                      Your {mediaType === "tv" ? "TV" : "Cinema"} Era
                     </div>
                     <div>
                       <div className="text-2xl md:text-3xl font-serif font-bold text-[#e9c349] mb-1">
                         {cinemaDnaData.topDecade}
                       </div>
                       <p className="text-xs text-on-surface-variant opacity-80">
-                        {cinemaDnaData.decadePercent}% of films you watch are from the {cinemaDnaData.topDecade}
+                        {cinemaDnaData.decadePercent}% of {mediaType === "tv" ? "shows" : "films"} you watch are from the {cinemaDnaData.topDecade}
                       </p>
                     </div>
                     <div className="w-full h-1 bg-gradient-to-r from-[#e9c349] to-transparent rounded-full"></div>
@@ -1384,7 +1587,7 @@ export default function ProfilePage() {
                         <span className="text-xs text-on-surface-variant font-normal">/ 10</span>
                       </div>
                       <p className="text-xs text-on-surface-variant opacity-80">
-                        Across {ratings.length} rated movies in your journal
+                        Across {currentRatings.length} rated {mediaType === "tv" ? "TV shows" : "movies"} in your journal
                       </p>
                     </div>
                     <div className="w-full h-1 bg-gradient-to-r from-[#e9c349] to-transparent rounded-full"></div>
@@ -1404,7 +1607,7 @@ export default function ProfilePage() {
                         {cinemaDnaData.formattedRuntime}
                       </div>
                       <p className="text-xs text-on-surface-variant opacity-80">
-                        Calculated from {watched.length} watched film runtimes
+                        Calculated from {currentWatched.length} watched {mediaType === "tv" ? "series" : "film runtimes"}
                       </p>
                     </div>
                     <div className="w-full h-1 bg-gradient-to-r from-[#e9c349] to-transparent rounded-full"></div>
@@ -1441,7 +1644,7 @@ export default function ProfilePage() {
             </button>
 
             <h3 className="font-serif text-headline-sm text-white mb-1">
-              {searchModal.type === "movie" ? "Search Films" : "Search Creatives"}
+              {searchModal.type === "movie" ? "Search Films" : searchModal.type === "tv" ? "Search TV Shows" : "Search Creatives"}
             </h3>
             <p className="text-on-surface-variant text-label-md mb-4 uppercase tracking-widest text-[#e9c349] font-bold">
               {searchModal.slotType.replace('_', ' ')}
@@ -1453,7 +1656,13 @@ export default function ProfilePage() {
                 autoFocus
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder={searchModal.type === "movie" ? "Search for a movie (e.g. Inception)..." : "Search for a person (e.g. Christopher Nolan)..."}
+                placeholder={
+                  searchModal.type === "movie"
+                    ? "Search for a movie (e.g. Inception)..."
+                    : searchModal.type === "tv"
+                    ? "Search for a TV show (e.g. Breaking Bad)..."
+                    : "Search for a person (e.g. Christopher Nolan)..."
+                }
                 className="w-full bg-white/5 border border-white/10 rounded-full px-5 py-3 text-body-md text-white placeholder-white/30 focus:outline-none focus:border-[#e50914] focus:ring-1 focus:ring-[#e50914] transition-all"
               />
             </div>
@@ -1470,10 +1679,12 @@ export default function ProfilePage() {
                 </div>
               ) : (
                 searchResults.map((item) => {
-                  const imagePath = searchModal.type === "movie" ? item.poster_path : item.profile_path;
+                  const imagePath = searchModal.type === "person" ? item.profile_path : item.poster_path;
                   const title = item.title || item.name;
                   const subtitle = searchModal.type === "movie" 
                     ? (item.release_date ? new Date(item.release_date).getFullYear() : "N/A")
+                    : searchModal.type === "tv"
+                    ? (item.first_air_date ? new Date(item.first_air_date).getFullYear() : "N/A")
                     : (item.known_for_department || "Department unknown");
 
                   return (
@@ -1516,7 +1727,12 @@ export default function ProfilePage() {
             <div className="space-y-3">
               <button
                 onClick={() => {
-                  const type = ['movie_1', 'movie_2', 'movie_3', 'movie_4', 'movie_5'].includes(optionsModal.slotType) ? "movie" : "person";
+                  let type: "movie" | "tv" | "person" = "person";
+                  if (optionsModal.slotType.startsWith("movie_")) {
+                    type = "movie";
+                  } else if (optionsModal.slotType.startsWith("tv_")) {
+                    type = "tv";
+                  }
                   setSearchModal({ isOpen: true, type, slotType: optionsModal.slotType });
                   setOptionsModal(null);
                 }}
@@ -1669,3 +1885,4 @@ export default function ProfilePage() {
     </div>
   );
 }
+

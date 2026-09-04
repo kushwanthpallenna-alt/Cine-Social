@@ -212,9 +212,11 @@ export default function Home() {
   const handleWatchlistToggle = async (movie: any) => {
     if (!user) return;
     const movieIdStr = String(movie.id);
+    const isTv = movie.media_type === "tv" || (movie.first_air_date && !movie.release_date) || (!movie.title && !!movie.name);
+    const contentType = isTv ? "tv" : "movie";
     const isSaved = watchlistIds.has(movieIdStr);
     
-    // Set loading state for this specific movie
+    // Set loading state for this specific title
     setWatchlistLoadingId(movieIdStr);
     
     // Optimistic state update
@@ -228,11 +230,17 @@ export default function Home() {
 
     try {
       if (isSaved) {
-        const { error } = await supabase
+        let delQuery = supabase
           .from("watchlist")
           .delete()
           .eq("user_id", user.id)
           .eq("movie_id", movieIdStr);
+        if (contentType === "tv") {
+          delQuery = delQuery.eq("content_type", "tv");
+        } else {
+          delQuery = delQuery.or("content_type.eq.movie,content_type.is.null");
+        }
+        const { error } = await delQuery;
         if (error) {
           // Revert on error
           setWatchlistIds(watchlistIds);
@@ -247,8 +255,9 @@ export default function Home() {
           .insert({
             user_id: user.id,
             movie_id: movieIdStr,
-            movie_title: movie.title || movie.name || "Unknown Movie",
+            movie_title: movie.title || movie.name || "Unknown Title",
             poster_path: movie.poster_path || "",
+            content_type: contentType,
           });
         if (error) {
           // Revert on error

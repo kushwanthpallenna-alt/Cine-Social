@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useCallback, Suspense } from "react";
+import React, { useState, useEffect, useCallback, useMemo, Suspense } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useSession, signOut } from "next-auth/react";
@@ -186,6 +186,7 @@ function MovieDetailsView({ movieId }: { movieId: string }) {
           .select("*")
           .eq("user_id", userId)
           .eq("movie_id", movieId)
+          .or("content_type.eq.movie,content_type.is.null")
           .maybeSingle();
         setIsInWatchlist(!!data);
       } catch (err) {
@@ -206,7 +207,8 @@ function MovieDetailsView({ movieId }: { movieId: string }) {
           .from("watchlist")
           .delete()
           .eq("user_id", userId)
-          .eq("movie_id", movieId);
+          .eq("movie_id", movieId)
+          .or("content_type.eq.movie,content_type.is.null");
         if (!error) {
           setIsInWatchlist(false);
           showToast("Removed from watchlist!");
@@ -219,6 +221,7 @@ function MovieDetailsView({ movieId }: { movieId: string }) {
             movie_id: movieId,
             movie_title: movie.title || movie.name || "Unknown Movie",
             poster_path: movie.poster_path || "",
+            content_type: "movie",
           });
         if (!error) {
           setIsInWatchlist(true);
@@ -1237,7 +1240,8 @@ function WatchlistView() {
   const user = session?.user as any;
   const [watchlist, setWatchlist] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  // Map of movie_id → preferred poster_path
+  const [activeTab, setActiveTab] = useState<"movies" | "tv">("movies");
+  // Map of [type_id] or [id] → preferred poster_path
   const [posterPrefs, setPosterPrefs] = useState<Record<string, string>>({});
 
   useEffect(() => {
@@ -1254,19 +1258,26 @@ function WatchlistView() {
           .order("created_at", { ascending: false });
         if (data) {
           setWatchlist(data);
-          // Batch-fetch poster preferences for all watchlist movies
+          // Batch-fetch poster preferences for all watchlist items (movies + tv shows)
           if (data.length > 0) {
-            const movieIds = data.map((m: any) => String(m.movie_id));
+            const items = data.map((m: any) => ({
+              movie_id: String(m.movie_id),
+              content_type: m.content_type || "movie",
+            }));
             fetch("/api/poster-preference/batch", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ user_id: user.id, movie_ids: movieIds }),
+              body: JSON.stringify({ user_id: user.id, items }),
             })
               .then((r) => r.json())
-              .then((prefs: { movie_id: string; poster_path: string }[]) => {
+              .then((prefs: { movie_id: string; content_type?: string; poster_path: string }[]) => {
                 if (Array.isArray(prefs)) {
                   const map: Record<string, string> = {};
-                  prefs.forEach((p) => { map[p.movie_id] = p.poster_path; });
+                  prefs.forEach((p) => {
+                    const type = p.content_type || "movie";
+                    map[`${type}_${p.movie_id}`] = p.poster_path;
+                    map[p.movie_id] = p.poster_path;
+                  });
                   setPosterPrefs(map);
                 }
               })
@@ -1281,6 +1292,16 @@ function WatchlistView() {
     };
     fetchWatchlist();
   }, [user]);
+
+  const movieWatchlist = useMemo(
+    () => watchlist.filter((item) => (item.content_type || "movie") !== "tv"),
+    [watchlist]
+  );
+  const tvWatchlist = useMemo(
+    () => watchlist.filter((item) => item.content_type === "tv"),
+    [watchlist]
+  );
+  const currentList = activeTab === "movies" ? movieWatchlist : tvWatchlist;
 
   return (
     <div className="bg-[#050505] text-[#e5e2e1] font-body-md overflow-x-clip min-h-screen relative pb-32">
@@ -1301,35 +1322,128 @@ function WatchlistView() {
           <div className="text-center py-20 glass-card rounded-xl border border-white/10 max-w-md mx-auto">
             <span className="material-symbols-outlined text-[48px] text-primary mb-4">account_circle</span>
             <h2 className="font-title-lg text-title-lg mb-2">Sign in Required</h2>
-            <p className="text-on-surface-variant mb-6">Please sign in to view your saved movies.</p>
+            <p className="text-on-surface-variant mb-6">Please sign in to view your saved titles.</p>
             <Link href="/auth/signin" className="bg-primary text-black px-6 py-3 rounded-full font-bold inline-block">
               Sign In
             </Link>
           </div>
-        ) : watchlist.length === 0 ? (
-          <div className="text-center py-20 glass-card rounded-xl border border-white/10 max-w-md mx-auto">
-            <span className="material-symbols-outlined text-[48px] text-on-surface-variant/50 mb-4">bookmark_border</span>
-            <h2 className="font-title-lg text-title-lg mb-2">Your Watchlist is Empty</h2>
-            <p className="text-on-surface-variant">Movies you save will appear here.</p>
-          </div>
         ) : (
-          <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-stack-md">
-            {watchlist.map((movie: any) => {
-              const displayPoster = posterPrefs[String(movie.movie_id)] ?? movie.poster_path;
-              return (
-                <Link key={movie.id} href={`/movies?id=${movie.movie_id}`} className="group cursor-pointer block relative">
-                  <div className="aspect-[2/3] rounded-xl overflow-hidden border border-white/10 relative mb-2">
-                    <img
-                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
-                      alt={movie.movie_title || "Movie Poster"}
-                      src={displayPoster ? `https://image.tmdb.org/t/p/w500${displayPoster}` : "https://images.unsplash.com/photo-1594909122845-11baa439b7bf?w=500"}
-                    />
-                    <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity"></div>
-                  </div>
-                  <h4 className="text-body-md font-bold truncate group-hover:text-primary transition-colors">{movie.movie_title}</h4>
-                </Link>
-              );
-            })}
+          <div>
+            {/* Split Switcher: Movies vs TV Shows */}
+            <div className="flex items-center justify-between flex-wrap gap-4 mb-8">
+              <div className="flex items-center gap-2 p-1 rounded-full bg-white/5 border border-white/10 backdrop-blur-md">
+                <button
+                  onClick={() => setActiveTab("movies")}
+                  className={`px-5 py-2 rounded-full text-sm font-semibold transition-all cursor-pointer flex items-center gap-2 ${
+                    activeTab === "movies"
+                      ? "bg-primary text-black shadow-lg shadow-primary/20 scale-[1.02]"
+                      : "text-white/60 hover:text-white hover:bg-white/5"
+                  }`}
+                >
+                  <span className="material-symbols-outlined text-[18px]">movie</span>
+                  Movies
+                  <span
+                    className={`px-2 py-0.5 rounded-full text-[11px] font-bold ${
+                      activeTab === "movies" ? "bg-black/20 text-black" : "bg-white/10 text-white/70"
+                    }`}
+                  >
+                    {movieWatchlist.length}
+                  </span>
+                </button>
+
+                <button
+                  onClick={() => setActiveTab("tv")}
+                  className={`px-5 py-2 rounded-full text-sm font-semibold transition-all cursor-pointer flex items-center gap-2 ${
+                    activeTab === "tv"
+                      ? "bg-purple-600 text-white shadow-lg shadow-purple-600/30 scale-[1.02]"
+                      : "text-white/60 hover:text-white hover:bg-white/5"
+                  }`}
+                >
+                  <span className="material-symbols-outlined text-[18px]">tv</span>
+                  TV Shows
+                  <span
+                    className={`px-2 py-0.5 rounded-full text-[11px] font-bold ${
+                      activeTab === "tv" ? "bg-black/30 text-white" : "bg-white/10 text-white/70"
+                    }`}
+                  >
+                    {tvWatchlist.length}
+                  </span>
+                </button>
+              </div>
+
+              <div className="text-xs text-white/40">
+                Total Saved: <span className="text-white/80 font-bold">{watchlist.length}</span>
+              </div>
+            </div>
+
+            {/* Current Tab Grid or Empty State */}
+            {currentList.length === 0 ? (
+              <div className="text-center py-20 glass-card rounded-xl border border-white/10 max-w-md mx-auto animate-fade-in">
+                <span className="material-symbols-outlined text-[48px] text-on-surface-variant/50 mb-4">
+                  {activeTab === "tv" ? "tv_off" : "bookmark_border"}
+                </span>
+                <h2 className="font-title-lg text-title-lg mb-2">
+                  {activeTab === "tv" ? "Your TV Show Watchlist is Empty" : "Your Movie Watchlist is Empty"}
+                </h2>
+                <p className="text-on-surface-variant text-sm max-w-xs mx-auto">
+                  {activeTab === "tv"
+                    ? "TV shows you bookmark will appear here."
+                    : "Movies you bookmark will appear here."}
+                </p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-stack-md animate-fade-in">
+                {currentList.map((item: any) => {
+                  const isTv = item.content_type === "tv";
+                  const itemType = isTv ? "tv" : "movie";
+                  const linkHref = isTv ? `/tv?id=${item.movie_id}` : `/movies?id=${item.movie_id}`;
+                  const displayPoster =
+                    posterPrefs[`${itemType}_${item.movie_id}`] ??
+                    posterPrefs[String(item.movie_id)] ??
+                    item.poster_path;
+
+                  return (
+                    <Link
+                      key={`${itemType}_${item.id || item.movie_id}`}
+                      href={linkHref}
+                      className="group cursor-pointer block relative"
+                    >
+                      <div className="aspect-[2/3] rounded-xl overflow-hidden border border-white/10 relative mb-2 bg-white/5">
+                        <img
+                          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                          alt={item.movie_title || "Poster"}
+                          src={
+                            displayPoster
+                              ? `https://image.tmdb.org/t/p/w500${displayPoster}`
+                              : isTv
+                              ? "https://images.unsplash.com/photo-1522869635100-9f4c5e86aa37?w=500"
+                              : "https://images.unsplash.com/photo-1594909122845-11baa439b7bf?w=500"
+                          }
+                          loading="lazy"
+                        />
+                        <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
+                        
+                        {/* Type badge */}
+                        <div className="absolute top-2 left-2">
+                          <span
+                            className={`text-[9px] uppercase tracking-wider font-bold px-1.5 py-0.5 rounded backdrop-blur-md border ${
+                              isTv
+                                ? "bg-purple-900/80 text-purple-200 border-purple-500/40"
+                                : "bg-red-950/80 text-red-200 border-red-500/40"
+                            }`}
+                          >
+                            {isTv ? "TV" : "Movie"}
+                          </span>
+                        </div>
+                      </div>
+                      <h4 className="text-body-md font-bold truncate group-hover:text-primary transition-colors">
+                        {item.movie_title || "Untitled"}
+                      </h4>
+                    </Link>
+                  );
+                })}
+              </div>
+            )}
           </div>
         )}
       </main>

@@ -88,7 +88,8 @@ export default function Recommendations() {
           .from("watchlist")
           .delete()
           .eq("user_id", user.id)
-          .eq("movie_id", movieIdStr);
+          .eq("movie_id", movieIdStr)
+          .or("content_type.eq.movie,content_type.is.null");
         if (error) {
           setWatchlistIds(watchlistIds);
           console.error("Error deleting from watchlist:", error);
@@ -104,6 +105,7 @@ export default function Recommendations() {
             movie_id: movieIdStr,
             movie_title: movie.title || movie.name || "Unknown Movie",
             poster_path: movie.poster_path || "",
+            content_type: "movie",
           });
         if (error) {
           setWatchlistIds(watchlistIds);

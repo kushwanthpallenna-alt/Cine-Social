@@ -8,6 +8,7 @@ import { supabase } from "@/lib/supabase";
 import NotificationBell from "@/components/NotificationBell";
 import ReviewCard from "@/components/ReviewCard";
 import Carousel from "@/components/Carousel";
+import PosterPickerModal from "@/components/PosterPickerModal";
 import { getAvatarUrlOrDefault } from "@/lib/avatar";
 
 const CONTENT_TYPE = "tv";
@@ -91,10 +92,32 @@ function TvShowDetailsContent() {
   const [loadingEpisodes, setLoadingEpisodes] = useState<Record<number, boolean>>({});
   const [toast, setToast] = useState<{ message: string; visible: boolean }>({ message: "", visible: false });
 
+  // Poster preference
+  const [preferredPoster, setPreferredPoster] = useState<string | null>(null);
+  const [showPosterPicker, setShowPosterPicker] = useState(false);
+  const [showPosterConfirm, setShowPosterConfirm] = useState(false);
+
   const showToast = useCallback((message: string) => {
     setToast({ message, visible: true });
     setTimeout(() => setToast(prev => ({ ...prev, visible: false })), 3000);
   }, []);
+
+  // Fetch this user's preferred poster for this TV show
+  useEffect(() => {
+    if (!user?.id || !tvId) return;
+    const userId = user.id;
+    fetch(`/api/poster-preference?userId=${encodeURIComponent(userId)}&movieId=${encodeURIComponent(tvId)}&contentType=tv`)
+      .then((r) => r.json())
+      .then((data) => {
+        if (data?.poster_path) setPreferredPoster(data.poster_path);
+      })
+      .catch(() => { });
+  }, [user, tvId]);
+
+  const handlePosterSelect = useCallback((posterPath: string | null) => {
+    setPreferredPoster(posterPath);
+    showToast(posterPath ? "Poster updated!" : "Poster reset to default!");
+  }, [showToast]);
 
   // Scroll listener
   useEffect(() => {
@@ -456,13 +479,13 @@ function TvShowDetailsContent() {
         <div className="px-6 -mt-40 relative z-10 max-w-screen-xl mx-auto w-full">
           <div className="flex flex-col md:flex-row gap-6 md:gap-10">
             {/* Poster */}
-            <div className="w-40 md:w-64 flex-shrink-0 mx-auto md:mx-0">
+            <div className="w-40 md:w-64 flex-shrink-0 mx-auto md:mx-0 group/poster relative">
               <div className="rounded-xl overflow-hidden shadow-2xl border border-purple-500/20 aspect-[2/3] relative">
                 <img
-                  className="w-full h-full object-cover"
+                  className="w-full h-full object-cover transition-transform duration-700 group-hover/poster:scale-110"
                   alt={tvShow.name || "TV Show Poster"}
-                  src={tvShow.poster_path
-                    ? `https://image.tmdb.org/t/p/w500${tvShow.poster_path}`
+                  src={(preferredPoster ?? tvShow.poster_path)
+                    ? `https://image.tmdb.org/t/p/w500${preferredPoster ?? tvShow.poster_path}`
                     : "https://images.unsplash.com/photo-1522869635100-9f4c5e86aa37?w=500"}
                 />
                 <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent"></div>
@@ -470,7 +493,40 @@ function TvShowDetailsContent() {
                 <span className="absolute top-2 left-2 bg-purple-600/90 text-white text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded backdrop-blur-md border border-purple-400/30">
                   TV Show
                 </span>
+
+                {/* Change Poster button — always visible on mobile, hover-only on desktop */}
+                {user?.id && (
+                  <>
+                    {/* Desktop: hover-reveal icon button */}
+                    <button
+                      onClick={() => setShowPosterPicker(true)}
+                      title="Change poster"
+                      aria-label="Change poster"
+                      className="hidden md:flex absolute top-2 right-2 w-8 h-8 rounded-full bg-black/60 hover:bg-black/80 backdrop-blur-md items-center justify-center text-white border border-white/20 transition-all duration-200 cursor-pointer shadow-lg hover:scale-110 active:scale-95 opacity-0 group-hover/poster:opacity-100"
+                    >
+                      <span className="material-symbols-outlined text-[16px]">collections</span>
+                    </button>
+
+                    {/* Mobile: always-visible pill button with "Edit" label */}
+                    <button
+                      onClick={() => setShowPosterConfirm(true)}
+                      aria-label="Change poster"
+                      className="md:hidden absolute bottom-2 left-1/2 -translate-x-1/2 flex items-center gap-1 px-3 py-1.5 rounded-full bg-black/70 backdrop-blur-md border border-white/20 text-white text-[11px] font-bold shadow-lg active:scale-95 transition-transform cursor-pointer whitespace-nowrap"
+                    >
+                      <span className="material-symbols-outlined text-[13px]">edit</span>
+                      Edit Poster
+                    </button>
+                  </>
+                )}
               </div>
+
+              {/* Preferred poster indicator */}
+              {preferredPoster && preferredPoster !== tvShow.poster_path && (
+                <div className="flex items-center gap-1 mt-1.5 justify-center">
+                  <span className="material-symbols-outlined text-[12px] text-purple-400">auto_awesome</span>
+                  <span className="text-[10px] text-purple-400 font-bold uppercase tracking-widest">Custom</span>
+                </div>
+              )}
             </div>
 
             {/* Details */}
@@ -860,6 +916,72 @@ function TvShowDetailsContent() {
             </button>
           </div>
         </div>
+      )}
+
+      {/* Mobile Poster Picker Bottom Sheet */}
+      {showPosterConfirm && (
+        <div
+          className="fixed inset-0 z-[100] flex items-end justify-center bg-black/70 backdrop-blur-sm animate-fade-in md:hidden"
+          onClick={(e) => { if (e.target === e.currentTarget) setShowPosterConfirm(false); }}
+        >
+          <div
+            className="w-full max-w-lg rounded-t-3xl border-t border-white/10 p-6 flex flex-col items-center text-center shadow-2xl animate-slide-up"
+            style={{ background: "linear-gradient(180deg, #181818 0%, #101010 100%)" }}
+          >
+            {/* Drag handle pill */}
+            <div className="w-10 h-1 rounded-full bg-white/20 mb-5" />
+
+            {/* Poster preview thumbnail */}
+            <div className="w-20 aspect-[2/3] rounded-xl overflow-hidden border border-white/10 shadow-lg mb-4">
+              <img
+                src={(preferredPoster ?? tvShow.poster_path) ? `https://image.tmdb.org/t/p/w185${preferredPoster ?? tvShow.poster_path}` : "https://images.unsplash.com/photo-1522869635100-9f4c5e86aa37?w=500"}
+                alt={tvShow.name || "TV Show Poster"}
+                className="w-full h-full object-cover"
+              />
+            </div>
+
+            <h3 className="font-serif text-lg text-white font-bold mb-1">Change TV Show Poster</h3>
+            <p className="text-xs text-white/50 mb-6 max-w-xs">
+              Choose from alternate official TMDB artwork for <span className="text-white/80 font-medium">"{tvShow.name}"</span>.
+            </p>
+
+            <div className="w-full flex flex-col gap-2">
+              <button
+                onClick={() => {
+                  setShowPosterConfirm(false);
+                  setShowPosterPicker(true);
+                }}
+                className="w-full py-3.5 rounded-full bg-purple-600 text-white font-bold text-sm active:scale-95 transition-transform cursor-pointer flex items-center justify-center gap-2 mb-2"
+              >
+                <span className="material-symbols-outlined text-[18px]">photo_library</span>
+                Browse Poster Options
+              </button>
+              <button
+                onClick={() => setShowPosterConfirm(false)}
+                className="w-full py-3 rounded-full border border-white/10 text-white/60 text-sm active:scale-95 transition-transform cursor-pointer"
+              >
+                Cancel
+              </button>
+            </div>
+
+            {/* Safe-area bottom padding for phones with home-bar */}
+            <div className="h-safe-bottom" style={{ paddingBottom: "env(safe-area-inset-bottom, 12px)" }} />
+          </div>
+        </div>
+      )}
+
+      {/* Poster Picker Modal */}
+      {showPosterPicker && user?.id && (
+        <PosterPickerModal
+          movieId={tvId}
+          movieTitle={tvShow.name || ""}
+          currentPosterPath={preferredPoster}
+          defaultPosterPath={tvShow.poster_path ?? null}
+          userId={user.id}
+          contentType="tv"
+          onClose={() => setShowPosterPicker(false)}
+          onSelect={handlePosterSelect}
+        />
       )}
 
       {/* Trailer Modal */}

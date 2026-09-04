@@ -8,6 +8,7 @@ interface PosterPickerModalProps {
   currentPosterPath: string | null;
   defaultPosterPath: string | null;
   userId: string;
+  contentType?: "movie" | "tv";
   onClose: () => void;
   onSelect: (posterPath: string | null) => void;
 }
@@ -18,6 +19,7 @@ export default function PosterPickerModal({
   currentPosterPath,
   defaultPosterPath,
   userId,
+  contentType = "movie",
   onClose,
   onSelect,
 }: PosterPickerModalProps) {
@@ -27,12 +29,12 @@ export default function PosterPickerModal({
   const [selected, setSelected] = useState<string | null>(currentPosterPath);
   const [error, setError] = useState<string | null>(null);
 
-  // Fetch TMDB images for this movie
+  // Fetch TMDB images for this movie / TV show
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
     setError(null);
-    fetch(`/api/tmdb?endpoint=movie/${movieId}/images`)
+    fetch(`/api/tmdb?endpoint=${contentType}/${movieId}/images`)
       .then((r) => r.json())
       .then((data) => {
         if (cancelled) return;
@@ -59,7 +61,7 @@ export default function PosterPickerModal({
         if (!cancelled) setLoading(false);
       });
     return () => { cancelled = true; };
-  }, [movieId, defaultPosterPath]);
+  }, [movieId, defaultPosterPath, contentType]);
 
   // Close on backdrop click
   const handleBackdropClick = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
@@ -79,7 +81,7 @@ export default function PosterPickerModal({
     try {
       if (!selected || selected === defaultPosterPath) {
         // Reset: delete preference
-        await fetch(`/api/poster-preference?userId=${encodeURIComponent(userId)}&movieId=${encodeURIComponent(movieId)}&defaultPosterPath=${encodeURIComponent(defaultPosterPath || "")}`, {
+        await fetch(`/api/poster-preference?userId=${encodeURIComponent(userId)}&movieId=${encodeURIComponent(movieId)}&contentType=${encodeURIComponent(contentType)}&defaultPosterPath=${encodeURIComponent(defaultPosterPath || "")}`, {
           method: "DELETE",
         });
         onSelect(null);
@@ -87,7 +89,7 @@ export default function PosterPickerModal({
         await fetch("/api/poster-preference", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ user_id: userId, movie_id: movieId, poster_path: selected }),
+          body: JSON.stringify({ user_id: userId, movie_id: movieId, content_type: contentType, poster_path: selected }),
         });
         onSelect(selected);
       }
@@ -104,7 +106,7 @@ export default function PosterPickerModal({
     if (saving) return;
     setSaving(true);
     try {
-      await fetch(`/api/poster-preference?userId=${encodeURIComponent(userId)}&movieId=${encodeURIComponent(movieId)}&defaultPosterPath=${encodeURIComponent(defaultPosterPath || "")}`, {
+      await fetch(`/api/poster-preference?userId=${encodeURIComponent(userId)}&movieId=${encodeURIComponent(movieId)}&contentType=${encodeURIComponent(contentType)}&defaultPosterPath=${encodeURIComponent(defaultPosterPath || "")}`, {
         method: "DELETE",
       });
       onSelect(null);

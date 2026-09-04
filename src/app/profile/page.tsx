@@ -322,21 +322,26 @@ export default function ProfilePage() {
         
         setMediaDetails(details);
 
-        // Batch-fetch poster preferences for movies
-        const movieIds = Array.from(uniqueMedia.values())
-          .filter(m => m.type === "movie")
-          .map(m => m.id);
-        if (movieIds.length > 0) {
+        // Batch-fetch poster preferences for movies & TV shows
+        const mediaItems = Array.from(uniqueMedia.values()).map(m => ({
+          movie_id: m.id,
+          content_type: m.type,
+        }));
+        if (mediaItems.length > 0) {
           fetch("/api/poster-preference/batch", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ user_id: user.id, movie_ids: movieIds }),
+            body: JSON.stringify({ user_id: user.id, items: mediaItems }),
           })
             .then((r) => r.json())
-            .then((prefs: { movie_id: string; poster_path: string }[]) => {
+            .then((prefs: { movie_id: string; content_type?: string; poster_path: string }[]) => {
               if (Array.isArray(prefs)) {
                 const map: Record<string, string> = {};
-                prefs.forEach((p) => { map[p.movie_id] = p.poster_path; });
+                prefs.forEach((p) => {
+                  const type = p.content_type || "movie";
+                  map[`${type}_${p.movie_id}`] = p.poster_path;
+                  map[p.movie_id] = p.poster_path;
+                });
                 setPosterPrefs(map);
               }
             })
@@ -1307,7 +1312,8 @@ export default function ProfilePage() {
                         const userRating = ratingsMap[`${itemType}_${item.movie_id}`] ?? ratingsMap[item.movie_id];
                         const linkHref = itemType === "tv" ? `/tv?id=${item.movie_id}` : `/movies?id=${item.movie_id}`;
                         const displayTitle = detail?.title || detail?.name || detail?.movie_title || item.movie_title || "Untitled";
-                        const poster = (itemType === "movie" && posterPrefs[item.movie_id]) ? posterPrefs[item.movie_id] : (detail.poster_path || item.poster_path);
+                        const customPoster = posterPrefs[`${itemType}_${item.movie_id}`] || posterPrefs[item.movie_id];
+                        const poster = customPoster || detail.poster_path || item.poster_path;
 
                         return (
                           <div key={`${itemType}_${item.movie_id}`} className="group relative block">
@@ -1368,7 +1374,8 @@ export default function ProfilePage() {
                       const detail = getItemDetails(item);
                       const displayTitle = detail?.title || detail?.name || detail?.movie_title || item.movie_title || "Untitled";
                       const linkHref = itemType === "tv" ? `/tv?id=${item.movie_id}` : `/movies?id=${item.movie_id}`;
-                      const poster = (itemType === "movie" && posterPrefs[item.movie_id]) ? posterPrefs[item.movie_id] : (detail.poster_path || item.poster_path);
+                      const customPoster = posterPrefs[`${itemType}_${item.movie_id}`] || posterPrefs[item.movie_id];
+                      const poster = customPoster || detail.poster_path || item.poster_path;
 
                       return (
                         <div key={`${itemType}_${item.movie_id}`} className="group relative block">

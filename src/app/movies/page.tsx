@@ -162,7 +162,7 @@ function MovieDetailsView({ movieId }: { movieId: string }) {
   useEffect(() => {
     if (!user?.id || !movieId) return;
     const userId = user.id;
-    fetch(`/api/poster-preference?userId=${encodeURIComponent(userId)}&movieId=${encodeURIComponent(movieId)}`)
+    fetch(`/api/poster-preference?userId=${encodeURIComponent(userId)}&movieId=${encodeURIComponent(movieId)}&contentType=movie`)
       .then((r) => r.json())
       .then((data) => {
         if (data?.poster_path) setPreferredPoster(data.poster_path);

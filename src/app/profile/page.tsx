@@ -9,7 +9,7 @@ import { getSafeAvatarUrl, getAvatarUrlOrDefault } from "@/lib/avatar";
 import AvatarCropperModal from "@/components/AvatarCropperModal";
 import ProfileBadges from "@/components/ProfileBadges";
 
-type SortOption = 
+type SortOption =
   | "default"
   | "rating_desc"
   | "rating_asc"
@@ -64,7 +64,7 @@ const ProfileSkeleton = () => (
     <div className="flex flex-col md:flex-row items-center md:items-start gap-8 mb-8">
       {/* Profile Picture Skeleton */}
       <div className="w-32 h-32 md:w-40 md:h-40 rounded-full bg-white/10 border-4 border-white/10 shadow-[0_0_30px_rgba(255,180,170,0.05)] animate-skeleton-pulse flex-shrink-0"></div>
-      
+
       {/* User Details & Stats Skeleton */}
       <div className="flex-grow space-y-4 pt-2 text-center md:text-left">
         <div className="flex flex-wrap items-center gap-3 justify-center md:justify-start">
@@ -72,7 +72,7 @@ const ProfileSkeleton = () => (
           <div className="h-7 bg-white/10 rounded-full w-24 animate-skeleton-pulse"></div>
         </div>
         <div className="h-4 bg-white/10 rounded-md w-36 mx-auto md:mx-0 animate-skeleton-pulse"></div>
-        
+
         {/* Stats Row Skeleton */}
         <div className="flex justify-center md:justify-start gap-6 pt-2">
           <div className="text-center space-y-1">
@@ -152,12 +152,12 @@ export default function ProfilePage() {
   const [usernameDraft, setUsernameDraft] = useState("");
   const [usernameSaving, setUsernameSaving] = useState(false);
   const [usernameError, setUsernameError] = useState<string | null>(null);
-  
+
   // Favorites State
   const [favorites, setFavorites] = useState<Record<string, any>>({});
   const [searchModal, setSearchModal] = useState<{ isOpen: boolean; type: "movie" | "tv" | "person"; slotType: string } | null>(null);
   const [optionsModal, setOptionsModal] = useState<{ isOpen: boolean; slotType: string; name: string } | null>(null);
-  
+
   const [activeTab, setActiveTab] = useState<"watched" | "watchlist" | "reviews" | "stats">("watched");
   const [mediaType, setMediaType] = useState<"movie" | "tv">("movie");
   const [watchedSort, setWatchedSort] = useState<SortOption>("default");
@@ -319,7 +319,7 @@ export default function ProfilePage() {
             }
           })
         );
-        
+
         setMediaDetails(details);
 
         // Batch-fetch poster preferences for movies & TV shows
@@ -345,7 +345,7 @@ export default function ProfilePage() {
                 setPosterPrefs(map);
               }
             })
-            .catch(() => {});
+            .catch(() => { });
         }
       } catch (err) {
         console.error("Error fetching user data:", err);
@@ -588,8 +588,8 @@ export default function ProfilePage() {
               : `/api/user-profile?username=${encodeURIComponent(uid)}`;
             const r = await fetch(profileUrl);
             if (r.ok) return await r.json();
-          } catch {}
-          return null;
+          } catch { }
+          return { user_id: uid, username: null, display_name: null, avatar_url: null };
         })
       );
       setFollowListModal({ type, users: profiles.filter(Boolean), loading: false });
@@ -837,7 +837,7 @@ export default function ProfilePage() {
           <button className="material-symbols-outlined text-on-surface-variant hover:opacity-80 transition-opacity cursor-pointer drop-shadow-[0_1px_4px_rgba(0,0,0,0.8)]">
             settings
           </button>
-          <button 
+          <button
             onClick={() => signOut({ callbackUrl: "/auth/signin" })}
             className="material-symbols-outlined text-primary hover:opacity-80 transition-opacity cursor-pointer drop-shadow-[0_1px_4px_rgba(0,0,0,0.8)]"
           >
@@ -1025,7 +1025,7 @@ export default function ProfilePage() {
                     </div>
                   )}
                 </div>
-                
+
                 {/* Stats Row with Split Breakdown (Movies · TV) */}
                 <div className="flex justify-center md:justify-start gap-5 md:gap-6 flex-wrap">
                   <div className="text-center">
@@ -1075,7 +1075,7 @@ export default function ProfilePage() {
                 {['movie_1', 'movie_2', 'movie_3', 'movie_4', 'movie_5'].map((slot, index) => {
                   const fav = favorites[slot];
                   return (
-                    <div 
+                    <div
                       key={slot}
                       onClick={() => {
                         if (fav) {
@@ -1116,7 +1116,7 @@ export default function ProfilePage() {
                 {['tv_1', 'tv_2', 'tv_3', 'tv_4', 'tv_5'].map((slot, index) => {
                   const fav = favorites[slot];
                   return (
-                    <div 
+                    <div
                       key={slot}
                       onClick={() => {
                         if (fav) {
@@ -1161,7 +1161,7 @@ export default function ProfilePage() {
                 ].map(({ slot, label, defaultIcon }) => {
                   const fav = favorites[slot];
                   return (
-                    <div 
+                    <div
                       key={slot}
                       onClick={() => {
                         if (fav) {
@@ -1208,28 +1208,28 @@ export default function ProfilePage() {
 
             {/* Navigation Tabs */}
             <div className="flex gap-4 border-b border-white/10 mb-6 pb-2 overflow-x-auto hide-scrollbar">
-              <button 
+              <button
                 onClick={() => setActiveTab("watched")}
                 className={`pb-2 px-2 font-bold uppercase tracking-widest text-[12px] whitespace-nowrap transition-colors relative border-none bg-transparent cursor-pointer ${activeTab === "watched" ? "text-primary" : "text-on-surface-variant hover:text-white"}`}
               >
                 Watched
                 {activeTab === "watched" && <div className="absolute bottom-[-10px] left-0 w-full h-0.5 bg-primary shadow-[0_0_8px_rgba(255,180,170,0.8)]"></div>}
               </button>
-              <button 
+              <button
                 onClick={() => setActiveTab("watchlist")}
                 className={`pb-2 px-2 font-bold uppercase tracking-widest text-[12px] whitespace-nowrap transition-colors relative border-none bg-transparent cursor-pointer ${activeTab === "watchlist" ? "text-primary" : "text-on-surface-variant hover:text-white"}`}
               >
                 Watchlist
                 {activeTab === "watchlist" && <div className="absolute bottom-[-10px] left-0 w-full h-0.5 bg-primary shadow-[0_0_8px_rgba(255,180,170,0.8)]"></div>}
               </button>
-              <button 
+              <button
                 onClick={() => setActiveTab("reviews")}
                 className={`pb-2 px-2 font-bold uppercase tracking-widest text-[12px] whitespace-nowrap transition-colors relative border-none bg-transparent cursor-pointer ${activeTab === "reviews" ? "text-primary" : "text-on-surface-variant hover:text-white"}`}
               >
                 Reviews
                 {activeTab === "reviews" && <div className="absolute bottom-[-10px] left-0 w-full h-0.5 bg-primary shadow-[0_0_8px_rgba(255,180,170,0.8)]"></div>}
               </button>
-              <button 
+              <button
                 onClick={() => setActiveTab("stats")}
                 className={`pb-2 px-2 font-bold uppercase tracking-widest text-[12px] whitespace-nowrap transition-colors relative border-none bg-transparent cursor-pointer ${activeTab === "stats" ? "text-primary" : "text-on-surface-variant hover:text-white"}`}
               >
@@ -1242,11 +1242,10 @@ export default function ProfilePage() {
             <div className="flex items-center gap-2 mb-6">
               <button
                 onClick={() => setMediaType("movie")}
-                className={`px-4 py-2 rounded-full text-xs font-bold transition-all flex items-center gap-2 cursor-pointer border select-none ${
-                  mediaType === "movie"
-                    ? "bg-[#e50914] text-white border-[#e50914] shadow-[0_0_15px_rgba(229,9,20,0.4)] scale-[1.02]"
-                    : "bg-white/5 text-on-surface-variant border-white/10 hover:bg-white/10 hover:text-white"
-                }`}
+                className={`px-4 py-2 rounded-full text-xs font-bold transition-all flex items-center gap-2 cursor-pointer border select-none ${mediaType === "movie"
+                  ? "bg-[#e50914] text-white border-[#e50914] shadow-[0_0_15px_rgba(229,9,20,0.4)] scale-[1.02]"
+                  : "bg-white/5 text-on-surface-variant border-white/10 hover:bg-white/10 hover:text-white"
+                  }`}
               >
                 <span className="material-symbols-outlined text-[16px]">movie</span>
                 Movies ({activeTab === "watched" ? watchedMovies.length : activeTab === "watchlist" ? watchlistMovies.length : activeTab === "reviews" ? reviewsMovies.length : watchedMovies.length})
@@ -1254,17 +1253,16 @@ export default function ProfilePage() {
 
               <button
                 onClick={() => setMediaType("tv")}
-                className={`px-4 py-2 rounded-full text-xs font-bold transition-all flex items-center gap-2 cursor-pointer border select-none ${
-                  mediaType === "tv"
-                    ? "bg-[#a855f7] text-white border-[#a855f7] shadow-[0_0_15px_rgba(168,85,247,0.4)] scale-[1.02]"
-                    : "bg-white/5 text-on-surface-variant border-white/10 hover:bg-white/10 hover:text-white"
-                }`}
+                className={`px-4 py-2 rounded-full text-xs font-bold transition-all flex items-center gap-2 cursor-pointer border select-none ${mediaType === "tv"
+                  ? "bg-[#a855f7] text-white border-[#a855f7] shadow-[0_0_15px_rgba(168,85,247,0.4)] scale-[1.02]"
+                  : "bg-white/5 text-on-surface-variant border-white/10 hover:bg-white/10 hover:text-white"
+                  }`}
               >
                 <span className="material-symbols-outlined text-[16px]">tv</span>
                 TV Shows ({activeTab === "watched" ? watchedTv.length : activeTab === "watchlist" ? watchlistTv.length : activeTab === "reviews" ? reviewsTv.length : watchedTv.length})
               </button>
             </div>
- 
+
             {/* Tab Content */}
             {activeTab === "watched" && (
               <section className="animate-fade-in">
@@ -1291,11 +1289,10 @@ export default function ProfilePage() {
                           <button
                             key={option.id}
                             onClick={() => setWatchedSort(option.id)}
-                            className={`px-3.5 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap transition-all duration-200 cursor-pointer border flex items-center gap-1.5 select-none shrink-0 ${
-                              isActive
-                                ? (mediaType === "tv" ? "bg-[#a855f7] text-white border-[#a855f7] shadow-[0_0_12px_rgba(168,85,247,0.4)] font-bold scale-[1.02]" : "bg-[#e50914] text-white border-[#e50914] shadow-[0_0_12px_rgba(229,9,20,0.4)] font-bold scale-[1.02]")
-                                : "bg-white/5 text-on-surface-variant border-white/10 hover:bg-white/10 hover:text-white hover:border-white/20"
-                            }`}
+                            className={`px-3.5 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap transition-all duration-200 cursor-pointer border flex items-center gap-1.5 select-none shrink-0 ${isActive
+                              ? (mediaType === "tv" ? "bg-[#a855f7] text-white border-[#a855f7] shadow-[0_0_12px_rgba(168,85,247,0.4)] font-bold scale-[1.02]" : "bg-[#e50914] text-white border-[#e50914] shadow-[0_0_12px_rgba(229,9,20,0.4)] font-bold scale-[1.02]")
+                              : "bg-white/5 text-on-surface-variant border-white/10 hover:bg-white/10 hover:text-white hover:border-white/20"
+                              }`}
                           >
                             {isActive && <span className="material-symbols-outlined text-[13px] font-bold">check</span>}
                             {option.label}
@@ -1325,7 +1322,7 @@ export default function ProfilePage() {
                                   src={poster ? `https://image.tmdb.org/t/p/w500${poster}` : "https://images.unsplash.com/photo-1594909122845-11baa439b7bf?w=500"}
                                 />
                                 <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/20 to-transparent"></div>
-                                
+
                                 {/* User Rating Overlay */}
                                 {userRating !== undefined && (
                                   <div className="absolute top-2 right-2 flex items-center gap-0.5 bg-black/70 backdrop-blur-md px-1.5 py-0.5 rounded-md border border-[#e9c349]/30 shadow-lg">
@@ -1336,9 +1333,8 @@ export default function ProfilePage() {
 
                                 {/* Media Badge */}
                                 <div className="absolute top-2 left-2">
-                                  <span className={`text-[9px] uppercase tracking-wider font-bold px-1.5 py-0.5 rounded backdrop-blur-md ${
-                                    itemType === "tv" ? "bg-purple-900/70 text-purple-200 border border-purple-500/30" : "bg-red-950/70 text-red-200 border border-red-500/30"
-                                  }`}>
+                                  <span className={`text-[9px] uppercase tracking-wider font-bold px-1.5 py-0.5 rounded backdrop-blur-md ${itemType === "tv" ? "bg-purple-900/70 text-purple-200 border border-purple-500/30" : "bg-red-950/70 text-red-200 border border-red-500/30"
+                                    }`}>
                                     {itemType === "tv" ? "TV" : "Movie"}
                                   </span>
                                 </div>
@@ -1388,9 +1384,8 @@ export default function ProfilePage() {
                               />
                               <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/20 to-transparent"></div>
                               <div className="absolute top-2 left-2">
-                                <span className={`text-[9px] uppercase tracking-wider font-bold px-1.5 py-0.5 rounded backdrop-blur-md ${
-                                  itemType === "tv" ? "bg-purple-900/70 text-purple-200 border border-purple-500/30" : "bg-red-950/70 text-red-200 border border-red-500/30"
-                                }`}>
+                                <span className={`text-[9px] uppercase tracking-wider font-bold px-1.5 py-0.5 rounded backdrop-blur-md ${itemType === "tv" ? "bg-purple-900/70 text-purple-200 border border-purple-500/30" : "bg-red-950/70 text-red-200 border border-red-500/30"
+                                  }`}>
                                   {itemType === "tv" ? "TV" : "Movie"}
                                 </span>
                               </div>
@@ -1515,7 +1510,7 @@ export default function ProfilePage() {
                               });
                             })()}
                           </svg>
-                          
+
                           <div className="absolute inset-0 flex flex-col items-center justify-center text-center">
                             <span className="text-[10px] font-bold text-[#e9c349] uppercase tracking-widest">{mediaType === "tv" ? "TV" : "Cinema"}</span>
                             <span className="text-xl font-serif font-bold text-white tracking-tighter">DNA</span>
@@ -1639,7 +1634,7 @@ export default function ProfilePage() {
       {searchModal?.isOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-md animate-fade-in">
           <div className="bg-[#0a0a0a] border border-white/10 rounded-2xl w-full max-w-lg p-6 max-h-[85vh] flex flex-col relative shadow-[0_10px_50px_rgba(229,9,20,0.15)]">
-            <button 
+            <button
               onClick={() => {
                 setSearchModal(null);
                 setSearchQuery("");
@@ -1667,8 +1662,8 @@ export default function ProfilePage() {
                   searchModal.type === "movie"
                     ? "Search for a movie (e.g. Inception)..."
                     : searchModal.type === "tv"
-                    ? "Search for a TV show (e.g. Breaking Bad)..."
-                    : "Search for a person (e.g. Christopher Nolan)..."
+                      ? "Search for a TV show (e.g. Breaking Bad)..."
+                      : "Search for a person (e.g. Christopher Nolan)..."
                 }
                 className="w-full bg-white/5 border border-white/10 rounded-full px-5 py-3 text-body-md text-white placeholder-white/30 focus:outline-none focus:border-[#e50914] focus:ring-1 focus:ring-[#e50914] transition-all"
               />
@@ -1688,11 +1683,11 @@ export default function ProfilePage() {
                 searchResults.map((item) => {
                   const imagePath = searchModal.type === "person" ? item.profile_path : item.poster_path;
                   const title = item.title || item.name;
-                  const subtitle = searchModal.type === "movie" 
+                  const subtitle = searchModal.type === "movie"
                     ? (item.release_date ? new Date(item.release_date).getFullYear() : "N/A")
                     : searchModal.type === "tv"
-                    ? (item.first_air_date ? new Date(item.first_air_date).getFullYear() : "N/A")
-                    : (item.known_for_department || "Department unknown");
+                      ? (item.first_air_date ? new Date(item.first_air_date).getFullYear() : "N/A")
+                      : (item.known_for_department || "Department unknown");
 
                   return (
                     <div

@@ -145,6 +145,9 @@ function MovieDetailsView({ movieId }: { movieId: string }) {
   const [showTrailerModal, setShowTrailerModal] = useState(false);
   const [toast, setToast] = useState<{ message: string; visible: boolean }>({ message: "", visible: false });
 
+  // Streaming / watch providers
+  const [watchProviders, setWatchProviders] = useState<any[]>([]);
+
   // Poster preference
   const [preferredPoster, setPreferredPoster] = useState<string | null>(null);
   const [showPosterPicker, setShowPosterPicker] = useState(false);
@@ -516,12 +519,13 @@ function MovieDetailsView({ movieId }: { movieId: string }) {
       setLoading(true);
       setError(null);
       try {
-        const [movieRes, creditsRes, similarRes, reviewsRes, videosRes] = await Promise.all([
+        const [movieRes, creditsRes, similarRes, reviewsRes, videosRes, providersRes] = await Promise.all([
           fetch(`/api/tmdb?endpoint=movie/${movieId}`),
           fetch(`/api/tmdb?endpoint=movie/${movieId}/credits`),
           fetch(`/api/tmdb?endpoint=movie/${movieId}/similar`),
           fetch(`/api/tmdb?endpoint=movie/${movieId}/reviews`),
-          fetch(`/api/tmdb?endpoint=movie/${movieId}/videos`)
+          fetch(`/api/tmdb?endpoint=movie/${movieId}/videos`),
+          fetch(`/api/tmdb?endpoint=movie/${movieId}/watch/providers`)
         ]);
 
         if (!movieRes.ok) {
@@ -533,6 +537,7 @@ function MovieDetailsView({ movieId }: { movieId: string }) {
         const similarData = await similarRes.json();
         const reviewsData = await reviewsRes.json();
         const videosData = await videosRes.json();
+        const providersData = providersRes.ok ? await providersRes.json() : null;
 
         setMovie(movieData);
         if (creditsData.cast) {
@@ -554,6 +559,18 @@ function MovieDetailsView({ movieId }: { movieId: string }) {
             const anyVideo = videosData.results.find((v: any) => v.site === "YouTube");
             if (anyVideo) setTrailerKey(anyVideo.key);
           }
+        }
+
+        // Watch providers — prefer IN region, fall back to US
+        if (providersData?.results) {
+          const regionData = providersData.results["IN"] || providersData.results["US"];
+          const providers: any[] = [];
+          if (regionData?.flatrate) providers.push(...regionData.flatrate.map((p: any) => ({ ...p, type: "Stream" })));
+          if (regionData?.rent) providers.push(...regionData.rent.map((p: any) => ({ ...p, type: "Rent" })));
+          if (regionData?.buy) providers.push(...regionData.buy.map((p: any) => ({ ...p, type: "Buy" })));
+          // Deduplicate by provider_id
+          const seen = new Set<number>();
+          setWatchProviders(providers.filter(p => { if (seen.has(p.provider_id)) return false; seen.add(p.provider_id); return true; }));
         }
 
         // Use TMDB reviews if available, otherwise set default fallback reviews
@@ -766,6 +783,31 @@ function MovieDetailsView({ movieId }: { movieId: string }) {
                         {dir.name}
                       </Link>
                     </React.Fragment>
+                  ))}
+                </div>
+              )}
+
+              {/* Watch Providers */}
+              {watchProviders.length > 0 && (
+                <div className="flex items-center gap-2 mb-5 flex-wrap text-body-md">
+                  <span className="text-on-surface-variant opacity-70">Streaming on</span>
+                  {watchProviders.map((p: any) => (
+                    <span
+                      key={p.provider_id}
+                      title={`${p.provider_name} — ${p.type}`}
+                      className="flex items-center gap-1.5 text-xs text-on-surface-variant border border-white/10 bg-white/5 hover:bg-white/10 transition-colors px-2.5 py-1 rounded-full"
+                    >
+                      {p.logo_path ? (
+                        <img
+                          src={`https://image.tmdb.org/t/p/w45${p.logo_path}`}
+                          alt={p.provider_name}
+                          className="w-4 h-4 rounded-sm object-cover"
+                        />
+                      ) : (
+                        <span className="material-symbols-outlined text-[14px]">play_circle</span>
+                      )}
+                      {p.provider_name}
+                    </span>
                   ))}
                 </div>
               )}

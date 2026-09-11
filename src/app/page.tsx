@@ -110,12 +110,16 @@ export default function Home() {
   const [searchResults, setSearchResults] = useState<any[]>([]);
   const [searching, setSearching] = useState(false);
 
-  // Quick Log Modal states
+  // Quick Log Modal states (Multi-step: Search -> Rate & Review)
   const [showQuickLogModal, setShowQuickLogModal] = useState(false);
   const [quickLogQuery, setQuickLogQuery] = useState("");
   const [quickLogResults, setQuickLogResults] = useState<any[]>([]);
   const [quickLogSearching, setQuickLogSearching] = useState(false);
-  const [quickLogLoadingId, setQuickLogLoadingId] = useState<string | null>(null);
+  const [selectedLogItem, setSelectedLogItem] = useState<any | null>(null);
+  const [logRating, setLogRating] = useState<number | null>(null);
+  const [logHoverRating, setLogHoverRating] = useState<number>(5);
+  const [logReviewText, setLogReviewText] = useState("");
+  const [isLogSubmitting, setIsLogSubmitting] = useState(false);
 
   // Friends activity states
   const [friendsActivity, setFriendsActivity] = useState<any[]>([]);
@@ -400,43 +404,94 @@ export default function Home() {
     return () => clearTimeout(delayDebounceFn);
   }, [quickLogQuery]);
 
-  // Quick Log handler
-  const handleQuickLog = async (item: any) => {
-    if (!user?.id) {
-      showToast("Please sign in to log a watch");
-      return;
-    }
-    const movieIdStr = String(item.id);
-    const isTv = item.media_type === "tv" || (item.name && !item.title);
-    const contentType = isTv ? "tv" : "movie";
-    const title = item.title || item.name || "Unknown Title";
+  // Select an item from search to proceed to rating & review step
+  const handleSelectLogItem = (item: any) => {
+    setSelectedLogItem(item);
+    setLogRating(null);
+    setLogHoverRating(5);
+    setLogReviewText("");
+  };
 
-    setQuickLogLoadingId(movieIdStr);
+  // Save Log Entry (Watched + Optional Rating + Optional Review)
+  const handleSaveLogEntry = async (includeRatingAndReview = true) => {
+    if (!user?.id || !selectedLogItem) return;
+    const movieIdStr = String(selectedLogItem.id);
+    const isTv = selectedLogItem.media_type === "tv" || (selectedLogItem.name && !selectedLogItem.title);
+    const contentType = isTv ? "tv" : "movie";
+    const title = selectedLogItem.title || selectedLogItem.name || "Unknown Title";
+    const posterPath = selectedLogItem.poster_path || "";
+    const userId = user.id;
+    const userName = user.name || "Cine Member";
+
+    setIsLogSubmitting(true);
     try {
-      const res = await fetch("/api/watched", {
+      // 1. Mark as watched
+      const watchedPromise = fetch("/api/watched", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          user_id: user.id,
+          user_id: userId,
           movie_id: movieIdStr,
           movie_title: title,
-          poster_path: item.poster_path || "",
+          poster_path: posterPath,
           content_type: contentType,
         }),
       });
-      if (res.ok) {
-        showToast(`Logged "${title}" as watched!`);
-        setShowQuickLogModal(false);
-        setQuickLogQuery("");
-        setQuickLogResults([]);
-      } else {
-        showToast("Failed to log watch");
+
+      const promises: PromiseLike<any>[] = [watchedPromise];
+
+      // 2. Save rating (if provided and enabled)
+      if (includeRatingAndReview && logRating !== null) {
+        const ratingPromise = supabase
+          .from("ratings")
+          .upsert({
+            user_id: userId,
+            movie_id: movieIdStr,
+            rating: logRating,
+            created_at: new Date().toISOString(),
+            content_type: contentType,
+          }, { onConflict: "user_id,movie_id,content_type" });
+        promises.push(ratingPromise);
       }
+
+      // 3. Save review (if provided and enabled)
+      if (includeRatingAndReview && logReviewText.trim()) {
+        const reviewPromise = supabase
+          .from("reviews")
+          .insert({
+            user_id: userId,
+            user_name: userName,
+            movie_id: movieIdStr,
+            review_text: logReviewText.trim(),
+            content_type: contentType,
+            created_at: new Date().toISOString(),
+          });
+        promises.push(reviewPromise);
+      }
+
+      await Promise.all(promises);
+
+      let toastMsg = `Logged "${title}" as watched!`;
+      if (includeRatingAndReview && logRating !== null && logReviewText.trim()) {
+        toastMsg = `Logged, rated ${logRating}/10, & reviewed "${title}"!`;
+      } else if (includeRatingAndReview && logRating !== null) {
+        toastMsg = `Logged & rated ${logRating}/10 "${title}"!`;
+      } else if (includeRatingAndReview && logReviewText.trim()) {
+        toastMsg = `Logged & reviewed "${title}"!`;
+      }
+
+      showToast(toastMsg);
+      setShowQuickLogModal(false);
+      setSelectedLogItem(null);
+      setQuickLogQuery("");
+      setQuickLogResults([]);
+      setLogRating(null);
+      setLogReviewText("");
     } catch (err) {
-      console.error("Error logging watch:", err);
-      showToast("Failed to log watch");
+      console.error("Error saving log entry:", err);
+      showToast("Failed to save entry");
     } finally {
-      setQuickLogLoadingId(null);
+      setIsLogSubmitting(false);
     }
   };
 
@@ -1301,127 +1356,277 @@ export default function Home() {
         </button>
       </div>
 
-      {/* Quick Log Modal */}
+      {/* Quick Log Modal (Two-Step: Search -> Rate & Review) */}
       {showQuickLogModal && (
         <div
           className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-md p-4 animate-fade-in"
-          onClick={() => setShowQuickLogModal(false)}
+          onClick={() => {
+            setShowQuickLogModal(false);
+            setSelectedLogItem(null);
+          }}
         >
           <div
-            className="bg-[#121212] border border-white/10 rounded-2xl w-full max-w-lg max-h-[85vh] overflow-hidden flex flex-col shadow-[0_20px_60px_rgba(0,0,0,0.8)]"
+            className="bg-[#121212] border border-white/10 rounded-2xl w-full max-w-lg max-h-[90vh] overflow-hidden flex flex-col shadow-[0_20px_60px_rgba(0,0,0,0.8)]"
             onClick={(e) => e.stopPropagation()}
           >
-            {/* Modal Header */}
-            <div className="flex items-center justify-between px-6 py-4 border-b border-white/10">
-              <div className="flex items-center gap-2">
-                <span className="material-symbols-outlined text-primary">visibility</span>
-                <h3 className="font-serif text-lg text-on-surface font-bold">Quick Log a Watch</h3>
-              </div>
-              <button
-                onClick={() => setShowQuickLogModal(false)}
-                className="text-on-surface-variant hover:text-white transition-colors cursor-pointer border-none bg-transparent"
-              >
-                <span className="material-symbols-outlined">close</span>
-              </button>
-            </div>
-
-            {/* Modal Search Input */}
-            <div className="p-4 border-b border-white/10 bg-white/[0.02]">
-              <div className="relative">
-                <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant/60 text-sm">
-                  search
-                </span>
-                <input
-                  type="text"
-                  placeholder="Search movie or TV show to log..."
-                  autoFocus
-                  value={quickLogQuery}
-                  onChange={(e) => setQuickLogQuery(e.target.value)}
-                  className="w-full bg-white/5 border border-white/10 rounded-xl py-2.5 pl-10 pr-10 text-on-surface placeholder-on-surface-variant/40 focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/50 text-body-md"
-                />
-                {quickLogQuery && (
+            {!selectedLogItem ? (
+              /* ─── Step 1: Search Titles ─── */
+              <>
+                {/* Modal Header */}
+                <div className="flex items-center justify-between px-6 py-4 border-b border-white/10">
+                  <div className="flex items-center gap-2">
+                    <span className="material-symbols-outlined text-primary">visibility</span>
+                    <h3 className="font-serif text-lg text-on-surface font-bold">Quick Log a Watch</h3>
+                  </div>
                   <button
-                    onClick={() => setQuickLogQuery("")}
-                    className="material-symbols-outlined absolute right-3 top-1/2 -translate-y-1/2 text-on-surface-variant/60 hover:text-white transition-colors cursor-pointer border-none bg-transparent text-sm"
+                    onClick={() => {
+                      setShowQuickLogModal(false);
+                      setSelectedLogItem(null);
+                    }}
+                    className="text-on-surface-variant hover:text-white transition-colors cursor-pointer border-none bg-transparent"
                   >
-                    close
+                    <span className="material-symbols-outlined">close</span>
                   </button>
-                )}
-              </div>
-            </div>
+                </div>
 
-            {/* Modal Results List */}
-            <div className="overflow-y-auto flex-1 p-4 space-y-2 max-h-[50vh]">
-              {quickLogSearching ? (
-                <div className="flex flex-col items-center justify-center py-10 gap-2">
-                  <div className="h-7 w-7 border-2 border-primary border-t-transparent rounded-full animate-spin"></div>
-                  <p className="text-xs text-on-surface-variant">Searching titles...</p>
+                {/* Modal Search Input */}
+                <div className="p-4 border-b border-white/10 bg-white/[0.02]">
+                  <div className="relative">
+                    <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant/60 text-sm">
+                      search
+                    </span>
+                    <input
+                      type="text"
+                      placeholder="Search movie or TV show to log..."
+                      autoFocus
+                      value={quickLogQuery}
+                      onChange={(e) => setQuickLogQuery(e.target.value)}
+                      className="w-full bg-white/5 border border-white/10 rounded-xl py-2.5 pl-10 pr-10 text-on-surface placeholder-on-surface-variant/40 focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/50 text-body-md"
+                    />
+                    {quickLogQuery && (
+                      <button
+                        onClick={() => setQuickLogQuery("")}
+                        className="material-symbols-outlined absolute right-3 top-1/2 -translate-y-1/2 text-on-surface-variant/60 hover:text-white transition-colors cursor-pointer border-none bg-transparent text-sm"
+                      >
+                        close
+                      </button>
+                    )}
+                  </div>
                 </div>
-              ) : quickLogQuery.trim() === "" ? (
-                <div className="text-center py-10 text-on-surface-variant/50">
-                  <span className="material-symbols-outlined text-[40px] opacity-30 mb-2">movie_filter</span>
-                  <p className="text-sm">Type a title above to quickly mark it as watched</p>
-                </div>
-              ) : quickLogResults.length === 0 ? (
-                <div className="text-center py-10 text-on-surface-variant/60">
-                  <p className="text-sm">No results found for "{quickLogQuery}"</p>
-                </div>
-              ) : (
-                quickLogResults.map((item: any) => {
-                  const isTv = item.media_type === "tv" || (item.name && !item.title);
-                  const title = item.title || item.name || "Untitled";
-                  const date = item.release_date || item.first_air_date || "";
-                  const year = date ? new Date(date).getFullYear() : "";
-                  const poster = item.poster_path ? `https://image.tmdb.org/t/p/w185${item.poster_path}` : null;
-                  const isLogging = quickLogLoadingId === String(item.id);
 
-                  return (
-                    <div
-                      key={item.id}
-                      className="flex items-center justify-between gap-3 p-2.5 rounded-xl bg-white/5 hover:bg-white/10 border border-white/5 transition-all group"
-                    >
-                      <div className="flex items-center gap-3 min-w-0 flex-1">
-                        <div className="w-11 h-16 rounded-lg overflow-hidden bg-white/10 flex-shrink-0 relative">
-                          {poster ? (
-                            <img src={poster} alt={title} className="w-full h-full object-cover" />
-                          ) : (
-                            <div className="w-full h-full flex items-center justify-center">
-                              <span className="material-symbols-outlined text-xs text-white/30">{isTv ? "tv" : "movie"}</span>
+                {/* Modal Results List */}
+                <div className="overflow-y-auto flex-1 p-4 space-y-2 max-h-[50vh]">
+                  {quickLogSearching ? (
+                    <div className="flex flex-col items-center justify-center py-10 gap-2">
+                      <div className="h-7 w-7 border-2 border-primary border-t-transparent rounded-full animate-spin"></div>
+                      <p className="text-xs text-on-surface-variant">Searching titles...</p>
+                    </div>
+                  ) : quickLogQuery.trim() === "" ? (
+                    <div className="text-center py-10 text-on-surface-variant/50">
+                      <span className="material-symbols-outlined text-[40px] opacity-30 mb-2">movie_filter</span>
+                      <p className="text-sm">Type a title above and click to rate & review</p>
+                    </div>
+                  ) : quickLogResults.length === 0 ? (
+                    <div className="text-center py-10 text-on-surface-variant/60">
+                      <p className="text-sm">No results found for "{quickLogQuery}"</p>
+                    </div>
+                  ) : (
+                    quickLogResults.map((item: any) => {
+                      const isTv = item.media_type === "tv" || (item.name && !item.title);
+                      const title = item.title || item.name || "Untitled";
+                      const date = item.release_date || item.first_air_date || "";
+                      const year = date ? new Date(date).getFullYear() : "";
+                      const poster = item.poster_path ? `https://image.tmdb.org/t/p/w185${item.poster_path}` : null;
+
+                      return (
+                        <div
+                          key={item.id}
+                          onClick={() => handleSelectLogItem(item)}
+                          className="flex items-center justify-between gap-3 p-2.5 rounded-xl bg-white/5 hover:bg-white/10 border border-white/5 hover:border-white/20 transition-all group cursor-pointer"
+                        >
+                          <div className="flex items-center gap-3 min-w-0 flex-1">
+                            <div className="w-11 h-16 rounded-lg overflow-hidden bg-white/10 flex-shrink-0 relative">
+                              {poster ? (
+                                <img src={poster} alt={title} className="w-full h-full object-cover" />
+                              ) : (
+                                <div className="w-full h-full flex items-center justify-center">
+                                  <span className="material-symbols-outlined text-xs text-white/30">{isTv ? "tv" : "movie"}</span>
+                                </div>
+                              )}
                             </div>
-                          )}
-                        </div>
-                        <div className="min-w-0 flex-1">
-                          <p className="font-semibold text-sm text-on-surface truncate group-hover:text-primary transition-colors">{title}</p>
-                          <div className="flex items-center gap-2 mt-0.5">
-                            <span className={`text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded ${isTv ? "bg-purple-500/20 text-purple-300 border border-purple-500/30" : "bg-primary/20 text-primary border border-primary/30"}`}>
-                              {isTv ? "TV" : "Film"}
-                            </span>
-                            {year && <span className="text-xs text-on-surface-variant/60">{year}</span>}
+                            <div className="min-w-0 flex-1">
+                              <p className="font-semibold text-sm text-on-surface truncate group-hover:text-primary transition-colors">{title}</p>
+                              <div className="flex items-center gap-2 mt-0.5">
+                                <span className={`text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded ${isTv ? "bg-purple-500/20 text-purple-300 border border-purple-500/30" : "bg-primary/20 text-primary border border-primary/30"}`}>
+                                  {isTv ? "TV" : "Film"}
+                                </span>
+                                {year && <span className="text-xs text-on-surface-variant/60">{year}</span>}
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="flex items-center gap-1 text-on-surface-variant/50 group-hover:text-primary transition-colors pr-1">
+                            <span className="text-xs font-semibold hidden sm:inline">Log & Rate</span>
+                            <span className="material-symbols-outlined text-sm">chevron_right</span>
                           </div>
                         </div>
+                      );
+                    })
+                  )}
+                </div>
+              </>
+            ) : (
+              /* ─── Step 2: Rate & Review ─── */
+              <>
+                {/* Modal Header with Back Button */}
+                <div className="flex items-center justify-between px-6 py-4 border-b border-white/10">
+                  <button
+                    onClick={() => setSelectedLogItem(null)}
+                    className="flex items-center gap-1 text-xs font-semibold text-on-surface-variant hover:text-white transition-colors cursor-pointer border-none bg-transparent"
+                  >
+                    <span className="material-symbols-outlined text-sm">arrow_back</span>
+                    Back
+                  </button>
+                  <h3 className="font-serif text-lg text-on-surface font-bold">Log Your Watch</h3>
+                  <button
+                    onClick={() => {
+                      setShowQuickLogModal(false);
+                      setSelectedLogItem(null);
+                    }}
+                    className="text-on-surface-variant hover:text-white transition-colors cursor-pointer border-none bg-transparent"
+                  >
+                    <span className="material-symbols-outlined">close</span>
+                  </button>
+                </div>
+
+                {/* Modal Body */}
+                <div className="overflow-y-auto flex-1 p-6 space-y-6">
+                  {/* Selected Item Card */}
+                  <div className="flex items-center gap-4 p-3 rounded-2xl bg-white/5 border border-white/10">
+                    <div className="w-14 h-20 rounded-xl overflow-hidden bg-white/10 flex-shrink-0 relative shadow-md">
+                      {selectedLogItem.poster_path ? (
+                        <img
+                          src={`https://image.tmdb.org/t/p/w185${selectedLogItem.poster_path}`}
+                          alt={selectedLogItem.title || selectedLogItem.name}
+                          className="w-full h-full object-cover"
+                        />
+                      ) : (
+                        <div className="w-full h-full flex items-center justify-center">
+                          <span className="material-symbols-outlined text-sm text-white/30">
+                            {selectedLogItem.media_type === "tv" || (selectedLogItem.name && !selectedLogItem.title) ? "tv" : "movie"}
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className={`text-[9px] font-bold uppercase tracking-wider px-2 py-0.5 rounded ${
+                          selectedLogItem.media_type === "tv" || (selectedLogItem.name && !selectedLogItem.title)
+                            ? "bg-purple-500/20 text-purple-300 border border-purple-500/30"
+                            : "bg-primary/20 text-primary border border-primary/30"
+                        }`}>
+                          {selectedLogItem.media_type === "tv" || (selectedLogItem.name && !selectedLogItem.title) ? "TV Show" : "Movie"}
+                        </span>
+                        {(selectedLogItem.release_date || selectedLogItem.first_air_date) && (
+                          <span className="text-xs text-on-surface-variant/60">
+                            {new Date(selectedLogItem.release_date || selectedLogItem.first_air_date).getFullYear()}
+                          </span>
+                        )}
+                      </div>
+                      <h4 className="font-serif text-base font-bold text-on-surface leading-snug">
+                        {selectedLogItem.title || selectedLogItem.name}
+                      </h4>
+                    </div>
+                  </div>
+
+                  {/* Rating Section (Slider & Score Badge) */}
+                  <div className="glass-panel p-5 rounded-2xl border border-white/10 text-center">
+                    <div className="flex items-center justify-between mb-3">
+                      <span className="text-xs text-on-surface-variant uppercase tracking-widest font-semibold flex items-center gap-1">
+                        <span className="material-symbols-outlined text-xs text-secondary" style={{ fontVariationSettings: "'FILL' 1" }}>grade</span>
+                        Rating (Optional)
+                      </span>
+                      {logRating !== null && (
+                        <button
+                          onClick={() => setLogRating(null)}
+                          className="text-[11px] text-on-surface-variant/60 hover:text-red-400 transition-colors cursor-pointer border-none bg-transparent"
+                        >
+                          Clear rating
+                        </button>
+                      )}
+                    </div>
+
+                    <div className="flex flex-col items-center gap-3">
+                      <div className="w-14 h-14 rounded-full bg-gradient-to-br from-secondary to-primary-container text-on-primary-container font-serif text-2xl font-bold flex items-center justify-center shadow-[0_0_20px_rgba(255,180,170,0.25)]">
+                        {logRating !== null ? logRating : logHoverRating || 5}
                       </div>
 
-                      <button
-                        onClick={() => handleQuickLog(item)}
-                        disabled={isLogging}
-                        className="px-3.5 py-1.5 rounded-full bg-secondary text-black font-semibold text-xs flex items-center gap-1.5 hover:brightness-110 active:scale-95 transition-all cursor-pointer border-none shadow-md flex-shrink-0 disabled:opacity-50"
-                      >
-                        {isLogging ? (
-                          <div className="w-3.5 h-3.5 border-2 border-black border-t-transparent rounded-full animate-spin"></div>
-                        ) : (
-                          <>
-                            <span className="material-symbols-outlined text-[15px]" style={{ fontVariationSettings: "'FILL' 1" }}>
-                              check
-                            </span>
-                            Mark Watched
-                          </>
-                        )}
-                      </button>
+                      <input
+                        type="range"
+                        min="1"
+                        max="10"
+                        value={logRating !== null ? logRating : logHoverRating || 5}
+                        onChange={(e) => {
+                          const val = parseInt(e.target.value, 10);
+                          setLogRating(val);
+                          setLogHoverRating(val);
+                        }}
+                        className="w-full h-1.5 bg-white/10 rounded-lg appearance-none cursor-pointer accent-primary focus:outline-none"
+                      />
+
+                      <div className="flex justify-between w-full text-[10px] text-on-surface-variant uppercase tracking-widest px-1 font-bold opacity-60">
+                        <span>1 - Awful</span>
+                        <span>5 - Good</span>
+                        <span>10 - Masterpiece</span>
+                      </div>
                     </div>
-                  );
-                })
-              )}
-            </div>
+                  </div>
+
+                  {/* Review Section */}
+                  <div>
+                    <label className="text-xs text-on-surface-variant uppercase tracking-widest font-semibold flex items-center gap-1 mb-2">
+                      <span className="material-symbols-outlined text-xs text-primary">rate_review</span>
+                      Review / Thoughts (Optional)
+                    </label>
+                    <textarea
+                      rows={3}
+                      placeholder="Write your thoughts or review here..."
+                      value={logReviewText}
+                      onChange={(e) => setLogReviewText(e.target.value)}
+                      className="w-full bg-white/5 border border-white/10 rounded-xl p-3 text-on-surface placeholder-on-surface-variant/40 focus:outline-none focus:border-primary/50 text-sm resize-none transition-all"
+                    />
+                  </div>
+
+                  {/* Buttons */}
+                  <div className="space-y-2 pt-2">
+                    <button
+                      onClick={() => handleSaveLogEntry(true)}
+                      disabled={isLogSubmitting}
+                      className="w-full py-3 rounded-full bg-primary text-black font-bold text-sm hover:brightness-110 active:scale-95 transition-all cursor-pointer flex items-center justify-center gap-2 shadow-lg shadow-primary/20 disabled:opacity-50 border-none"
+                    >
+                      {isLogSubmitting ? (
+                        <div className="w-4 h-4 border-2 border-black border-t-transparent rounded-full animate-spin"></div>
+                      ) : (
+                        <>
+                          <span className="material-symbols-outlined text-[18px]" style={{ fontVariationSettings: "'FILL' 1" }}>
+                            check_circle
+                          </span>
+                          Save Entry
+                        </>
+                      )}
+                    </button>
+
+                    <button
+                      onClick={() => handleSaveLogEntry(false)}
+                      disabled={isLogSubmitting}
+                      className="w-full py-2.5 rounded-full border border-white/10 bg-white/5 hover:bg-white/10 text-on-surface-variant hover:text-on-surface text-xs font-semibold transition-all cursor-pointer flex items-center justify-center gap-1.5"
+                    >
+                      Skip Rating & Review (Watched Only)
+                    </button>
+                  </div>
+                </div>
+              </>
+            )}
           </div>
         </div>
       )}

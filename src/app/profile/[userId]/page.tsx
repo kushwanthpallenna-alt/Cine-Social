@@ -661,6 +661,121 @@ export default function PublicProfilePage() {
           </section>
         )}
 
+        {/* Favorite Creatives */}
+        {(() => {
+          const creativeSlots = ["director", "actor", "actress"] as const;
+          const slotLabels: Record<string, string> = { director: "Director", actor: "Actor", actress: "Actress" };
+          const creatives = creativeSlots
+            .map(slot => favorites.find((f: any) => f.slot_type === slot))
+            .filter(Boolean);
+          if (creatives.length === 0) return null;
+          return (
+            <section className="mb-8">
+              <h3 className="text-xs text-on-surface-variant uppercase tracking-widest mb-4 border-l-2 border-[#e9c349] pl-2">
+                Favourite Creatives
+              </h3>
+              <div className="flex gap-5 flex-wrap">
+                {creatives.map((fav: any) => (
+                  <div key={fav.slot_type} className="flex flex-col items-center gap-2 group">
+                    <div className="w-16 h-16 rounded-full overflow-hidden border-2 border-white/10 group-hover:border-primary/40 transition-colors shadow-md bg-white/5 flex-shrink-0">
+                      {fav.image_url ? (
+                        <img
+                          src={`https://image.tmdb.org/t/p/w185${fav.image_url}`}
+                          alt={fav.name}
+                          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                        />
+                      ) : (
+                        <div className="w-full h-full flex items-center justify-center">
+                          <span className="material-symbols-outlined text-on-surface-variant/40 text-2xl">person</span>
+                        </div>
+                      )}
+                    </div>
+                    <div className="text-center">
+                      <p className="text-[11px] font-semibold text-on-surface leading-tight max-w-[72px] truncate">{fav.name}</p>
+                      <p className="text-[9px] uppercase tracking-widest text-on-surface-variant/60 mt-0.5">{slotLabels[fav.slot_type] || fav.slot_type}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </section>
+          );
+        })()}
+
+        {/* Watchlist */}
+        {(watchlistMovies.length > 0 || watchlistTv.length > 0) && (
+          <section className="mb-8">
+            <h3 className="text-xs text-on-surface-variant uppercase tracking-widest mb-4 border-l-2 border-white/30 pl-2">
+              Watchlist
+            </h3>
+
+            {/* Watchlist — Movies */}
+            {watchlistMovies.length > 0 && (
+              <div className="mb-5">
+                <p className="text-[10px] uppercase tracking-widest text-on-surface-variant/60 mb-2 flex items-center gap-1">
+                  <span className="material-symbols-outlined text-[13px]">movie</span>
+                  Movies ({watchlistMovies.length})
+                </p>
+                <div className="grid grid-cols-5 gap-2">
+                  {watchlistMovies.slice(0, 10).map((item: any) => {
+                    const poster = item.poster_path;
+                    const title = item.movie_title || "";
+                    return (
+                      <Link
+                        key={`wl_movie_${item.movie_id}`}
+                        href={`/movies?id=${item.movie_id}`}
+                        className="aspect-[2/3] rounded-xl overflow-hidden border border-white/10 group relative block bg-white/5"
+                        title={title}
+                      >
+                        <img
+                          src={poster ? `https://image.tmdb.org/t/p/w342${poster}` : "https://images.unsplash.com/photo-1594909122845-11baa439b7bf?w=342"}
+                          alt={title}
+                          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                        />
+                        <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex items-end p-1.5">
+                          <p className="text-[9px] text-white font-bold line-clamp-2 leading-tight">{title}</p>
+                        </div>
+                      </Link>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* Watchlist — TV Shows */}
+            {watchlistTv.length > 0 && (
+              <div>
+                <p className="text-[10px] uppercase tracking-widest text-on-surface-variant/60 mb-2 flex items-center gap-1">
+                  <span className="material-symbols-outlined text-[13px]">tv</span>
+                  TV Shows ({watchlistTv.length})
+                </p>
+                <div className="grid grid-cols-5 gap-2">
+                  {watchlistTv.slice(0, 10).map((item: any) => {
+                    const poster = item.poster_path;
+                    const title = item.movie_title || "";
+                    return (
+                      <Link
+                        key={`wl_tv_${item.movie_id}`}
+                        href={`/tv?id=${item.movie_id}`}
+                        className="aspect-[2/3] rounded-xl overflow-hidden border border-white/10 group relative block bg-white/5"
+                        title={title}
+                      >
+                        <img
+                          src={poster ? `https://image.tmdb.org/t/p/w342${poster}` : "https://images.unsplash.com/photo-1594909122845-11baa439b7bf?w=342"}
+                          alt={title}
+                          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                        />
+                        <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex items-end p-1.5">
+                          <p className="text-[9px] text-white font-bold line-clamp-2 leading-tight">{title}</p>
+                        </div>
+                      </Link>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+          </section>
+        )}
+
         {/* Media Filter Tabs for Watched & Reviews */}
         <div className="flex items-center gap-2 mb-6 pt-4 border-t border-white/10">
           <button

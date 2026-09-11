@@ -7,6 +7,7 @@ import dynamic from "next/dynamic";
 import { useSession, signOut } from "next-auth/react";
 import { supabase } from "@/lib/supabase";
 import { useToast } from "@/components/ToastProvider";
+import { getSafeAvatarUrl } from "@/lib/avatar";
 
 const NotificationBell = dynamic(() => import("@/components/NotificationBell"), { ssr: false });
 const Carousel = dynamic(() => import("@/components/Carousel"));
@@ -99,10 +100,26 @@ export default function Home() {
   const [page, setPage] = useState(1);
   const [loadingMore, setLoadingMore] = useState(false);
 
+  // TV shows pagination & view mode
+  const [tvPage, setTvPage] = useState(1);
+  const [loadingMoreTv, setLoadingMoreTv] = useState(false);
+  const [tvViewMode, setTvViewMode] = useState<"slider" | "grid">("slider");
+
   // Search states
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<any[]>([]);
   const [searching, setSearching] = useState(false);
+
+  // Quick Log Modal states
+  const [showQuickLogModal, setShowQuickLogModal] = useState(false);
+  const [quickLogQuery, setQuickLogQuery] = useState("");
+  const [quickLogResults, setQuickLogResults] = useState<any[]>([]);
+  const [quickLogSearching, setQuickLogSearching] = useState(false);
+  const [quickLogLoadingId, setQuickLogLoadingId] = useState<string | null>(null);
+
+  // Friends activity states
+  const [friendsActivity, setFriendsActivity] = useState<any[]>([]);
+  const [friendsDetails, setFriendsDetails] = useState<Record<string, any>>({});
 
   // View mode state for trending movies
   const [viewMode, setViewMode] = useState<"slider" | "grid">("slider");
@@ -134,6 +151,26 @@ export default function Home() {
       console.error("Failed to load more trending movies", e);
     } finally {
       setLoadingMore(false);
+    }
+  };
+
+  const loadMoreTv = async () => {
+    if (loadingMoreTv) return;
+    setLoadingMoreTv(true);
+    try {
+      const nextPage = tvPage + 1;
+      const res = await fetch(`/api/tmdb?endpoint=trending/tv/week&page=${nextPage}`);
+      if (res.ok) {
+        const data = await res.json();
+        if (data.results) {
+          setTrendingTv(prev => [...prev, ...data.results]);
+          setTvPage(nextPage);
+        }
+      }
+    } catch (e) {
+      console.error("Failed to load more trending TV shows", e);
+    } finally {
+      setLoadingMoreTv(false);
     }
   };
 
@@ -332,11 +369,123 @@ export default function Home() {
   }, []);
 
   const sentinelRef = useRef<HTMLDivElement | null>(null);
+  const sentinelTvRef = useRef<HTMLDivElement | null>(null);
+
+  // Quick log debounce effect
+  useEffect(() => {
+    if (!quickLogQuery.trim()) {
+      setQuickLogResults([]);
+      setQuickLogSearching(false);
+      return;
+    }
+
+    const delayDebounceFn = setTimeout(async () => {
+      setQuickLogSearching(true);
+      try {
+        const res = await fetch(`/api/tmdb?endpoint=search/multi&query=${encodeURIComponent(quickLogQuery)}`);
+        if (res.ok) {
+          const data = await res.json();
+          const filtered = (data.results || []).filter(
+            (item: any) => item.media_type === "movie" || item.media_type === "tv" || (!item.media_type && (item.title || item.name))
+          );
+          setQuickLogResults(filtered);
+        }
+      } catch (err) {
+        console.error("Error searching in quick log modal:", err);
+      } finally {
+        setQuickLogSearching(false);
+      }
+    }, 350);
+
+    return () => clearTimeout(delayDebounceFn);
+  }, [quickLogQuery]);
+
+  // Quick Log handler
+  const handleQuickLog = async (item: any) => {
+    if (!user?.id) {
+      showToast("Please sign in to log a watch");
+      return;
+    }
+    const movieIdStr = String(item.id);
+    const isTv = item.media_type === "tv" || (item.name && !item.title);
+    const contentType = isTv ? "tv" : "movie";
+    const title = item.title || item.name || "Unknown Title";
+
+    setQuickLogLoadingId(movieIdStr);
+    try {
+      const res = await fetch("/api/watched", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          user_id: user.id,
+          movie_id: movieIdStr,
+          movie_title: title,
+          poster_path: item.poster_path || "",
+          content_type: contentType,
+        }),
+      });
+      if (res.ok) {
+        showToast(`Logged "${title}" as watched!`);
+        setShowQuickLogModal(false);
+        setQuickLogQuery("");
+        setQuickLogResults([]);
+      } else {
+        showToast("Failed to log watch");
+      }
+    } catch (err) {
+      console.error("Error logging watch:", err);
+      showToast("Failed to log watch");
+    } finally {
+      setQuickLogLoadingId(null);
+    }
+  };
+
+  // Fetch Friends Activity (Real data from social-feed)
+  useEffect(() => {
+    if (!user?.id) return;
+    async function fetchFriends() {
+      try {
+        const res = await fetch(`/api/social-feed?userId=${user.id}&page=0`);
+        if (res.ok) {
+          const data = await res.json();
+          const feedItems = (data.items || []).slice(0, 3);
+          setFriendsActivity(feedItems);
+
+          const missingIds = feedItems.filter((it: any) => !it.movie_title || !it.poster_path);
+          if (missingIds.length > 0) {
+            const det: Record<string, any> = {};
+            await Promise.all(
+              missingIds.map(async (it: any) => {
+                const type = it.content_type || "movie";
+                try {
+                  const tmdbRes = await fetch(`/api/tmdb?endpoint=${type}/${it.movie_id}`);
+                  if (tmdbRes.ok) {
+                    det[`${type}_${it.movie_id}`] = await tmdbRes.json();
+                  }
+                } catch {}
+              })
+            );
+            setFriendsDetails(det);
+          }
+        }
+      } catch (e) {
+        console.error("Error fetching friends activity on home page:", e);
+      }
+    }
+    fetchFriends();
+  }, [user?.id]);
 
   const handleHorizontalScroll = (e: React.UIEvent<HTMLDivElement>) => {
     const container = e.currentTarget;
     if (container.scrollWidth - container.scrollLeft - container.clientWidth < 300) {
       loadMoreTrending();
+    }
+  };
+
+  const handleHorizontalScrollTv = (e: React.UIEvent<HTMLDivElement>) => {
+    const container = e.currentTarget;
+    if (container.scrollWidth - container.scrollLeft - container.clientWidth < 300) {
+      loadMoreTv();
     }
   };
 
@@ -360,6 +509,27 @@ export default function Home() {
       }
     };
   }, [viewMode, trendingMovies]);
+
+  useEffect(() => {
+    if (tvViewMode !== "grid") return;
+    const observer = new IntersectionObserver((entries) => {
+      if (entries[0].isIntersecting) {
+        loadMoreTv();
+      }
+    }, {
+      rootMargin: "200px"
+    });
+
+    if (sentinelTvRef.current) {
+      observer.observe(sentinelTvRef.current);
+    }
+
+    return () => {
+      if (sentinelTvRef.current) {
+        observer.unobserve(sentinelTvRef.current);
+      }
+    };
+  }, [tvViewMode, trendingTv]);
 
   return (
     <div className="font-body-md text-on-surface pb-32 bg-[#050505] min-h-screen relative">
@@ -603,158 +773,128 @@ export default function Home() {
               </section>
             ) : null}
 
-        {/* Continue Watching (Wide Cards) */}
-        <section className="mt-stack-xl px-container-margin max-w-screen-xl mx-auto">
-          <div className="flex justify-between items-end mb-stack-md">
-            <h3 className="font-headline-lg text-headline-lg font-serif">Continue Watching</h3>
-            <Link className="text-primary text-label-sm flex items-center gap-1 hover:underline" href="/movies?id=872585">
-              View All <span className="material-symbols-outlined text-sm">chevron_right</span>
-            </Link>
-          </div>
-          <Carousel containerClassName="gap-gutter pb-4 -mx-container-margin px-container-margin md:mx-0 md:px-0 snap-x snap-mandatory scroll-px-container-margin md:scroll-px-0">
-            {/* Card 1 - Blade Runner 2049 */}
-            <Link href="/movies?id=335984" className="min-w-[280px] md:min-w-[340px] group/card cursor-pointer block snap-start">
-              <div className="relative h-[180px] rounded-xl overflow-hidden glass-panel">
-                <Image
-                  alt="Blade Runner"
-                  className="object-cover transition-transform duration-500 group-hover/card:scale-110"
-                  src="https://lh3.googleusercontent.com/aida-public/AB6AXuAxf9CS53Dv5MGRtqtidFPZZwuyRjx7Qfu3Q4gR0k3y3v2SdUPXJ8eljOk_L3Ln6CRUd4GYL8BlJoiFLESYXhrTUL7OW4OkZ46rwY1YdyHyI-qw59EeJ_ZQZ-ZlqXys28NnKcg_DWJ_hifTNB90kcelsEIA2zv9Vi-5OoZnEixk3MaY560tCHGGvdhpnu5st_FCI_cwhwscpW4vMpYwgEaTRj3WZCWYF0a9NT01rpj9wTmC0crSI2RepF_-6nhkSOjfAwhGP9H5CIo"
-                  fill
-                  loading="lazy"
-                  sizes="(max-width: 768px) 280px, 340px"
-                  draggable={false}
-                />
-                <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover/card:opacity-100 transition-opacity">
-                  <div className="w-12 h-12 rounded-full bg-primary/80 flex items-center justify-center">
-                    <span className="material-symbols-outlined text-black" style={{ fontVariationSettings: "'FILL' 1" }}>
-                      play_arrow
-                    </span>
-                  </div>
-                </div>
-                <div className="absolute bottom-0 left-0 right-0 h-1 bg-white/10">
-                  <div className="h-full bg-primary-container w-[65%]"></div>
-                </div>
-              </div>
-              <div className="mt-stack-sm flex justify-between items-start">
-                <div>
-                  <h4 className="font-title-lg text-title-lg group-hover/card:text-primary transition-colors">
-                    Blade Runner 2049
-                  </h4>
-                  <p className="text-on-surface-variant text-body-md">1h 42m left</p>
-                </div>
-                <span className="material-symbols-outlined text-on-surface-variant">more_vert</span>
-              </div>
-            </Link>
-
-            {/* Card 2 - The Godfather */}
-            <Link href="/movies?id=238" className="min-w-[280px] md:min-w-[340px] group/card cursor-pointer block snap-start">
-              <div className="relative h-[180px] rounded-xl overflow-hidden glass-panel">
-                <Image
-                  alt="Classic Noir"
-                  className="object-cover transition-transform duration-500 group-hover/card:scale-110"
-                  src="https://lh3.googleusercontent.com/aida-public/AB6AXuDp_uAbl8kXVsezA3J8wftI2-DCzOYNWBkGo2W3104npOwRSX1qr-ShURspHLlDytgyMW2oDFQXHXnFi8puIsFybFSCec-TRugsGf_uh75tMwRm-anXdIMKnCJc_9yA_q4modScsI2Rd9rpHY7ExVCnJ-1Rn3n6nheMuydp1od364yDtknEbFrgcQtP7sGImpVysal2aN6e0xIeHvw5J4clQoY8pWjVLZIPtlw3SDmAqbWUJaEnGLOVYVPIaydtmjyRNlI-xj_KQGU"
-                  fill
-                  loading="lazy"
-                  sizes="(max-width: 768px) 280px, 340px"
-                  draggable={false}
-                />
-                <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover/card:opacity-100 transition-opacity">
-                  <div className="w-12 h-12 rounded-full bg-primary/80 flex items-center justify-center">
-                    <span className="material-symbols-outlined text-black" style={{ fontVariationSettings: "'FILL' 1" }}>
-                      play_arrow
-                    </span>
-                  </div>
-                </div>
-                <div className="absolute bottom-0 left-0 right-0 h-1 bg-white/10">
-                  <div className="h-full bg-primary-container w-[15%]"></div>
-                </div>
-              </div>
-              <div className="mt-stack-sm flex justify-between items-start">
-                <div>
-                  <h4 className="font-title-lg text-title-lg group-hover/card:text-primary transition-colors">
-                    The Godfather
-                  </h4>
-                  <p className="text-on-surface-variant text-body-md">2h 15m left</p>
-                </div>
-                <span className="material-symbols-outlined text-on-surface-variant">more_vert</span>
-              </div>
-            </Link>
-          </Carousel>
-        </section>
-
-        {/* Friends Activity (Exclusive Section) */}
+        {/* Friends Activity / Popular This Week (Real Data) */}
         <section className="mt-stack-xl px-container-margin max-w-screen-xl mx-auto">
           <div className="glass-panel p-stack-lg rounded-2xl border-primary/10">
-            <h3 className="font-title-lg text-title-lg mb-stack-md flex items-center gap-2 font-serif">
-              <span className="material-symbols-outlined text-primary">group</span>
-              Friends are Watching
-            </h3>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-gutter">
-              <Link href="/movies?id=872585" className="flex items-center gap-stack-md p-stack-sm rounded-lg hover:bg-white/5 transition-colors cursor-pointer block">
-                <div className="relative flex-shrink-0">
-                  <Image
-                    alt="Friend 1"
-                    className="w-10 h-10 rounded-full object-cover border border-white/20"
-                    src="https://lh3.googleusercontent.com/aida-public/AB6AXuCsbOCgiRCJjBm38ZBkIr4rZ47v-oetCvz_BXwq8Q1FsBwX1hfCFzHu8UY0PZaY702HTr5ktwK3xH-FWvpSYHK13gRhsfM8Bg6sim71ue6DE-Zcc6PcI9TYxqxKCshDmJ7KGjsceAjCXqlDqRI9SsNaz8WGTIzcUiXqTccWUwIOrPRrZEs1jwkr-BS6eir4EzfM_ltUP3G9gIjElccoHck6XljXu2riN0EqwwzkrlMQfoGy7BUWriSYnr6fFDWP-LVHeF2ZWym7ZNs"
-                    width={40}
-                    height={40}
-                    loading="lazy"
-                    sizes="40px"
-                  />
-                  <div className="absolute -bottom-1 -right-1 w-4 h-4 bg-primary rounded-full border-2 border-surface flex items-center justify-center">
-                    <span className="material-symbols-outlined text-[8px] text-on-primary" style={{ fontVariationSettings: "'FILL' 1" }}>
-                      play_arrow
-                    </span>
-                  </div>
+            {friendsActivity.length > 0 ? (
+              <>
+                <div className="flex justify-between items-center mb-stack-md">
+                  <h3 className="font-title-lg text-title-lg flex items-center gap-2 font-serif">
+                    <span className="material-symbols-outlined text-primary">group</span>
+                    Friends are Watching
+                  </h3>
+                  <Link href="/community" className="text-primary text-xs flex items-center gap-0.5 hover:underline">
+                    View All <span className="material-symbols-outlined text-sm">chevron_right</span>
+                  </Link>
                 </div>
-                <div>
-                  <p className="text-body-md font-semibold">
-                    Sarah <span className="font-normal text-on-surface-variant">is watching</span>
-                  </p>
-                  <p className="text-primary text-body-md font-bold">Oppenheimer</p>
-                </div>
-              </Link>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-gutter">
+                  {friendsActivity.map((item: any) => {
+                    const type = item.content_type === "tv" ? "tv" : "movie";
+                    const detail = friendsDetails[`${type}_${item.movie_id}`];
+                    const title = item.movie_title || detail?.title || detail?.name || "Untitled";
+                    const linkHref = type === "tv" ? `/tv?id=${item.movie_id}` : `/movies?id=${item.movie_id}`;
+                    const avatarUrl = getSafeAvatarUrl(item.avatar_url);
+                    const initials = (item.display_name || "U").slice(0, 2).toUpperCase();
 
-              <Link href="/movies?id=792307" className="flex items-center gap-stack-md p-stack-sm rounded-lg hover:bg-white/5 transition-colors cursor-pointer block">
-                <div className="relative flex-shrink-0">
-                  <Image
-                    alt="Friend 2"
-                    className="w-10 h-10 rounded-full object-cover border border-white/20"
-                    src="https://lh3.googleusercontent.com/aida-public/AB6AXuD8slP0yJdPEhjFz0UG9T6zmCA1BrtLo9H8_GhWFOaxrE7q-8GmOfwIbpHjF-riFTivojnQgW3TTZIA2gByt8jhxFmg3qo32pRL4WR6E4zHchxuazOZsYsxNjVuIDhTTVMXeJ_cpUEwgZnGvK9b9n-iZ8mNOqSH_JYiSDyWwkmqrScNHtKU_aQfRL7R0oUj9vwYpv0cdGJGbiJUxbJpwpwxWuG371KYq9TnFg_YJmrMXlnI1JVsmJvmWClT8nZAveC3hO6_Sxju5yI"
-                    width={40}
-                    height={40}
-                    loading="lazy"
-                    sizes="40px"
-                  />
-                </div>
-                <div>
-                  <p className="text-body-md font-semibold">
-                    Marcus <span className="font-normal text-on-surface-variant">rated 5.0</span>
-                  </p>
-                  <p className="text-secondary text-body-md font-bold">Poor Things</p>
-                </div>
-              </Link>
+                    let actionText = "watched";
+                    let actionIcon = "visibility";
+                    if (item.type === "rating") {
+                      actionText = `rated ${typeof item.rating === "number" ? (item.rating % 1 === 0 ? item.rating : item.rating.toFixed(1)) : item.rating}`;
+                      actionIcon = "grade";
+                    } else if (item.type === "review") {
+                      actionText = "reviewed";
+                      actionIcon = "rate_review";
+                    } else if (item.type === "watchlist") {
+                      actionText = "wants to watch";
+                      actionIcon = "bookmark";
+                    }
 
-              <Link href="/movies?id=840430" className="hidden md:flex items-center gap-stack-md p-stack-sm rounded-lg hover:bg-white/5 transition-colors cursor-pointer block">
-                <div className="relative flex-shrink-0">
-                  <Image
-                    alt="Friend 3"
-                    className="w-10 h-10 rounded-full object-cover border border-white/20"
-                    src="https://lh3.googleusercontent.com/aida-public/AB6AXuA0KBTb49s9MTsf4tg9J8_22Ctm0lFjrHJaB1iMEfc1MsBDUWude1b5wQ6peS6XxwLSl9nfWRfYqU8NfiWWBKmfKK-Yeucd_uv8YqJcWvHatZNxrxZL7LDQBF-mQ4OljuhwNoF4Lvw7HyQIRtLhxFeWGsEVg08XwJ4an3tXxaoIyn6mCapcgpNN_lRRgjhECMlN1NnNek4cdyNYFOM3k059CMCflMjrXiJG9sqMQyrVTWAOZEjUVakX6gS7gCNTwEpQE8C6aNmb53E"
-                    width={40}
-                    height={40}
-                    loading="lazy"
-                    sizes="40px"
-                  />
+                    return (
+                      <Link
+                        key={item.id}
+                        href={linkHref}
+                        className="flex items-center gap-stack-md p-stack-sm rounded-lg hover:bg-white/5 transition-colors cursor-pointer block group"
+                      >
+                        <div className="relative flex-shrink-0">
+                          {avatarUrl ? (
+                            <img
+                              alt={item.display_name}
+                              className="w-10 h-10 rounded-full object-cover border border-white/20"
+                              src={avatarUrl}
+                            />
+                          ) : (
+                            <div className="w-10 h-10 rounded-full bg-primary/20 border border-primary/30 flex items-center justify-center">
+                              <span className="text-primary font-bold text-xs font-serif">{initials}</span>
+                            </div>
+                          )}
+                          <div className={`absolute -bottom-1 -right-1 w-4 h-4 rounded-full border-2 border-[#121212] flex items-center justify-center ${item.type === "rating" ? "bg-secondary" : "bg-primary"}`}>
+                            <span className="material-symbols-outlined text-[8px] text-black" style={{ fontVariationSettings: "'FILL' 1" }}>
+                              {actionIcon}
+                            </span>
+                          </div>
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <p className="text-body-md font-semibold truncate">
+                            {item.display_name} <span className="font-normal text-on-surface-variant">{actionText}</span>
+                          </p>
+                          <p className="text-primary text-body-md font-bold truncate group-hover:underline">{title}</p>
+                        </div>
+                      </Link>
+                    );
+                  })}
                 </div>
-                <div>
-                  <p className="text-body-md font-semibold">
-                    Alex <span className="font-normal text-on-surface-variant">just started</span>
-                  </p>
-                  <p className="text-primary text-body-md font-bold">The Holdovers</p>
+              </>
+            ) : (
+              /* Fallback: Trending Now / Popular This Week */
+              <>
+                <div className="flex justify-between items-center mb-stack-md">
+                  <h3 className="font-title-lg text-title-lg flex items-center gap-2 font-serif">
+                    <span className="material-symbols-outlined text-primary">local_fire_department</span>
+                    Popular This Week
+                  </h3>
+                  <Link href="/recommendations" className="text-primary text-xs flex items-center gap-0.5 hover:underline">
+                    Explore More <span className="material-symbols-outlined text-sm">chevron_right</span>
+                  </Link>
                 </div>
-              </Link>
-            </div>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-gutter">
+                  {trendingMovies.slice(0, 3).map((item: any) => {
+                    const isTv = item.media_type === "tv" || (item.name && !item.title);
+                    const title = item.title || item.name || "Untitled";
+                    const linkHref = isTv ? `/tv?id=${item.id}` : `/movies?id=${item.id}`;
+                    const poster = item.poster_path ? `https://image.tmdb.org/t/p/w185${item.poster_path}` : null;
+
+                    return (
+                      <Link
+                        key={`pop_${item.id}`}
+                        href={linkHref}
+                        className="flex items-center gap-stack-md p-stack-sm rounded-lg hover:bg-white/5 transition-colors cursor-pointer block group"
+                      >
+                        <div className="relative flex-shrink-0 w-10 h-10 rounded-full overflow-hidden border border-white/20 bg-white/5">
+                          {poster ? (
+                            <img alt={title} className="w-full h-full object-cover" src={poster} />
+                          ) : (
+                            <div className="w-full h-full flex items-center justify-center">
+                              <span className="material-symbols-outlined text-xs text-white/30">{isTv ? "tv" : "movie"}</span>
+                            </div>
+                          )}
+                          <div className="absolute -bottom-1 -right-1 w-4 h-4 bg-secondary rounded-full border-2 border-[#121212] flex items-center justify-center">
+                            <span className="material-symbols-outlined text-[8px] text-black" style={{ fontVariationSettings: "'FILL' 1" }}>
+                              star
+                            </span>
+                          </div>
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <p className="text-body-md font-semibold truncate">
+                            Trending <span className="font-normal text-on-surface-variant">{isTv ? "TV Show" : "Film"}</span>
+                          </p>
+                          <p className="text-primary text-body-md font-bold truncate group-hover:underline">{title}</p>
+                        </div>
+                      </Link>
+                    );
+                  })}
+                </div>
+              </>
+            )}
           </div>
         </section>
 
@@ -916,75 +1056,168 @@ export default function Home() {
           )}
         </section>
 
-        {/* Trending TV Shows Carousel */}
+        {/* Trending TV Shows */}
         <section className="mt-stack-xl px-container-margin max-w-screen-xl mx-auto">
           <div className="flex justify-between items-end mb-stack-md">
             <h3 className="font-headline-lg text-headline-lg font-serif">Trending TV Shows</h3>
+            <button
+              onClick={() => setTvViewMode(prev => prev === "slider" ? "grid" : "slider")}
+              className="material-symbols-outlined text-on-surface-variant hover:text-purple-400 transition-colors cursor-pointer border-none bg-transparent"
+            >
+              {tvViewMode === "slider" ? "grid_view" : "view_headline"}
+            </button>
           </div>
 
-          <Carousel containerClassName="gap-gutter pb-4 -mx-container-margin px-container-margin md:mx-0 md:px-0 snap-x snap-mandatory scroll-px-container-margin md:scroll-px-0">
-            {loading ? (
-              Array.from({ length: 6 }).map((_, i) => <PosterSkeleton key={i} />)
-            ) : trendingTv.length > 0 ? (
-              trendingTv.map((show: any) => {
-                const isSaved = watchlistIds.has(String(show.id));
-                const isLoading = watchlistLoadingId === String(show.id);
+          {tvViewMode === "slider" ? (
+            <Carousel
+              onScroll={handleHorizontalScrollTv}
+              containerClassName="gap-gutter pb-4 -mx-container-margin px-container-margin md:mx-0 md:px-0 snap-x snap-mandatory scroll-px-container-margin md:scroll-px-0"
+            >
+              {loading ? (
+                Array.from({ length: 6 }).map((_, i) => <PosterSkeleton key={i} />)
+              ) : trendingTv.length > 0 ? (
+                (() => {
+                  const tvCards = trendingTv.map((show: any) => {
+                    const isSaved = watchlistIds.has(String(show.id));
+                    const isLoading = watchlistLoadingId === String(show.id);
 
-                return (
-                  <div key={show.id} className="w-[160px] md:w-[200px] flex-shrink-0 group/card relative snap-start">
-                    <Link href={`/tv?id=${show.id}`} className="cursor-pointer block">
-                      <div className="relative aspect-[2/3] rounded-xl overflow-hidden glass-panel mb-stack-sm bg-white/5">
-                        <Image
-                          alt={show.name || "TV Show Poster"}
-                          className="object-cover transition-transform duration-700 group-hover/card:scale-105"
-                          src={show.poster_path ? `https://image.tmdb.org/t/p/w500${show.poster_path}` : "https://images.unsplash.com/photo-1594909122845-11baa439b7bf?w=500"}
-                          fill
-                          loading="lazy"
-                          sizes="(max-width: 768px) 160px, 200px"
-                          draggable={false}
-                        />
-                        <span className="absolute top-2 left-2 z-10 text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded bg-purple-600/90 text-white backdrop-blur-md border border-purple-400/30 shadow-md">
-                          TV Show
-                        </span>
-                        <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-0 group-hover/card:opacity-100 transition-opacity flex flex-col justify-end p-stack-sm">
-                          <span className="text-secondary text-sm flex items-center gap-1 font-bold">
-                            <span className="material-symbols-outlined text-xs" style={{ fontVariationSettings: "'FILL' 1" }}>
-                              star
+                    return (
+                      <div key={show.id} className="w-[160px] md:w-[200px] flex-shrink-0 group/card relative snap-start">
+                        <Link href={`/tv?id=${show.id}`} className="cursor-pointer block">
+                          <div className="relative aspect-[2/3] rounded-xl overflow-hidden glass-panel mb-stack-sm bg-white/5">
+                            <Image
+                              alt={show.name || "TV Show Poster"}
+                              className="object-cover transition-transform duration-700 group-hover/card:scale-105"
+                              src={show.poster_path ? `https://image.tmdb.org/t/p/w500${show.poster_path}` : "https://images.unsplash.com/photo-1594909122845-11baa439b7bf?w=500"}
+                              fill
+                              loading="lazy"
+                              sizes="(max-width: 768px) 160px, 200px"
+                              draggable={false}
+                            />
+                            <span className="absolute top-2 left-2 z-10 text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded bg-purple-600/90 text-white backdrop-blur-md border border-purple-400/30 shadow-md">
+                              TV Show
                             </span>
-                            {show.vote_average ? show.vote_average.toFixed(1) : "N/A"}
-                          </span>
-                        </div>
-                      </div>
-                      <h4 className="text-body-md font-semibold group-hover/card:text-primary truncate transition-colors font-body-md">
-                        {show.name || show.title}
-                      </h4>
-                    </Link>
+                            <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-0 group-hover/card:opacity-100 transition-opacity flex flex-col justify-end p-stack-sm">
+                              <span className="text-secondary text-sm flex items-center gap-1 font-bold">
+                                <span className="material-symbols-outlined text-xs" style={{ fontVariationSettings: "'FILL' 1" }}>
+                                  star
+                                </span>
+                                {show.vote_average ? show.vote_average.toFixed(1) : "N/A"}
+                              </span>
+                            </div>
+                          </div>
+                          <h4 className="text-body-md font-semibold group-hover/card:text-primary truncate transition-colors font-body-md">
+                            {show.name || show.title}
+                          </h4>
+                        </Link>
 
-                    {/* Watchlist Toggle Button Overlay */}
+                        {/* Watchlist Toggle Button Overlay */}
+                        <button
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            handleWatchlistToggle(show);
+                          }}
+                          disabled={isLoading}
+                          className="absolute top-2 right-2 z-10 w-8 h-8 rounded-full bg-black/60 hover:bg-black/80 backdrop-blur-md flex items-center justify-center text-white border border-white/10 transition-all duration-200 cursor-pointer shadow-lg hover:scale-110 active:scale-95 group-hover/card:opacity-100 md:opacity-0 animate-fade-in"
+                        >
+                          {isLoading ? (
+                            <div className="w-3 h-3 border-2 border-primary border-t-transparent rounded-full animate-spin"></div>
+                          ) : (
+                            <span className="material-symbols-outlined text-sm" style={{ fontVariationSettings: isSaved ? "'FILL' 1" : "" }}>
+                              {isSaved ? "bookmark" : "bookmark_border"}
+                            </span>
+                          )}
+                        </button>
+                      </div>
+                    );
+                  });
+
+                  const loadMoreTvBtn = !loadingMoreTv ? (
                     <button
-                      onClick={(e) => {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        handleWatchlistToggle(show);
-                      }}
-                      disabled={isLoading}
-                      className="absolute top-2 right-2 z-10 w-8 h-8 rounded-full bg-black/60 hover:bg-black/80 backdrop-blur-md flex items-center justify-center text-white border border-white/10 transition-all duration-200 cursor-pointer shadow-lg hover:scale-110 active:scale-95 group-hover/card:opacity-100 md:opacity-0 animate-fade-in"
+                      key="load-more-tv-btn"
+                      onClick={loadMoreTv}
+                      className="flex-shrink-0 w-[160px] md:w-[200px] aspect-[2/3] rounded-xl border border-dashed border-purple-500/30 flex flex-col items-center justify-center gap-2 hover:border-purple-400 hover:text-purple-300 transition-all active:scale-95 cursor-pointer bg-white/5 text-on-surface"
                     >
-                      {isLoading ? (
-                        <div className="w-3 h-3 border-2 border-primary border-t-transparent rounded-full animate-spin"></div>
-                      ) : (
-                        <span className="material-symbols-outlined text-sm" style={{ fontVariationSettings: isSaved ? "'FILL' 1" : "" }}>
-                          {isSaved ? "bookmark" : "bookmark_border"}
-                        </span>
-                      )}
+                      <span className="material-symbols-outlined text-[32px] text-purple-400">add_circle</span>
+                      <span className="font-bold text-purple-200">Load More</span>
                     </button>
-                  </div>
-                );
-              })
-            ) : (
-              <p className="text-on-surface-variant py-4">No trending TV shows available.</p>
-            )}
-          </Carousel>
+                  ) : (
+                    <div key="load-more-tv-loading" className="flex-shrink-0 w-[160px] md:w-[200px] aspect-[2/3] rounded-xl border border-dashed border-purple-500/30 flex items-center justify-center bg-white/5">
+                      <div className="h-6 w-6 border-2 border-purple-400 border-t-transparent rounded-full animate-spin"></div>
+                    </div>
+                  );
+
+                  return [...tvCards, loadMoreTvBtn];
+                })()
+              ) : (
+                <p className="text-on-surface-variant py-4">No trending TV shows available.</p>
+              )}
+            </Carousel>
+          ) : (
+            <div className="space-y-6">
+              <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-stack-md animate-fade-in">
+                {trendingTv.map((show: any) => {
+                  const isSaved = watchlistIds.has(String(show.id));
+                  const isLoading = watchlistLoadingId === String(show.id);
+
+                  return (
+                    <div key={show.id} className="group/card relative block animate-fade-in">
+                      <Link href={`/tv?id=${show.id}`} className="cursor-pointer block">
+                        <div className="relative aspect-[2/3] rounded-xl overflow-hidden glass-panel mb-stack-sm bg-white/5">
+                          <img
+                            alt={show.name || "TV Show Poster"}
+                            className="w-full h-full object-cover transition-transform duration-700 group-hover/card:scale-105"
+                            src={show.poster_path ? `https://image.tmdb.org/t/p/w500${show.poster_path}` : "https://images.unsplash.com/photo-1594909122845-11baa439b7bf?w=500"}
+                          />
+                          <span className="absolute top-2 left-2 z-10 text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded bg-purple-600/90 text-white backdrop-blur-md border border-purple-400/30 shadow-md">
+                            TV Show
+                          </span>
+                          <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-0 group-hover/card:opacity-100 transition-opacity flex flex-col justify-end p-stack-sm">
+                            <span className="text-secondary text-sm flex items-center gap-1 font-bold">
+                              <span className="material-symbols-outlined text-xs" style={{ fontVariationSettings: "'FILL' 1" }}>
+                                star
+                              </span>
+                              {show.vote_average ? show.vote_average.toFixed(1) : "N/A"}
+                            </span>
+                          </div>
+                        </div>
+                        <h4 className="text-body-md font-semibold group-hover/card:text-primary truncate transition-colors font-body-md">
+                          {show.name || show.title}
+                        </h4>
+                      </Link>
+
+                      {/* Watchlist Toggle Button Overlay */}
+                      <button
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          handleWatchlistToggle(show);
+                        }}
+                        disabled={isLoading}
+                        className="absolute top-2 right-2 z-10 w-8 h-8 rounded-full bg-black/60 hover:bg-black/80 backdrop-blur-md flex items-center justify-center text-white border border-white/10 transition-all duration-200 cursor-pointer shadow-lg hover:scale-110 active:scale-95 group-hover/card:opacity-100 md:opacity-0 animate-fade-in"
+                      >
+                        {isLoading ? (
+                          <div className="w-3 h-3 border-2 border-primary border-t-transparent rounded-full animate-spin"></div>
+                        ) : (
+                          <span className="material-symbols-outlined text-sm" style={{ fontVariationSettings: isSaved ? "'FILL' 1" : "" }}>
+                            {isSaved ? "bookmark" : "bookmark_border"}
+                          </span>
+                        )}
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* Sentinel for TV Infinite Scroll in Grid view */}
+              <div ref={sentinelTvRef} className="flex justify-center py-6 w-full">
+                {loadingMoreTv && (
+                  <div className="h-8 w-8 border-4 border-purple-400 border-t-transparent rounded-full animate-spin"></div>
+                )}
+              </div>
+            </div>
+          )}
         </section>
 
         {/* Top Rated (Numbered Posters) */}
@@ -1051,17 +1284,168 @@ export default function Home() {
 
       {/* Floating Quick Actions */}
       <div className="fixed bottom-24 right-container-margin z-50 flex flex-col gap-stack-md">
-        <button className="w-12 h-12 rounded-full glass-panel flex items-center justify-center text-on-surface hover:text-primary transition-colors shadow-lg active:scale-90 cursor-pointer">
-          <span className="material-symbols-outlined">filter_list</span>
-        </button>
-        <button className="w-14 h-14 rounded-full bg-gradient-to-br from-secondary to-primary-container text-on-primary-container flex items-center justify-center shadow-[0_0_20px_rgba(255,180,170,0.3)] hover:brightness-110 active:scale-90 transition-all cursor-pointer">
-          <span className="material-symbols-outlined font-bold" style={{ fontVariationSettings: "'FILL' 1" }}>
+        <button
+          onClick={() => {
+            if (!user) {
+              showToast("Please sign in to log a watch");
+              return;
+            }
+            setShowQuickLogModal(true);
+          }}
+          title="Quick Log a Watch"
+          className="w-14 h-14 rounded-full bg-gradient-to-br from-secondary to-primary-container text-on-primary-container flex items-center justify-center shadow-[0_0_20px_rgba(255,180,170,0.3)] hover:brightness-110 active:scale-90 transition-all cursor-pointer border-none"
+        >
+          <span className="material-symbols-outlined font-bold text-2xl" style={{ fontVariationSettings: "'FILL' 1" }}>
             add
           </span>
         </button>
       </div>
 
-      {/* BottomNavBar */}
+      {/* Quick Log Modal */}
+      {showQuickLogModal && (
+        <div
+          className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-md p-4 animate-fade-in"
+          onClick={() => setShowQuickLogModal(false)}
+        >
+          <div
+            className="bg-[#121212] border border-white/10 rounded-2xl w-full max-w-lg max-h-[85vh] overflow-hidden flex flex-col shadow-[0_20px_60px_rgba(0,0,0,0.8)]"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Modal Header */}
+            <div className="flex items-center justify-between px-6 py-4 border-b border-white/10">
+              <div className="flex items-center gap-2">
+                <span className="material-symbols-outlined text-primary">visibility</span>
+                <h3 className="font-serif text-lg text-on-surface font-bold">Quick Log a Watch</h3>
+              </div>
+              <button
+                onClick={() => setShowQuickLogModal(false)}
+                className="text-on-surface-variant hover:text-white transition-colors cursor-pointer border-none bg-transparent"
+              >
+                <span className="material-symbols-outlined">close</span>
+              </button>
+            </div>
+
+            {/* Modal Search Input */}
+            <div className="p-4 border-b border-white/10 bg-white/[0.02]">
+              <div className="relative">
+                <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant/60 text-sm">
+                  search
+                </span>
+                <input
+                  type="text"
+                  placeholder="Search movie or TV show to log..."
+                  autoFocus
+                  value={quickLogQuery}
+                  onChange={(e) => setQuickLogQuery(e.target.value)}
+                  className="w-full bg-white/5 border border-white/10 rounded-xl py-2.5 pl-10 pr-10 text-on-surface placeholder-on-surface-variant/40 focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/50 text-body-md"
+                />
+                {quickLogQuery && (
+                  <button
+                    onClick={() => setQuickLogQuery("")}
+                    className="material-symbols-outlined absolute right-3 top-1/2 -translate-y-1/2 text-on-surface-variant/60 hover:text-white transition-colors cursor-pointer border-none bg-transparent text-sm"
+                  >
+                    close
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* Modal Results List */}
+            <div className="overflow-y-auto flex-1 p-4 space-y-2 max-h-[50vh]">
+              {quickLogSearching ? (
+                <div className="flex flex-col items-center justify-center py-10 gap-2">
+                  <div className="h-7 w-7 border-2 border-primary border-t-transparent rounded-full animate-spin"></div>
+                  <p className="text-xs text-on-surface-variant">Searching titles...</p>
+                </div>
+              ) : quickLogQuery.trim() === "" ? (
+                <div className="text-center py-10 text-on-surface-variant/50">
+                  <span className="material-symbols-outlined text-[40px] opacity-30 mb-2">movie_filter</span>
+                  <p className="text-sm">Type a title above to quickly mark it as watched</p>
+                </div>
+              ) : quickLogResults.length === 0 ? (
+                <div className="text-center py-10 text-on-surface-variant/60">
+                  <p className="text-sm">No results found for "{quickLogQuery}"</p>
+                </div>
+              ) : (
+                quickLogResults.map((item: any) => {
+                  const isTv = item.media_type === "tv" || (item.name && !item.title);
+                  const title = item.title || item.name || "Untitled";
+                  const date = item.release_date || item.first_air_date || "";
+                  const year = date ? new Date(date).getFullYear() : "";
+                  const poster = item.poster_path ? `https://image.tmdb.org/t/p/w185${item.poster_path}` : null;
+                  const isLogging = quickLogLoadingId === String(item.id);
+
+                  return (
+                    <div
+                      key={item.id}
+                      className="flex items-center justify-between gap-3 p-2.5 rounded-xl bg-white/5 hover:bg-white/10 border border-white/5 transition-all group"
+                    >
+                      <div className="flex items-center gap-3 min-w-0 flex-1">
+                        <div className="w-11 h-16 rounded-lg overflow-hidden bg-white/10 flex-shrink-0 relative">
+                          {poster ? (
+                            <img src={poster} alt={title} className="w-full h-full object-cover" />
+                          ) : (
+                            <div className="w-full h-full flex items-center justify-center">
+                              <span className="material-symbols-outlined text-xs text-white/30">{isTv ? "tv" : "movie"}</span>
+                            </div>
+                          )}
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <p className="font-semibold text-sm text-on-surface truncate group-hover:text-primary transition-colors">{title}</p>
+                          <div className="flex items-center gap-2 mt-0.5">
+                            <span className={`text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded ${isTv ? "bg-purple-500/20 text-purple-300 border border-purple-500/30" : "bg-primary/20 text-primary border border-primary/30"}`}>
+                              {isTv ? "TV" : "Film"}
+                            </span>
+                            {year && <span className="text-xs text-on-surface-variant/60">{year}</span>}
+                          </div>
+                        </div>
+                      </div>
+
+                      <button
+                        onClick={() => handleQuickLog(item)}
+                        disabled={isLogging}
+                        className="px-3.5 py-1.5 rounded-full bg-secondary text-black font-semibold text-xs flex items-center gap-1.5 hover:brightness-110 active:scale-95 transition-all cursor-pointer border-none shadow-md flex-shrink-0 disabled:opacity-50"
+                      >
+                        {isLogging ? (
+                          <div className="w-3.5 h-3.5 border-2 border-black border-t-transparent rounded-full animate-spin"></div>
+                        ) : (
+                          <>
+                            <span className="material-symbols-outlined text-[15px]" style={{ fontVariationSettings: "'FILL' 1" }}>
+                              check
+                            </span>
+                            Mark Watched
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Trailer Modal */}
+      {showTrailerModal && heroTrailerKey && (
+        <div className="fixed inset-0 z-[300] bg-black/90 backdrop-blur-xl flex items-center justify-center p-4 animate-fade-in" onClick={() => setShowTrailerModal(false)}>
+          <div className="relative w-full max-w-4xl aspect-video bg-black rounded-2xl overflow-hidden border border-white/10 shadow-2xl" onClick={e => e.stopPropagation()}>
+            <iframe
+              src={`https://www.youtube.com/embed/${heroTrailerKey}?autoplay=1`}
+              title="Hero Trailer"
+              className="w-full h-full border-none"
+              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+              allowFullScreen
+            />
+            <button
+              onClick={() => setShowTrailerModal(false)}
+              className="absolute top-4 right-4 w-9 h-9 rounded-full bg-black/60 hover:bg-black/80 backdrop-blur-md flex items-center justify-center text-white border border-white/10 transition-colors cursor-pointer"
+            >
+              <span className="material-symbols-outlined text-sm">close</span>
+            </button>
+          </div>
+        </div>
+      )}
       <nav className="fixed bottom-0 left-0 right-0 h-[60px] z-50 mb-container-margin mx-container-margin rounded-full bg-surface/40 backdrop-blur-[100px] border border-white/10 shadow-[0_0_20px_rgba(255,180,170,0.1)] flex justify-around items-center w-full max-w-md md:left-1/2 md:-translate-x-1/2">
         <Link
           className="flex items-center justify-center text-primary relative after:content-[''] after:absolute after:-bottom-2 after:w-1 after:h-1 after:bg-primary after:rounded-full after:shadow-[0_0_8px_#ffb4aa] active:scale-90 transition-all"

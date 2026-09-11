@@ -42,32 +42,54 @@ export async function GET(request: Request) {
 
   const profileMap = new Map<string, any>(profiles?.map((p) => [p.user_id, p]) || []);
 
-  // Fetch recent activity from ratings, watchlist, reviews in parallel
+  // Fetch recent activity from ratings, watchlist, reviews, and watched in parallel
   const from = page * PAGE_SIZE;
   const to = from + PAGE_SIZE - 1;
 
-  const [ratingsRes, watchlistRes, reviewsRes] = await Promise.all([
+  const [ratingsRes, watchlistRes, reviewsRes, watchedRes] = await Promise.all([
     supabaseAdmin
       .from("ratings")
-      .select("user_id, movie_id, rating, created_at")
+      .select("user_id, movie_id, rating, content_type, created_at")
       .in("user_id", followingIds)
       .order("created_at", { ascending: false })
       .limit(PAGE_SIZE * 3),
     supabaseAdmin
       .from("watchlist")
-      .select("user_id, movie_id, movie_title, poster_path, created_at")
+      .select("user_id, movie_id, movie_title, poster_path, content_type, created_at")
       .in("user_id", followingIds)
       .order("created_at", { ascending: false })
       .limit(PAGE_SIZE * 3),
     supabaseAdmin
       .from("reviews")
-      .select("id, user_id, user_name, movie_id, review_text, created_at")
+      .select("id, user_id, user_name, movie_id, review_text, content_type, created_at")
       .in("user_id", followingIds)
       .order("created_at", { ascending: false })
+      .limit(PAGE_SIZE * 3),
+    supabaseAdmin
+      .from("watched")
+      .select("user_id, movie_id, movie_title, poster_path, content_type, watched_at")
+      .in("user_id", followingIds)
+      .order("watched_at", { ascending: false })
       .limit(PAGE_SIZE * 3),
   ]);
 
   const items: any[] = [];
+
+  (watchedRes.data || []).forEach((w) => {
+    const profile = profileMap.get(w.user_id);
+    items.push({
+      type: "watched",
+      user_id: w.user_id,
+      display_name: profile?.display_name || profile?.username || "Unknown",
+      avatar_url: profile?.avatar_url || null,
+      movie_id: w.movie_id,
+      movie_title: w.movie_title || "",
+      poster_path: w.poster_path || "",
+      content_type: w.content_type || "movie",
+      created_at: w.watched_at,
+      id: `watched_${w.user_id}_${w.movie_id}_${new Date(w.watched_at).getTime()}`,
+    });
+  });
 
   (ratingsRes.data || []).forEach((r) => {
     const profile = profileMap.get(r.user_id);
@@ -78,8 +100,9 @@ export async function GET(request: Request) {
       avatar_url: profile?.avatar_url || null,
       movie_id: r.movie_id,
       rating: r.rating,
+      content_type: r.content_type || "movie",
       created_at: r.created_at,
-      id: `rating_${r.user_id}_${r.movie_id}`,
+      id: `rating_${r.user_id}_${r.movie_id}_${new Date(r.created_at).getTime()}`,
     });
   });
 
@@ -91,10 +114,11 @@ export async function GET(request: Request) {
       display_name: profile?.display_name || profile?.username || "Unknown",
       avatar_url: profile?.avatar_url || null,
       movie_id: w.movie_id,
-      movie_title: w.movie_title,
-      poster_path: w.poster_path,
+      movie_title: w.movie_title || "",
+      poster_path: w.poster_path || "",
+      content_type: w.content_type || "movie",
       created_at: w.created_at,
-      id: `watchlist_${w.user_id}_${w.movie_id}`,
+      id: `watchlist_${w.user_id}_${w.movie_id}_${new Date(w.created_at).getTime()}`,
     });
   });
 
@@ -107,6 +131,7 @@ export async function GET(request: Request) {
       avatar_url: profile?.avatar_url || null,
       movie_id: rev.movie_id,
       review_text: rev.review_text,
+      content_type: rev.content_type || "movie",
       created_at: rev.created_at,
       id: `review_${rev.id}`,
     });

@@ -71,6 +71,8 @@ function TvShowDetailsContent() {
   const [isWatched, setIsWatched] = useState(false);
   const [watchedLoading, setWatchedLoading] = useState(false);
   const [userRating, setUserRating] = useState<number | null>(null);
+  const [userLiked, setUserLiked] = useState<boolean>(false);
+  const [modalLiked, setModalLiked] = useState<boolean>(false);
   const [showRatingModal, setShowRatingModal] = useState(false);
   const [hoverRating, setHoverRating] = useState(5);
   const [isRatingSubmitting, setIsRatingSubmitting] = useState(false);
@@ -268,7 +270,20 @@ function TvShowDetailsContent() {
             content_type: CONTENT_TYPE,
           }),
         });
-        if (res.ok) { setIsWatched(true); showToast("Marked as watched!"); }
+        if (res.ok) {
+          setIsWatched(true);
+          // If in watchlist, remove from watchlist
+          if (isInWatchlist) {
+            await supabase
+              .from("watchlist")
+              .delete()
+              .eq("user_id", user.id)
+              .eq("movie_id", tvId)
+              .eq("content_type", CONTENT_TYPE);
+            setIsInWatchlist(false);
+          }
+          showToast("Marked as watched!");
+        }
       }
     } catch (err) {
       console.error("Error toggling watched:", err);
@@ -282,23 +297,76 @@ function TvShowDetailsContent() {
     if (!user?.id || !tvId) return;
     supabase
       .from("ratings")
-      .select("rating")
+      .select("rating, liked")
       .eq("user_id", user.id)
       .eq("movie_id", tvId)
       .eq("content_type", CONTENT_TYPE)
       .maybeSingle()
-      .then(({ data }) => setUserRating(data?.rating ?? null));
+      .then(({ data }) => {
+        if (data) {
+          setUserRating(data.rating !== null && data.rating !== undefined ? Number(data.rating) : null);
+          setUserLiked(!!data.liked);
+        } else {
+          setUserRating(null);
+          setUserLiked(false);
+        }
+      });
   }, [user, tvId]);
 
   const handleRatingSubmit = async (ratingVal: number) => {
     if (!user?.id || !tvId) return;
     setIsRatingSubmitting(true);
     try {
+      const ratingPayload: any = {
+        user_id: user.id,
+        movie_id: tvId,
+        rating: ratingVal,
+        liked: modalLiked,
+        content_type: CONTENT_TYPE,
+        created_at: new Date().toISOString(),
+      };
+
       const { error } = await supabase.from("ratings").upsert(
-        { user_id: user.id, movie_id: tvId, rating: ratingVal, content_type: CONTENT_TYPE, created_at: new Date().toISOString() },
+        ratingPayload,
         { onConflict: "user_id,movie_id,content_type" }
       );
-      if (!error) { setUserRating(ratingVal); setShowRatingModal(false); showToast("Rating saved!"); }
+
+      if (!error) {
+        setUserRating(ratingVal);
+        setUserLiked(modalLiked);
+        setShowRatingModal(false);
+
+        // 2. Automatically mark as watched if not already watched
+        if (!isWatched) {
+          await fetch("/api/watched", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              user_id: user.id,
+              movie_id: tvId,
+              movie_title: tvShow?.name || "Unknown Show",
+              poster_path: tvShow?.poster_path || "",
+              content_type: CONTENT_TYPE,
+            }),
+          });
+          setIsWatched(true);
+        }
+
+        // 3. Remove from watchlist if present
+        if (isInWatchlist) {
+          await supabase
+            .from("watchlist")
+            .delete()
+            .eq("user_id", user.id)
+            .eq("movie_id", tvId)
+            .eq("content_type", CONTENT_TYPE);
+          setIsInWatchlist(false);
+        }
+
+        showToast("Rating saved!");
+      } else {
+        showToast("Failed to save rating");
+      }
     } catch (err) {
       console.error("Error submitting rating:", err);
     } finally {
@@ -654,7 +722,11 @@ function TvShowDetailsContent() {
 
                 {/* Rate */}
                 <button
-                  onClick={() => { setHoverRating(userRating || 5); setShowRatingModal(true); }}
+                  onClick={() => {
+                    setHoverRating(userRating || 5);
+                    setModalLiked(userLiked);
+                    setShowRatingModal(true);
+                  }}
                   className={`px-6 py-3 rounded-full font-title-lg flex items-center gap-2 active:scale-95 transition-all duration-200 glass-card cursor-pointer border ${
                     userRating
                       ? "border-purple-400 text-purple-300 shadow-[0_0_15px_rgba(168,85,247,0.15)]"
@@ -662,7 +734,16 @@ function TvShowDetailsContent() {
                   }`}
                 >
                   <span className="material-symbols-outlined" style={{ fontVariationSettings: "'FILL' 1" }}>grade</span>
-                  {userRating ? `Your Rating: ${userRating}/10` : "Rate Now"}
+                  {userRating !== null ? `Your Rating: ${userRating % 1 === 0 ? userRating : userRating.toFixed(1)}/10` : "Rate Now"}
+                  {userLiked && (
+                    <span
+                      className="material-symbols-outlined text-red-400 text-sm ml-0.5"
+                      style={{ fontVariationSettings: "'FILL' 1" }}
+                      title="Liked"
+                    >
+                      favorite
+                    </span>
+                  )}
                 </button>
               </div>
             </div>
@@ -889,30 +970,69 @@ function TvShowDetailsContent() {
       {/* Rating Modal */}
       {showRatingModal && (
         <div className="fixed inset-0 z-[200] bg-black/80 backdrop-blur-md flex items-center justify-center p-4" onClick={() => setShowRatingModal(false)}>
-          <div className="glass-card rounded-2xl p-8 max-w-sm w-full border border-purple-500/30 shadow-2xl animate-fade-in" onClick={(e) => e.stopPropagation()}>
-            <h3 className="font-serif text-xl text-center mb-2">Rate this Show</h3>
-            <p className="text-on-surface-variant text-center text-sm mb-6">{tvShow.name}</p>
-            <div className="flex justify-center gap-2 mb-6">
-              {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((n) => (
-                <button
-                  key={n}
-                  onClick={() => setHoverRating(n)}
-                  onMouseEnter={() => setHoverRating(n)}
-                  className={`w-9 h-9 rounded-full font-bold text-sm transition-all cursor-pointer border-none ${
-                    n <= hoverRating ? "bg-purple-500 text-white scale-110" : "bg-white/10 text-on-surface-variant"
-                  }`}
-                >
-                  {n}
-                </button>
-              ))}
-            </div>
-            <p className="text-center text-purple-300 font-bold text-2xl mb-6">{hoverRating}/10</p>
+          <div className="glass-card rounded-2xl p-8 max-w-sm w-full border border-purple-500/30 shadow-2xl animate-fade-in text-center relative" onClick={(e) => e.stopPropagation()}>
             <button
-              onClick={() => handleRatingSubmit(hoverRating)}
-              disabled={isRatingSubmitting}
-              className="w-full bg-purple-600 text-white py-3 rounded-full font-semibold hover:opacity-90 active:scale-95 transition-all disabled:opacity-50 cursor-pointer"
+              onClick={() => setShowRatingModal(false)}
+              className="absolute top-4 right-4 text-on-surface-variant hover:text-on-surface cursor-pointer border-none bg-transparent"
             >
-              {isRatingSubmitting ? "Saving..." : "Submit Rating"}
+              <span className="material-symbols-outlined">close</span>
+            </button>
+
+            <h3 className="font-serif text-xl text-center mb-2">Rate {tvShow.name}</h3>
+            <p className="text-on-surface-variant text-center text-sm mb-6">How would you describe your viewing experience?</p>
+
+            <div className="flex flex-col items-center gap-4 mb-6">
+              <div className="w-16 h-16 rounded-full bg-gradient-to-br from-purple-500 to-indigo-600 text-white font-serif text-[28px] flex items-center justify-center shadow-[0_0_20px_rgba(168,85,247,0.35)] animate-pulse mb-2">
+                {((hoverRating || userRating || 5) % 1 === 0 ? (hoverRating || userRating || 5) : (hoverRating || userRating || 5).toFixed(1))}
+              </div>
+
+              <input
+                type="range"
+                min="1"
+                max="10"
+                step="0.5"
+                value={hoverRating || userRating || 5}
+                onChange={(e) => setHoverRating(parseFloat(e.target.value))}
+                className="w-full h-1.5 bg-white/10 rounded-lg appearance-none cursor-pointer accent-purple-500 focus:outline-none"
+              />
+
+              <div className="flex justify-between w-full text-[10px] text-on-surface-variant uppercase tracking-widest px-1 font-bold opacity-60">
+                <span>1 - Awful</span>
+                <span>5 - Good</span>
+                <span>10 - Masterpiece</span>
+              </div>
+            </div>
+
+            {/* Liked Toggle Button */}
+            <div className="mb-6 flex justify-center">
+              <button
+                type="button"
+                onClick={() => setModalLiked(!modalLiked)}
+                className={`flex items-center justify-center gap-2 py-2 px-5 rounded-full border transition-all cursor-pointer ${
+                  modalLiked
+                    ? "bg-red-500/20 text-red-400 border-red-500/40 shadow-lg shadow-red-500/10 scale-105"
+                    : "bg-white/5 text-on-surface-variant hover:text-white border-white/10"
+                }`}
+              >
+                <span
+                  className="material-symbols-outlined text-[18px]"
+                  style={{ fontVariationSettings: modalLiked ? "'FILL' 1" : "" }}
+                >
+                  favorite
+                </span>
+                <span className="text-xs font-semibold">{modalLiked ? "Liked this show" : "Like this show"}</span>
+              </button>
+            </div>
+
+            <button
+              onClick={() => handleRatingSubmit(hoverRating || userRating || 5)}
+              disabled={isRatingSubmitting}
+              className="w-full bg-purple-600 text-white py-3 rounded-full font-semibold hover:opacity-90 active:scale-95 transition-all disabled:opacity-50 cursor-pointer flex items-center justify-center gap-2 text-body-lg"
+            >
+              {isRatingSubmitting && (
+                <div className="h-4 w-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+              )}
+              Confirm Rating
             </button>
           </div>
         </div>

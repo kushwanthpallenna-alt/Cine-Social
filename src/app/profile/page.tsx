@@ -1313,7 +1313,7 @@ export default function ProfilePage() {
                         const poster = customPoster || detail.poster_path || item.poster_path;
 
                         return (
-                          <div key={`${itemType}_${item.movie_id}`} className="group relative block">
+                          <div key={item.id ? `${itemType}_${item.id}` : `${itemType}_${item.movie_id}_${item.watched_at || ""}`} className="group relative block">
                             <Link href={linkHref} className="cursor-pointer block relative">
                               <div className="aspect-[2/3] rounded-xl overflow-hidden border border-white/10 relative mb-2 bg-white/5">
                                 <img
@@ -1374,7 +1374,7 @@ export default function ProfilePage() {
                       const poster = customPoster || detail.poster_path || item.poster_path;
 
                       return (
-                        <div key={`${itemType}_${item.movie_id}`} className="group relative block">
+                        <div key={item.id ? `${itemType}_${item.id}` : `${itemType}_${item.movie_id}_${item.created_at || ""}`} className="group relative block">
                           <Link href={linkHref} className="cursor-pointer block relative">
                             <div className="aspect-[2/3] rounded-xl overflow-hidden border border-white/10 relative mb-2 bg-white/5">
                               <img

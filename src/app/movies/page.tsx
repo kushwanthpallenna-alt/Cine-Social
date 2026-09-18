@@ -127,6 +127,8 @@ function MovieDetailsView({ movieId }: { movieId: string }) {
   const [isWatched, setIsWatched] = useState(false);
   const [watchedLoading, setWatchedLoading] = useState(false);
   const [userRating, setUserRating] = useState<number | null>(null);
+  const [userLiked, setUserLiked] = useState<boolean>(false);
+  const [modalLiked, setModalLiked] = useState<boolean>(false);
   const [showRatingModal, setShowRatingModal] = useState(false);
   const [hoverRating, setHoverRating] = useState(5);
   const [isRatingSubmitting, setIsRatingSubmitting] = useState(false);
@@ -244,7 +246,7 @@ function MovieDetailsView({ movieId }: { movieId: string }) {
     const userId = user.id;
     async function checkWatched() {
       try {
-        const res = await fetch(`/api/watched?userId=${userId}&movieId=${movieId}`);
+        const res = await fetch(`/api/watched?userId=${userId}&movieId=${movieId}&contentType=movie`);
         if (res.ok) {
           const data = await res.json();
           setIsWatched(!!data);
@@ -263,7 +265,7 @@ function MovieDetailsView({ movieId }: { movieId: string }) {
     setWatchedLoading(true);
     try {
       if (isWatched) {
-        const res = await fetch(`/api/watched?userId=${userId}&movieId=${movieId}`, {
+        const res = await fetch(`/api/watched?userId=${userId}&movieId=${movieId}&contentType=movie`, {
           method: "DELETE"
         });
         if (res.ok) {
@@ -278,11 +280,22 @@ function MovieDetailsView({ movieId }: { movieId: string }) {
             user_id: userId,
             movie_id: movieId,
             movie_title: movie.title || movie.name || "Unknown Movie",
-            poster_path: movie.poster_path || ""
+            poster_path: movie.poster_path || "",
+            content_type: "movie"
           })
         });
         if (res.ok) {
           setIsWatched(true);
+          // If in watchlist, remove from watchlist
+          if (isInWatchlist) {
+            await supabase
+              .from("watchlist")
+              .delete()
+              .eq("user_id", userId)
+              .eq("movie_id", movieId)
+              .or("content_type.eq.movie,content_type.is.null");
+            setIsInWatchlist(false);
+          }
           showToast("Marked as watched!");
         }
       }
@@ -293,7 +306,7 @@ function MovieDetailsView({ movieId }: { movieId: string }) {
     }
   };
 
-  // Fetch user rating
+  // Fetch user rating & liked
   useEffect(() => {
     if (!user?.id || !movieId) return;
     const userId = user.id;
@@ -301,14 +314,17 @@ function MovieDetailsView({ movieId }: { movieId: string }) {
       try {
         const { data, error } = await supabase
           .from("ratings")
-          .select("rating")
+          .select("rating, liked")
           .eq("user_id", userId)
           .eq("movie_id", movieId)
+          .or("content_type.eq.movie,content_type.is.null")
           .maybeSingle();
         if (data) {
-          setUserRating(data.rating);
+          setUserRating(data.rating !== null && data.rating !== undefined ? Number(data.rating) : null);
+          setUserLiked(!!data.liked);
         } else {
           setUserRating(null);
+          setUserLiked(false);
         }
       } catch (err) {
         console.error("Error fetching user rating:", err);
@@ -323,20 +339,54 @@ function MovieDetailsView({ movieId }: { movieId: string }) {
     const userId = user.id;
     setIsRatingSubmitting(true);
     try {
+      const ratingPayload: any = {
+        user_id: userId,
+        movie_id: movieId,
+        rating: ratingVal,
+        liked: modalLiked,
+        created_at: new Date().toISOString(),
+        content_type: "movie",
+      };
+
       const { error } = await supabase
         .from("ratings")
-        .upsert({
-          user_id: userId,
-          movie_id: movieId,
-          rating: ratingVal,
-          created_at: new Date().toISOString(),
-          content_type: "movie",
-        }, { onConflict: "user_id,movie_id,content_type" });
+        .upsert(ratingPayload, { onConflict: "user_id,movie_id,content_type" });
 
       if (!error) {
         setUserRating(ratingVal);
+        setUserLiked(modalLiked);
         setShowRatingModal(false);
+
+        // 2. Automatically mark as watched if not already watched
+        if (!isWatched) {
+          await fetch("/api/watched", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              user_id: userId,
+              movie_id: movieId,
+              movie_title: movie?.title || movie?.name || "Unknown Movie",
+              poster_path: movie?.poster_path || "",
+              content_type: "movie"
+            })
+          });
+          setIsWatched(true);
+        }
+
+        // 3. Remove from watchlist if present
+        if (isInWatchlist) {
+          await supabase
+            .from("watchlist")
+            .delete()
+            .eq("user_id", userId)
+            .eq("movie_id", movieId)
+            .or("content_type.eq.movie,content_type.is.null");
+          setIsInWatchlist(false);
+        }
+
         showToast("Rating updated!");
+      } else {
+        showToast("Failed to save rating");
       }
     } catch (err) {
       console.error("Error submitting rating:", err);
@@ -854,6 +904,7 @@ function MovieDetailsView({ movieId }: { movieId: string }) {
                 <button
                   onClick={() => {
                     setHoverRating(userRating || 5);
+                    setModalLiked(userLiked);
                     setShowRatingModal(true);
                   }}
                   className={`px-6 py-3 rounded-full font-title-lg flex items-center gap-2 active:scale-95 transition-all duration-200 glass-card cursor-pointer border ${userRating
@@ -864,7 +915,16 @@ function MovieDetailsView({ movieId }: { movieId: string }) {
                   <span className="material-symbols-outlined" style={{ fontVariationSettings: "'FILL' 1" }}>
                     grade
                   </span>
-                  {userRating ? `Your Rating: ${userRating}/10` : "Rate Now"}
+                  {userRating !== null ? `Your Rating: ${userRating % 1 === 0 ? userRating : userRating.toFixed(1)}/10` : "Rate Now"}
+                  {userLiked && (
+                    <span
+                      className="material-symbols-outlined text-red-400 text-sm ml-0.5"
+                      style={{ fontVariationSettings: "'FILL' 1" }}
+                      title="Liked"
+                    >
+                      favorite
+                    </span>
+                  )}
                 </button>
                 <button className="glass-card text-on-surface p-3 rounded-full active:scale-90 transition-transform cursor-pointer">
                   <span className="material-symbols-outlined">share</span>
@@ -1123,17 +1183,18 @@ function MovieDetailsView({ movieId }: { movieId: string }) {
               How would you describe your narrative experience?
             </p>
 
-            <div className="flex flex-col items-center gap-4 mb-8">
+            <div className="flex flex-col items-center gap-4 mb-6">
               <div className="w-16 h-16 rounded-full bg-gradient-to-br from-secondary to-primary-container text-on-primary-container font-serif text-[28px] flex items-center justify-center shadow-[0_0_20px_rgba(255,180,170,0.3)] animate-pulse mb-2">
-                {hoverRating || userRating || 5}
+                {((hoverRating || userRating || 5) % 1 === 0 ? (hoverRating || userRating || 5) : (hoverRating || userRating || 5).toFixed(1))}
               </div>
 
               <input
                 type="range"
                 min="1"
                 max="10"
+                step="0.5"
                 value={hoverRating || userRating || 5}
-                onChange={(e) => setHoverRating(parseInt(e.target.value))}
+                onChange={(e) => setHoverRating(parseFloat(e.target.value))}
                 className="w-full h-1.5 bg-white/10 rounded-lg appearance-none cursor-pointer accent-primary focus:outline-none"
               />
 
@@ -1142,6 +1203,27 @@ function MovieDetailsView({ movieId }: { movieId: string }) {
                 <span>5 - Good</span>
                 <span>10 - Masterpiece</span>
               </div>
+            </div>
+
+            {/* Liked Toggle Button */}
+            <div className="mb-6 flex justify-center">
+              <button
+                type="button"
+                onClick={() => setModalLiked(!modalLiked)}
+                className={`flex items-center justify-center gap-2 py-2 px-5 rounded-full border transition-all cursor-pointer ${
+                  modalLiked
+                    ? "bg-red-500/20 text-red-400 border-red-500/40 shadow-lg shadow-red-500/10 scale-105"
+                    : "bg-white/5 text-on-surface-variant hover:text-white border-white/10"
+                }`}
+              >
+                <span
+                  className="material-symbols-outlined text-[18px]"
+                  style={{ fontVariationSettings: modalLiked ? "'FILL' 1" : "" }}
+                >
+                  favorite
+                </span>
+                <span className="text-xs font-semibold">{modalLiked ? "Liked this movie" : "Like this movie"}</span>
+              </button>
             </div>
 
             <button

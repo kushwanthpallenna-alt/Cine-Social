@@ -119,6 +119,7 @@ export default function Home() {
   const [logRating, setLogRating] = useState<number | null>(null);
   const [logHoverRating, setLogHoverRating] = useState<number>(5);
   const [logReviewText, setLogReviewText] = useState("");
+  const [logLiked, setLogLiked] = useState<boolean>(false);
   const [isLogSubmitting, setIsLogSubmitting] = useState(false);
 
   // Friends activity states
@@ -410,6 +411,7 @@ export default function Home() {
     setLogRating(null);
     setLogHoverRating(5);
     setLogReviewText("");
+    setLogLiked(false);
   };
 
   // Save Log Entry (Watched + Optional Rating + Optional Review)
@@ -448,11 +450,21 @@ export default function Home() {
             user_id: userId,
             movie_id: movieIdStr,
             rating: logRating,
+            liked: logLiked,
             created_at: new Date().toISOString(),
             content_type: contentType,
           }, { onConflict: "user_id,movie_id,content_type" });
         promises.push(ratingPromise);
       }
+
+      // 3a. Remove from watchlist if present (watched implies no longer 'to watch')
+      const watchlistDeletePromise = supabase
+        .from("watchlist")
+        .delete()
+        .eq("user_id", userId)
+        .eq("movie_id", movieIdStr)
+        .eq("content_type", contentType);
+      promises.push(watchlistDeletePromise);
 
       // 3. Save review (if provided and enabled)
       if (includeRatingAndReview && logReviewText.trim()) {
@@ -487,6 +499,7 @@ export default function Home() {
       setQuickLogResults([]);
       setLogRating(null);
       setLogReviewText("");
+      setLogLiked(false);
     } catch (err) {
       console.error("Error saving log entry:", err);
       showToast("Failed to save entry");
@@ -1558,16 +1571,17 @@ export default function Home() {
 
                     <div className="flex flex-col items-center gap-3">
                       <div className="w-14 h-14 rounded-full bg-gradient-to-br from-secondary to-primary-container text-on-primary-container font-serif text-2xl font-bold flex items-center justify-center shadow-[0_0_20px_rgba(255,180,170,0.25)]">
-                        {logRating !== null ? logRating : logHoverRating || 5}
+                        {logRating !== null ? logRating.toFixed(1) : (logHoverRating || 5).toFixed(1)}
                       </div>
 
                       <input
                         type="range"
                         min="1"
                         max="10"
+                        step="0.5"
                         value={logRating !== null ? logRating : logHoverRating || 5}
                         onChange={(e) => {
-                          const val = parseInt(e.target.value, 10);
+                          const val = parseFloat(e.target.value);
                           setLogRating(val);
                           setLogHoverRating(val);
                         }}
@@ -1580,6 +1594,27 @@ export default function Home() {
                         <span>10 - Masterpiece</span>
                       </div>
                     </div>
+                  </div>
+
+                  {/* Liked Toggle */}
+                  <div className="flex items-center justify-center">
+                    <button
+                      type="button"
+                      onClick={() => setLogLiked((prev) => !prev)}
+                      className={`flex items-center gap-2 px-5 py-2 rounded-full border transition-all text-sm font-semibold cursor-pointer ${
+                        logLiked
+                          ? "border-pink-500/60 bg-pink-500/15 text-pink-400"
+                          : "border-white/10 bg-white/5 text-on-surface-variant hover:border-pink-500/40 hover:text-pink-300"
+                      }`}
+                    >
+                      <span
+                        className="material-symbols-outlined text-[18px]"
+                        style={{ fontVariationSettings: logLiked ? "'FILL' 1" : "'FILL' 0" }}
+                      >
+                        favorite
+                      </span>
+                      {logLiked ? "Liked" : "Like this?"}
+                    </button>
                   </div>
 
                   {/* Review Section */}

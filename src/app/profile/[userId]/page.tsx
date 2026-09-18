@@ -721,7 +721,7 @@ export default function PublicProfilePage() {
                     const title = item.movie_title || "";
                     return (
                       <Link
-                        key={`wl_movie_${item.movie_id}`}
+                        key={item.id ? `wl_movie_${item.id}` : `wl_movie_${item.movie_id}_${item.created_at || ""}`}
                         href={`/movies?id=${item.movie_id}`}
                         className="aspect-[2/3] rounded-xl overflow-hidden border border-white/10 group relative block bg-white/5"
                         title={title}
@@ -754,7 +754,7 @@ export default function PublicProfilePage() {
                     const title = item.movie_title || "";
                     return (
                       <Link
-                        key={`wl_tv_${item.movie_id}`}
+                        key={item.id ? `wl_tv_${item.id}` : `wl_tv_${item.movie_id}_${item.created_at || ""}`}
                         href={`/tv?id=${item.movie_id}`}
                         className="aspect-[2/3] rounded-xl overflow-hidden border border-white/10 group relative block bg-white/5"
                         title={title}
@@ -871,7 +871,7 @@ export default function PublicProfilePage() {
                 const displayTitle = detail?.title || detail?.name || item.movie_title || "";
 
                 return (
-                  <Link key={`${type}_${item.movie_id}`} href={linkHref} className="group aspect-[2/3] rounded-xl overflow-hidden border border-white/10 relative bg-white/5 block">
+                  <Link key={item.id ? `${type}_${item.id}` : `${type}_${item.movie_id}_${item.watched_at || ""}`} href={linkHref} className="group aspect-[2/3] rounded-xl overflow-hidden border border-white/10 relative bg-white/5 block">
                     <img
                       src={poster ? `https://image.tmdb.org/t/p/w342${poster}` : "https://images.unsplash.com/photo-1594909122845-11baa439b7bf?w=342"}
                       alt={displayTitle}

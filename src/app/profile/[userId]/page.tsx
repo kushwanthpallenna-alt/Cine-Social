@@ -9,6 +9,8 @@ import { useToast } from "@/components/ToastProvider";
 import { getSafeAvatarUrl } from "@/lib/avatar";
 import ProfileBadges from "@/components/ProfileBadges";
 import ReviewCard from "@/components/ReviewCard";
+import NotificationBell from "@/components/NotificationBell";
+import RatingDistributionChart from "@/components/RatingDistributionChart";
 
 type SortOption =
   | "default"
@@ -299,8 +301,10 @@ export default function PublicProfilePage() {
           uniqueMedia.set(`${type}_${id}`, { id, type });
         };
 
+        rats.forEach(registerMedia);
         revs.forEach(registerMedia);
         watchedList.forEach(registerMedia);
+        watchlistList.forEach(registerMedia);
 
         const det: Record<string, any> = {};
         await Promise.all(Array.from(uniqueMedia.values()).map(async ({ id, type }) => {
@@ -471,7 +475,9 @@ export default function PublicProfilePage() {
           <span className="text-sm font-semibold">Social</span>
         </Link>
         <h1 className="font-serif text-lg text-primary tracking-tight font-bold drop-shadow-[0_2px_6px_rgba(0,0,0,0.8)]">{displayName}</h1>
-        <div className="w-16" />
+        <div className="flex items-center">
+          <NotificationBell />
+        </div>
       </header>
 
       {/* Profile Banner */}
@@ -598,6 +604,11 @@ export default function PublicProfilePage() {
             <TasteMatchWidget userA={currentUser.id} userB={realUserId} />
           </div>
         )}
+
+        {/* Letterboxd-Style Rating Distribution Chart */}
+        <section className="mb-8">
+          <RatingDistributionChart ratings={ratings} mediaDetails={mediaDetails} />
+        </section>
 
         {/* Top 5 Favourite Films */}
         {favorites.filter(f => f.slot_type?.startsWith("movie_")).length > 0 && (
@@ -823,6 +834,9 @@ export default function PublicProfilePage() {
                     movieTitle={displayTitle}
                     posterPath={detail?.poster_path || rev.poster_path}
                     avatarUrl={profile.avatar_url}
+                    currentUserId={currentUser?.id}
+                    currentUserName={currentUser?.name || currentUser?.email || undefined}
+                    currentUserAvatar={currentUser?.image || undefined}
                   />
                 );
               })}

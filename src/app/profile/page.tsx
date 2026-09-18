@@ -8,6 +8,8 @@ import ReviewCard from "@/components/ReviewCard";
 import { getSafeAvatarUrl, getAvatarUrlOrDefault } from "@/lib/avatar";
 import AvatarCropperModal from "@/components/AvatarCropperModal";
 import ProfileBadges from "@/components/ProfileBadges";
+import NotificationBell from "@/components/NotificationBell";
+import RatingDistributionChart from "@/components/RatingDistributionChart";
 
 type SortOption =
   | "default"
@@ -834,6 +836,7 @@ export default function ProfilePage() {
           </h1>
         </Link>
         <div className="flex items-center gap-stack-md">
+          <NotificationBell />
           <button className="material-symbols-outlined text-on-surface-variant hover:opacity-80 transition-opacity cursor-pointer drop-shadow-[0_1px_4px_rgba(0,0,0,0.8)]">
             settings
           </button>
@@ -903,7 +906,15 @@ export default function ProfilePage() {
                   className="w-32 h-32 md:w-40 md:h-40 rounded-full overflow-hidden border-4 border-[#050505] shadow-[0_12px_40px_rgba(0,0,0,0.85)] relative group/avatar bg-[#131313] flex-shrink-0 cursor-pointer focus:outline-none block"
                   aria-label="View profile picture"
                 >
-                  <img src={getAvatarUrlOrDefault(avatarUrl || user?.image)} alt="Profile" className="w-full h-full object-cover transition-transform duration-300 group-hover/avatar:scale-105" />
+                  {getSafeAvatarUrl(avatarUrl || user?.image) ? (
+                    <img src={getSafeAvatarUrl(avatarUrl || user?.image)!} alt="Profile" className="w-full h-full object-cover transition-transform duration-300 group-hover/avatar:scale-105" />
+                  ) : (
+                    <div className="w-full h-full bg-primary/20 flex items-center justify-center">
+                      <span className="text-primary font-bold text-3xl md:text-4xl font-serif">
+                        {(user?.name || username || user?.email || "U").slice(0, 2).toUpperCase()}
+                      </span>
+                    </div>
+                  )}
                   <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover/avatar:opacity-100 transition-opacity">
                     <span className="material-symbols-outlined text-white text-3xl">zoom_in</span>
                   </div>
@@ -1063,6 +1074,11 @@ export default function ProfilePage() {
                   </button>
                 </div>
               </div>
+            </section>
+
+            {/* Letterboxd-Style Rating Distribution Chart */}
+            <section className="mb-12">
+              <RatingDistributionChart ratings={ratings} mediaDetails={mediaDetails} />
             </section>
 
             {/* Favorites Sections */}
@@ -1840,11 +1856,19 @@ export default function ProfilePage() {
             className="w-64 h-64 md:w-80 md:h-80 rounded-full overflow-hidden border-4 border-white/10 shadow-[0_0_80px_rgba(0,0,0,0.9)] mb-8"
             onClick={e => e.stopPropagation()}
           >
-            <img
-              src={getAvatarUrlOrDefault(avatarUrl || user?.image)}
-              alt="Profile"
-              className="w-full h-full object-cover"
-            />
+            {getSafeAvatarUrl(avatarUrl || user?.image) ? (
+              <img
+                src={getSafeAvatarUrl(avatarUrl || user?.image)!}
+                alt="Profile"
+                className="w-full h-full object-cover"
+              />
+            ) : (
+              <div className="w-full h-full bg-primary/20 flex items-center justify-center">
+                <span className="text-primary font-bold text-6xl font-serif">
+                  {(user?.name || username || user?.email || "U").slice(0, 2).toUpperCase()}
+                </span>
+              </div>
+            )}
           </div>
 
           {/* Edit Photo Button */}

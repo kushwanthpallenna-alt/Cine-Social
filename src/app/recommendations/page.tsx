@@ -6,6 +6,7 @@ import { useSession, signOut } from "next-auth/react";
 import { supabase } from "@/lib/supabase";
 import { useToast } from "@/components/ToastProvider";
 import NotificationBell from "@/components/NotificationBell";
+import { getSafeAvatarUrl } from "@/lib/avatar";
 
 
 const GENRE_MAP: { [key: number]: string } = {
@@ -260,11 +261,17 @@ export default function Recommendations() {
               onClick={() => setShowProfileMenu(!showProfileMenu)}
               className="w-10 h-10 rounded-full bg-surface-container overflow-hidden border border-white/10 hover:opacity-80 transition-all focus:outline-none cursor-pointer flex items-center justify-center bg-white/5"
             >
-              <img
-                alt={user?.name || "Profile"}
-                className="w-full h-full object-cover"
-                src={user?.image || "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150"}
-              />
+              {getSafeAvatarUrl(user?.image) ? (
+                <img
+                  alt={user?.name || "Profile"}
+                  className="w-full h-full object-cover"
+                  src={getSafeAvatarUrl(user?.image)!}
+                />
+              ) : (
+                <span className="text-primary font-bold text-xs font-serif">
+                  {(user?.name || user?.email || "U").slice(0, 2).toUpperCase()}
+                </span>
+              )}
             </button>
             
             {showProfileMenu && (

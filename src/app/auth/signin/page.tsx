@@ -67,20 +67,12 @@ function SignInContent() {
           setIsCredLoading(false);
           return;
         }
-        // Auto sign in after signup
-        const result = await signIn("credentials", {
-          username,
-          password,
-          callbackUrl,
-          redirect: false,
-        });
-        if (result?.error) {
-          setFormError("Account created! Please sign in.");
-          setMode("signin");
-          setIsCredLoading(false);
-          return;
-        }
-        window.location.href = callbackUrl;
+        // Do NOT auto-sign-in: switch to Sign In mode and prompt user to enter credentials
+        setFormSuccess("Account created — please sign in with your credentials.");
+        setPassword("");
+        setConfirmPassword("");
+        setMode("signin");
+        setIsCredLoading(false);
       } catch {
         setFormError("Something went wrong. Try again.");
         setIsCredLoading(false);

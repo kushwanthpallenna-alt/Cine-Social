@@ -62,31 +62,57 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
 
-    // Fire follow notification (fire-and-forget, don't block response)
+    // Fire follow notification
     if (!error) {
-      const actorName = follower_name || "Someone";
-      // Try to get avatar from profiles table if not provided
+      let actorName = follower_name;
       let actorAvatar = follower_avatar || null;
-      if (!actorAvatar) {
-        const { data: prof } = await supabaseAdmin
-          .from("profiles")
-          .select("avatar_url")
-          .eq("user_id", follower_id)
-          .maybeSingle();
-        actorAvatar = prof?.avatar_url || null;
+
+      // Fetch profile details if name/avatar missing or generic
+      if (!actorName || actorName === "Someone" || !actorAvatar) {
+        try {
+          const { data: prof } = await supabaseAdmin
+            .from("profiles")
+            .select("display_name, username, avatar_url")
+            .eq("user_id", follower_id)
+            .maybeSingle();
+          if (prof) {
+            if (!actorName || actorName === "Someone") {
+              actorName = prof.display_name || prof.username || "Someone";
+            }
+            if (!actorAvatar) {
+              actorAvatar = prof.avatar_url || null;
+            }
+          }
+        } catch {}
       }
+      if (!actorName) actorName = "Someone";
 
       try {
-        await supabaseAdmin.from("notifications").insert({
-          user_id: following_id,
-          actor_id: follower_id,
-          actor_name: actorName,
-          actor_avatar: actorAvatar,
-          type: "follow",
-          message: `${actorName} started following you`,
-          link: `/profile/${follower_id}`,
-        });
-      } catch (_) {}
+        const { data: existing } = await supabaseAdmin
+          .from("notifications")
+          .select("id")
+          .eq("user_id", following_id)
+          .eq("actor_id", follower_id)
+          .eq("type", "follow")
+          .maybeSingle();
+
+        if (!existing) {
+          const { error: notifErr } = await supabaseAdmin.from("notifications").insert({
+            user_id: following_id,
+            actor_id: follower_id,
+            actor_name: actorName,
+            actor_avatar: actorAvatar,
+            type: "follow",
+            message: `${actorName} started following you`,
+            link: `/profile/${follower_id}`,
+          });
+          if (notifErr) {
+            console.error("Error inserting follow notification:", notifErr);
+          }
+        }
+      } catch (e) {
+        console.error("Error creating follow notification:", e);
+      }
     }
 
     return NextResponse.json({ success: true });

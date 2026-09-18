@@ -47,6 +47,8 @@ function UserAvatar({ displayName, avatarUrl, size = 8 }: { displayName: string;
 }
 
 function FollowButton({ targetUserId, currentUserId }: { targetUserId: string; currentUserId: string }) {
+  const { data: session } = useSession();
+  const user = session?.user;
   const [following, setFollowing] = useState<boolean | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -69,7 +71,12 @@ function FollowButton({ targetUserId, currentUserId }: { targetUserId: string; c
       await fetch("/api/follows", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ follower_id: currentUserId, following_id: targetUserId }),
+        body: JSON.stringify({
+          follower_id: currentUserId,
+          following_id: targetUserId,
+          follower_name: user?.name || user?.email || undefined,
+          follower_avatar: user?.image || undefined,
+        }),
       });
       setFollowing(true);
     }
@@ -230,8 +237,14 @@ export default function CommunityFeed() {
         </Link>
         <div className="flex items-center gap-stack-md">
           {user && (
-            <Link href="/profile" className="w-8 h-8 rounded-full overflow-hidden border border-white/10 hover:opacity-80 transition-all cursor-pointer block">
-              <img src={user.image || "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150"} alt="Profile" className="w-full h-full object-cover" />
+            <Link href="/profile" className="w-8 h-8 rounded-full overflow-hidden border border-white/10 hover:opacity-80 transition-all cursor-pointer flex items-center justify-center bg-white/5">
+              {getSafeAvatarUrl(user.image) ? (
+                <img src={getSafeAvatarUrl(user.image)!} alt="Profile" className="w-full h-full object-cover" />
+              ) : (
+                <span className="text-primary font-bold text-xs font-serif">
+                  {(user.name || user.email || "U").slice(0, 2).toUpperCase()}
+                </span>
+              )}
             </Link>
           )}
         </div>

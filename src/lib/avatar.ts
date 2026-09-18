@@ -4,8 +4,7 @@
  * configured in next.config.ts (Google, Supabase, Unsplash, TMDB).
  */
 
-export const DEFAULT_AVATAR_URL =
-  "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150";
+export const DEFAULT_AVATAR_URL = "";
 
 const ALLOWED_HOST_DOMAINS = [
   "googleusercontent.com",
@@ -39,6 +38,7 @@ export function getSafeAvatarUrl(url?: string | null): string | null {
   return isValidAvatarUrl(url) ? url!.trim() : null;
 }
 
-export function getAvatarUrlOrDefault(url?: string | null, fallback = DEFAULT_AVATAR_URL): string {
+export function getAvatarUrlOrDefault(url?: string | null, fallback = ""): string {
   return getSafeAvatarUrl(url) || fallback;
 }
+

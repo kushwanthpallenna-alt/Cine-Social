@@ -136,9 +136,32 @@ export default function CommunityFeed() {
   }, [movieDetails]);
 
   const fetchFeed = useCallback(async (pageNum: number) => {
-    if (!user?.id) return;
     if (pageNum === 0) setLoading(true); else setLoadingMore(true);
     try {
+      if (!user?.id) {
+        // Load public community reviews for signed-out users
+        setNoFollows(true);
+        const { supabase } = await import("@/lib/supabase");
+        const { data: revs } = await supabase
+          .from("reviews")
+          .select("*")
+          .order("created_at", { ascending: false })
+          .limit(20);
+        if (revs) {
+          setCommunityReviews(revs);
+          const ids = Array.from(new Set(revs.map((r: any) => r.movie_id)));
+          const det: Record<string, any> = {};
+          await Promise.all(ids.map(async (id: any) => {
+            try {
+              const r = await fetch(`/api/tmdb?endpoint=movie/${id}`);
+              if (r.ok) det[id] = await r.json();
+            } catch {}
+          }));
+          setCommunityMovies(det);
+        }
+        return;
+      }
+
       const res = await fetch(`/api/social-feed?userId=${user.id}&page=${pageNum}`);
       const data = await res.json();
       if (data.items?.length === 0 && pageNum === 0) {
@@ -181,9 +204,8 @@ export default function CommunityFeed() {
   }, [user?.id, fetchMovieDetails]);
 
   useEffect(() => {
-    if (user?.id) fetchFeed(0);
-    else setLoading(false);
-  }, [user?.id]);
+    fetchFeed(0);
+  }, [fetchFeed]);
 
   // Debounced user search
   useEffect(() => {
@@ -321,17 +343,7 @@ export default function CommunityFeed() {
           </div>
         </div>
 
-        {/* Not signed in */}
-        {!user && !loading && (
-          <div className="text-center py-20 glass-card rounded-xl border border-white/10 max-w-md mx-auto">
-            <span className="material-symbols-outlined text-[48px] text-primary mb-4">group</span>
-            <h2 className="font-title-lg text-title-lg mb-2">Sign In Required</h2>
-            <p className="text-on-surface-variant mb-4">Sign in to see your friends&apos; activity.</p>
-            <Link href="/auth/signin" className="bg-primary text-black px-6 py-3 rounded-full font-bold inline-block">
-              Sign In
-            </Link>
-          </div>
-        )}
+
 
         {/* Loading Skeleton */}
         {loading && (
@@ -428,15 +440,29 @@ export default function CommunityFeed() {
         {/* No follows — Discover section */}
         {!loading && noFollows && (
           <div className="max-w-2xl mx-auto">
-            <div className="text-center py-10 glass-card rounded-xl border border-white/10 mb-8">
-              <span className="material-symbols-outlined text-[48px] text-primary/60 mb-3">group_add</span>
-              <h3 className="font-title-lg text-title-lg mb-2">No Activity Yet</h3>
-              <p className="text-on-surface-variant text-sm max-w-xs mx-auto">
-                Follow people from the community below to see their ratings, reviews, and watchlist activity here.
+            <div className="text-center py-8 glass-card rounded-xl border border-white/10 mb-8 px-4">
+              <span className="material-symbols-outlined text-[42px] text-primary/70 mb-2">group</span>
+              <h3 className="font-title-lg text-lg mb-1">
+                {user ? "No Friend Activity Yet" : "Welcome to the Cine Social Community"}
+              </h3>
+              <p className="text-on-surface-variant text-xs max-w-sm mx-auto mb-3">
+                {user
+                  ? "Search for and follow other film lovers above to see their ratings, reviews, and watchlist activity here."
+                  : "Explore what film lovers are watching and reviewing. Search for users or sign in to share your own reviews!"}
               </p>
+              {!user && (
+                <Link
+                  href="/auth/signin"
+                  className="inline-block px-5 py-2 bg-primary text-black font-bold rounded-full text-xs hover:opacity-90 transition-opacity no-underline shadow-md"
+                >
+                  Sign In to Join
+                </Link>
+              )}
             </div>
 
-            <h3 className="font-title-lg text-sm text-on-surface-variant uppercase tracking-widest mb-4">Community Reviews</h3>
+            <h3 className="font-title-lg text-xs text-on-surface-variant uppercase tracking-widest mb-4">
+              Recent Community Reviews
+            </h3>
             <div className="space-y-4">
               {communityReviews.map((rev) => {
                 const movie = communityMovies[rev.movie_id];

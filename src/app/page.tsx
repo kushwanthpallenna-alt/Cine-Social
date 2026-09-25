@@ -252,7 +252,12 @@ export default function Home() {
 
   // Watchlist Toggle with optimistic updates
   const handleWatchlistToggle = async (movie: any) => {
-    if (!user) return;
+    if (!user) {
+      if (typeof window !== "undefined") {
+        window.location.href = `/auth/signin?callbackUrl=${encodeURIComponent(window.location.pathname + window.location.search)}`;
+      }
+      return;
+    }
     const movieIdStr = String(movie.id);
     const isTv = movie.media_type === "tv" || (movie.first_air_date && !movie.release_date) || (!movie.title && !!movie.name);
     const contentType = isTv ? "tv" : "movie";
@@ -330,42 +335,24 @@ export default function Home() {
   useEffect(() => {
     async function fetchData() {
       try {
-        const [trendingRes, topRatedRes, trendingTvRes] = await Promise.all([
-          fetch("/api/tmdb?endpoint=trending/movie/day"),
-          fetch("/api/tmdb?endpoint=movie/top_rated"),
-          fetch("/api/tmdb?endpoint=trending/tv/week")
+        const [trendingRes, topRatedRes, trendingTvRes] = await Promise.allSettled([
+          fetch("/api/tmdb?endpoint=trending/movie/day").then(r => r.ok ? r.json() : Promise.reject(r.statusText)),
+          fetch("/api/tmdb?endpoint=movie/top_rated").then(r => r.ok ? r.json() : Promise.reject(r.statusText)),
+          fetch("/api/tmdb?endpoint=trending/tv/week").then(r => r.ok ? r.json() : Promise.reject(r.statusText))
         ]);
 
-        const trendingData = await trendingRes.json();
-        const topRatedData = await topRatedRes.json();
-        const trendingTvData = await trendingTvRes.json();
-
-        if (trendingData.results && trendingData.results.length > 0) {
-          setHeroMovie(trendingData.results[0]);
-          setTrendingMovies(trendingData.results.slice(1, 11)); // Next 10 movies
+        if (trendingRes.status === "fulfilled" && trendingRes.value?.results?.length > 0) {
+          setHeroMovie(trendingRes.value.results[0]);
+          setTrendingMovies(trendingRes.value.results.slice(1, 11)); // Next 10 movies
         }
-        if (topRatedData.results) {
-          setTopRatedMovies(topRatedData.results.slice(0, 5)); // Top 5 movies
+        if (topRatedRes.status === "fulfilled" && topRatedRes.value?.results?.length > 0) {
+          setTopRatedMovies(topRatedRes.value.results.slice(0, 5)); // Top 5 movies
         }
-        if (trendingTvData.results) {
-          setTrendingTv(trendingTvData.results.slice(0, 10)); // Top 10 TV shows
+        if (trendingTvRes.status === "fulfilled" && trendingTvRes.value?.results?.length > 0) {
+          setTrendingTv(trendingTvRes.value.results.slice(0, 10)); // Top 10 TV shows
         }
       } catch (error) {
         console.error("Error fetching home page data:", error);
-        // Fallback data
-        const mockMovies = [
-          { id: 1, title: "Dune: Part Two", overview: "Paul Atreides unites with Chani and the Fremen while on a warpath of revenge against the conspirators who destroyed his family.", backdrop_path: "/xOMo8BRK7PfcJv9JCnx7s5hj0PX.jpg", poster_path: "/1pdfLvkbY9ohJlCjQH2JGjjc9CW.jpg", genre_ids: [28, 878] },
-          { id: 2, title: "Godzilla x Kong", poster_path: "/tMefBSflR6PGQLvLuPEoBiYXI44.jpg" },
-          { id: 3, title: "Civil War", poster_path: "/sh7Rg8Er3tFcN9BpKIPOMvALgZd.jpg" }
-        ];
-        setHeroMovie(mockMovies[0]);
-        setTrendingMovies(mockMovies);
-        const mockTopMovies = [
-          { id: 238, title: "The Godfather", poster_path: "/3bhkrj58Vtu7enYsRolD1fZdja1.jpg" },
-          { id: 278, title: "The Shawshank Redemption", poster_path: "/9cqNxx0GxF0bflZmeSMuL5tnGza.jpg" },
-          { id: 240, title: "The Godfather Part II", poster_path: "/hek3koDUyRQk7FIhPXsa6mT2Zc3.jpg" },
-        ];
-        setTopRatedMovies(mockTopMovies);
       } finally {
         setLoading(false);
       }
@@ -611,40 +598,59 @@ export default function Home() {
       >
         <div className="flex items-center gap-stack-md">
           <div className="relative">
-            <button
-              onClick={() => setShowProfileMenu(!showProfileMenu)}
-              className="w-8 h-8 rounded-full overflow-hidden border border-primary/20 hover:opacity-80 transition-all focus:outline-none cursor-pointer flex items-center justify-center bg-white/5 relative"
-            >
-              {getSafeAvatarUrl(user?.image) ? (
-                <Image
-                  alt={user?.name || "User profile photo"}
-                  className="object-cover"
-                  src={getSafeAvatarUrl(user?.image)!}
-                  fill
-                  loading="lazy"
-                  sizes="32px"
-                />
-              ) : (
-                <span className="text-primary font-bold text-xs font-serif">
-                  {(user?.name || user?.email || "U").slice(0, 2).toUpperCase()}
-                </span>
-              )}
-            </button>
-            
-            {showProfileMenu && (
-              <div className="absolute left-0 mt-2 w-56 rounded-xl bg-[#131313]/90 border border-white/10 backdrop-blur-md p-2 shadow-[0_10px_30px_rgba(0,0,0,0.5)] z-50 animate-fade-in text-left">
-                <div className="px-3 py-2 border-b border-white/10 mb-1">
-                  <p className="text-body-md font-semibold text-[#e5e2e1] truncate">{user?.name || "Cine Member"}</p>
-                  <p className="text-label-sm text-on-surface-variant truncate opacity-60">{user?.email || ""}</p>
-                </div>
+            {user ? (
+              <>
                 <button
-                  onClick={() => signOut({ callbackUrl: "/auth/signin" })}
-                  className="w-full text-left px-3 py-2 rounded-lg text-primary hover:bg-white/5 transition-colors flex items-center gap-2 font-semibold cursor-pointer border-none bg-transparent"
+                  onClick={() => setShowProfileMenu(!showProfileMenu)}
+                  className="w-8 h-8 rounded-full overflow-hidden border border-primary/20 hover:opacity-80 transition-all focus:outline-none cursor-pointer flex items-center justify-center bg-white/5 relative"
                 >
-                  <span className="material-symbols-outlined text-sm">logout</span>
-                  Sign Out
+                  {getSafeAvatarUrl(user?.image) ? (
+                    <Image
+                      alt={user?.name || "User profile photo"}
+                      className="object-cover"
+                      src={getSafeAvatarUrl(user?.image)!}
+                      fill
+                      loading="lazy"
+                      sizes="32px"
+                    />
+                  ) : (
+                    <span className="text-primary font-bold text-xs font-serif">
+                      {(user?.name || user?.email || "U").slice(0, 2).toUpperCase()}
+                    </span>
+                  )}
                 </button>
-              </div>
+                
+                {showProfileMenu && (
+                  <div className="absolute left-0 mt-2 w-56 rounded-xl bg-[#131313]/90 border border-white/10 backdrop-blur-md p-2 shadow-[0_10px_30px_rgba(0,0,0,0.5)] z-50 animate-fade-in text-left">
+                    <div className="px-3 py-2 border-b border-white/10 mb-1">
+                      <p className="text-body-md font-semibold text-[#e5e2e1] truncate">{user?.name || "Cine Member"}</p>
+                      <p className="text-label-sm text-on-surface-variant truncate opacity-60">{user?.email || ""}</p>
+                    </div>
+                    <Link
+                      href="/settings"
+                      className="w-full text-left px-3 py-2 rounded-lg text-on-surface hover:bg-white/5 transition-colors flex items-center gap-2 text-sm font-medium cursor-pointer no-underline block"
+                      onClick={() => setShowProfileMenu(false)}
+                    >
+                      <span className="material-symbols-outlined text-sm">settings</span>
+                      Settings
+                    </Link>
+                    <button
+                      onClick={() => signOut({ callbackUrl: "/auth/signin" })}
+                      className="w-full text-left px-3 py-2 rounded-lg text-primary hover:bg-white/5 transition-colors flex items-center gap-2 font-semibold cursor-pointer border-none bg-transparent"
+                    >
+                      <span className="material-symbols-outlined text-sm">logout</span>
+                      Sign Out
+                    </button>
+                  </div>
+                )}
+              </>
+            ) : (
+              <Link
+                href="/auth/signin"
+                className="px-3 py-1.5 rounded-full bg-primary text-black text-xs font-bold hover:opacity-90 transition-all no-underline shadow-sm inline-block"
+              >
+                Sign In
+              </Link>
             )}
           </div>
           <Link href="/" className="hover:opacity-90 active:scale-98 transition-all block">

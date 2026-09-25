@@ -139,7 +139,9 @@ export default function ReviewCard({
   // Toggle Like
   const handleToggleLike = async () => {
     if (!currentUserId) {
-      alert("Please sign in to like reviews.");
+      if (typeof window !== "undefined") {
+        window.location.href = `/auth/signin?callbackUrl=${encodeURIComponent(window.location.pathname + window.location.search)}`;
+      }
       return;
     }
     if (likeLoading) return;
@@ -187,7 +189,9 @@ export default function ReviewCard({
   const handlePostReply = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!currentUserId) {
-      alert("Please sign in to reply.");
+      if (typeof window !== "undefined") {
+        window.location.href = `/auth/signin?callbackUrl=${encodeURIComponent(window.location.pathname + window.location.search)}`;
+      }
       return;
     }
     if (!replyText.trim() || replySubmitting) return;

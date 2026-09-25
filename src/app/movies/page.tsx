@@ -203,7 +203,12 @@ function MovieDetailsView({ movieId }: { movieId: string }) {
 
   // Toggle watchlist status
   const handleWatchlistToggle = async () => {
-    if (!user?.id || !movie) return;
+    if (!user?.id || !movie) {
+      if (!user?.id && typeof window !== "undefined") {
+        window.location.href = `/auth/signin?callbackUrl=${encodeURIComponent(window.location.pathname + window.location.search)}`;
+      }
+      return;
+    }
     const userId = user.id;
     setWatchlistLoading(true);
     try {
@@ -260,7 +265,12 @@ function MovieDetailsView({ movieId }: { movieId: string }) {
 
   // Toggle watched status
   const handleWatchedToggle = async () => {
-    if (!user?.id || !movie) return;
+    if (!user?.id || !movie) {
+      if (!user?.id && typeof window !== "undefined") {
+        window.location.href = `/auth/signin?callbackUrl=${encodeURIComponent(window.location.pathname + window.location.search)}`;
+      }
+      return;
+    }
     const userId = user.id;
     setWatchedLoading(true);
     try {
@@ -395,6 +405,35 @@ function MovieDetailsView({ movieId }: { movieId: string }) {
     }
   };
 
+  // Delete rating
+  const handleRatingDelete = async () => {
+    if (!user?.id || !movieId) return;
+    setIsRatingSubmitting(true);
+    try {
+      const { error } = await supabase
+        .from("ratings")
+        .delete()
+        .eq("user_id", user.id)
+        .eq("movie_id", movieId)
+        .or("content_type.eq.movie,content_type.is.null");
+
+      if (!error) {
+        setUserRating(null);
+        setUserLiked(false);
+        setModalLiked(false);
+        setShowRatingModal(false);
+        showToast("Rating removed");
+      } else {
+        showToast("Failed to remove rating");
+      }
+    } catch (err) {
+      console.error("Error deleting rating:", err);
+      showToast("Error deleting rating");
+    } finally {
+      setIsRatingSubmitting(false);
+    }
+  };
+
   // Fetch reviews from database
   useEffect(() => {
     if (!movieId) return;
@@ -520,7 +559,13 @@ function MovieDetailsView({ movieId }: { movieId: string }) {
   // Submit review
   const handleReviewSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!user?.id || !movieId || !newReviewText.trim()) return;
+    if (!user?.id) {
+      if (typeof window !== "undefined") {
+        window.location.href = `/auth/signin?callbackUrl=${encodeURIComponent(window.location.pathname + window.location.search)}`;
+      }
+      return;
+    }
+    if (!movieId || !newReviewText.trim()) return;
     const userId = user.id;
     const userName = user.name || "Cine Member";
     setIsReviewSubmitting(true);
@@ -903,6 +948,12 @@ function MovieDetailsView({ movieId }: { movieId: string }) {
                 )}
                 <button
                   onClick={() => {
+                    if (!user?.id) {
+                      if (typeof window !== "undefined") {
+                        window.location.href = `/auth/signin?callbackUrl=${encodeURIComponent(window.location.pathname + window.location.search)}`;
+                      }
+                      return;
+                    }
                     setHoverRating(userRating || 5);
                     setModalLiked(userLiked);
                     setShowRatingModal(true);
@@ -1234,8 +1285,20 @@ function MovieDetailsView({ movieId }: { movieId: string }) {
               {isRatingSubmitting && (
                 <div className="h-4 w-4 border-2 border-black border-t-transparent rounded-full animate-spin"></div>
               )}
-              Confirm Rating
+              {userRating !== null ? "Update Rating" : "Confirm Rating"}
             </button>
+
+            {userRating !== null && (
+              <button
+                type="button"
+                onClick={handleRatingDelete}
+                disabled={isRatingSubmitting}
+                className="w-full mt-2.5 py-2.5 rounded-full border border-red-500/30 bg-red-500/10 hover:bg-red-500/20 text-red-400 text-xs font-semibold transition-all cursor-pointer flex items-center justify-center gap-1.5"
+              >
+                <span className="material-symbols-outlined text-sm">delete</span>
+                Remove My Rating
+              </button>
+            )}
           </div>
         </div>
       )}

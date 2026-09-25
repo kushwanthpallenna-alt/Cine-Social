@@ -837,9 +837,13 @@ export default function ProfilePage() {
         </Link>
         <div className="flex items-center gap-stack-md">
           <NotificationBell />
-          <button className="material-symbols-outlined text-on-surface-variant hover:opacity-80 transition-opacity cursor-pointer drop-shadow-[0_1px_4px_rgba(0,0,0,0.8)]">
+          <Link
+            href="/settings"
+            className="material-symbols-outlined text-on-surface-variant hover:opacity-80 transition-opacity cursor-pointer drop-shadow-[0_1px_4px_rgba(0,0,0,0.8)] flex items-center justify-center no-underline"
+            title="Settings"
+          >
             settings
-          </button>
+          </Link>
           <button
             onClick={() => signOut({ callbackUrl: "/auth/signin" })}
             className="material-symbols-outlined text-primary hover:opacity-80 transition-opacity cursor-pointer drop-shadow-[0_1px_4px_rgba(0,0,0,0.8)]"

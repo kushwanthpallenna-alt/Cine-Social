@@ -598,12 +598,24 @@ export default function PublicProfilePage() {
           )}
         </section>
 
-        {/* Taste Match */}
-        {!isOwnProfile && currentUser && (
-          <div className="mb-6">
-            <TasteMatchWidget userA={currentUser.id} userB={realUserId} />
+        {profile.is_private && !isOwnProfile && !following ? (
+          <div className="glass rounded-2xl border border-white/10 p-12 text-center my-8">
+            <div className="w-16 h-16 rounded-full bg-white/5 border border-white/10 flex items-center justify-center mx-auto mb-4 text-on-surface-variant">
+              <span className="material-symbols-outlined text-[32px]">lock</span>
+            </div>
+            <h3 className="font-serif text-xl font-bold text-on-surface mb-2">This Account is Private</h3>
+            <p className="text-on-surface-variant text-sm max-w-sm mx-auto">
+              Follow this account to see their watched films, reviews, ratings, and lists.
+            </p>
           </div>
-        )}
+        ) : (
+          <>
+            {/* Taste Match */}
+            {!isOwnProfile && currentUser && (
+              <div className="mb-6">
+                <TasteMatchWidget userA={currentUser.id} userB={realUserId} />
+              </div>
+            )}
 
         {/* Letterboxd-Style Rating Distribution Chart */}
         <section className="mb-8">
@@ -912,6 +924,8 @@ export default function PublicProfilePage() {
             <span className="material-symbols-outlined text-[36px] opacity-30 mb-2">{mediaFilter === "tv" ? "tv_off" : "movie"}</span>
             <p className="text-sm">No {mediaFilter === "tv" ? "TV shows" : "movies"} marked as watched yet.</p>
           </div>
+        )}
+          </>
         )}
       </main>
 

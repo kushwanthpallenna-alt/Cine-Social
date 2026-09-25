@@ -1,12 +1,14 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import Link from "next/link";
 import { useSession, signOut } from "next-auth/react";
 import { supabase } from "@/lib/supabase";
 import { useToast } from "@/components/ToastProvider";
 import NotificationBell from "@/components/NotificationBell";
 import { getSafeAvatarUrl } from "@/lib/avatar";
+import EditFilterModal from "@/components/EditFilterModal";
+import SpinWheelModal from "@/components/SpinWheelModal";
 
 
 const GENRE_MAP: { [key: number]: string } = {
@@ -37,6 +39,11 @@ const MOOD_MAPPING: Record<string, { endpoint: string, query: string }> = {
   "Mind-Bending": { endpoint: "discover/movie", query: "&with_genres=878,9648&sort_by=vote_average.desc&vote_count.gte=500" },
   "Cyberpunk Noir": { endpoint: "discover/movie", query: "&with_genres=878,80&sort_by=popularity.desc" },
   "Existential": { endpoint: "discover/movie", query: "&with_genres=18,878&sort_by=vote_average.desc&vote_count.gte=500" },
+  "Feel-Good": { endpoint: "discover/movie", query: "&with_genres=35,10751&sort_by=popularity.desc" },
+  "Romantic": { endpoint: "discover/movie", query: "&with_genres=10749,18&sort_by=popularity.desc" },
+  "Darkly Comic": { endpoint: "discover/movie", query: "&with_genres=35,80&sort_by=vote_average.desc&vote_count.gte=300" },
+  "Suspenseful": { endpoint: "discover/movie", query: "&with_genres=53,9648&sort_by=popularity.desc" },
+  "Epic & Grand": { endpoint: "discover/movie", query: "&with_genres=12,36,28&sort_by=vote_average.desc&vote_count.gte=500" },
 };
 
 export default function Recommendations() {
@@ -47,23 +54,51 @@ export default function Recommendations() {
   const [watchlistLoadingId, setWatchlistLoadingId] = useState<string | null>(null);
   const { showToast } = useToast();
 
-  // Fetch watchlist IDs for the logged-in user
+  const [activeMoods, setActiveMoods] = useState<string[]>([
+    "Melancholic",
+    "Adrenaline Rush",
+    "Mind-Bending",
+    "Cyberpunk Noir",
+    "Existential",
+  ]);
+  const [customMood, setCustomMood] = useState<string>("");
+  const [genreWeights, setGenreWeights] = useState<Record<string, number>>({
+    "Sci-Fi": 80,
+    "Noir": 10,
+    "Drama": 10,
+  });
+
+  const [showEditFilterModal, setShowEditFilterModal] = useState(false);
+  const [showSpinWheelModal, setShowSpinWheelModal] = useState(false);
+
+  // Fetch watchlist IDs and user mood preferences
   useEffect(() => {
-    if (!user) return;
-    async function fetchWatchlist() {
+    if (!user?.id) return;
+    async function fetchData() {
       try {
-        const { data, error } = await supabase
-          .from("watchlist")
-          .select("movie_id")
-          .eq("user_id", user.id);
-        if (data) {
-          setWatchlistIds(new Set(data.map((item: any) => String(item.movie_id))));
+        const [wlRes, moodRes] = await Promise.all([
+          supabase.from("watchlist").select("movie_id").eq("user_id", user.id),
+          supabase.from("user_mood_preferences").select("*").eq("user_id", user.id).single()
+        ]);
+        if (wlRes.data) {
+          setWatchlistIds(new Set(wlRes.data.map((item: any) => String(item.movie_id))));
+        }
+        if (moodRes.data) {
+          if (moodRes.data.active_moods && moodRes.data.active_moods.length > 0) {
+            setActiveMoods(moodRes.data.active_moods);
+          }
+          if (moodRes.data.custom_mood) {
+            setCustomMood(moodRes.data.custom_mood);
+          }
+          if (moodRes.data.genre_weights && Object.keys(moodRes.data.genre_weights).length > 0) {
+            setGenreWeights(moodRes.data.genre_weights);
+          }
         }
       } catch (err) {
-        console.error("Error fetching watchlist IDs:", err);
+        console.error("Error fetching user preferences:", err);
       }
     }
-    fetchWatchlist();
+    fetchData();
   }, [user]);
 
   // Watchlist Toggle with optimistic updates
@@ -217,19 +252,42 @@ export default function Recommendations() {
     return () => clearTimeout(delayDebounceFn);
   }, [searchQuery]);
 
-  const moods = [
-    "Melancholic",
-    "Adrenaline Rush",
-    "Mind-Bending",
-    "Cyberpunk Noir",
-    "Existential",
-  ];
+  // Combined mood list including active moods and custom mood
+  const displayMoods = useMemo(() => {
+    const list = [...activeMoods];
+    if (customMood && !list.includes(customMood)) {
+      list.push(customMood);
+    }
+    return list;
+  }, [activeMoods, customMood]);
+
+  // Top 3 genres for Cinema DNA display
+  const topDnaGenres = useMemo(() => {
+    const entries = Object.entries(genreWeights);
+    if (entries.length === 0) return "80% Sci-Fi, 10% Noir, 10% Drama";
+    const sorted = [...entries].sort((a, b) => b[1] - a[1]).slice(0, 3);
+    const total = sorted.reduce((sum, [, val]) => sum + val, 0) || 1;
+    return sorted
+      .map(([name, val]) => `${Math.round((val / total) * 100)}% ${name}`)
+      .join(", ");
+  }, [genreWeights]);
+
+  const topDnaPercentage = useMemo(() => {
+    const entries = Object.entries(genreWeights);
+    if (entries.length === 0) return 80;
+    const sorted = [...entries].sort((a, b) => b[1] - a[1]);
+    const total = entries.reduce((sum, [, val]) => sum + val, 0) || 1;
+    return Math.round((sorted[0][1] / total) * 100);
+  }, [genreWeights]);
 
   useEffect(() => {
     const fetchMoodMovies = async () => {
       setLoadingMood(true);
       try {
-        const mapping = MOOD_MAPPING[selectedMood] || MOOD_MAPPING["Melancholic"];
+        const mapping = MOOD_MAPPING[selectedMood] || {
+          endpoint: "discover/movie",
+          query: "&sort_by=popularity.desc&vote_count.gte=200"
+        };
         const res = await fetch(`/api/tmdb?endpoint=${mapping.endpoint}${mapping.query}`);
         const data = await res.json();
         if (data.results) {
@@ -426,7 +484,10 @@ export default function Recommendations() {
           <>
             {/* Taste Analysis (DNA Card) */}
             <section className="flex justify-center">
-              <div className="glass glass-glow rounded-xl p-stack-md flex items-center gap-gutter border-secondary/20 max-w-sm w-full">
+              <div
+                onClick={() => setShowEditFilterModal(true)}
+                className="glass glass-glow rounded-xl p-stack-md flex items-center gap-gutter border-secondary/20 max-w-sm w-full cursor-pointer hover:border-primary/40 transition-all group"
+              >
                 <div className="relative w-12 h-12 flex-shrink-0">
                   <svg className="w-full h-full transform -rotate-90">
                     <circle cx="24" cy="24" fill="transparent" r="20" stroke="rgba(255,255,255,0.1)" strokeWidth="4"></circle>
@@ -437,16 +498,19 @@ export default function Recommendations() {
                       r="20"
                       stroke="#e50914"
                       strokeDasharray="125.6"
-                      strokeDashoffset="25.1"
+                      strokeDashoffset={125.6 - (125.6 * (topDnaPercentage / 100))}
                       strokeWidth="4"
                     ></circle>
                   </svg>
-                  <span className="absolute inset-0 flex items-center justify-center text-[10px] font-bold">80%</span>
+                  <span className="absolute inset-0 flex items-center justify-center text-[10px] font-bold">{topDnaPercentage}%</span>
                 </div>
-                <div>
-                  <h3 className="font-title-lg text-title-lg text-secondary">Your Cinema DNA</h3>
-                  <p className="text-label-sm font-label-sm text-on-surface-variant uppercase tracking-widest">
-                    80% Sci-Fi, 10% Noir, 10% Drama
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center justify-between">
+                    <h3 className="font-title-lg text-title-lg text-secondary group-hover:text-primary transition-colors">Your Cinema DNA</h3>
+                    <span className="material-symbols-outlined text-xs text-on-surface-variant opacity-60 group-hover:opacity-100 transition-opacity">tune</span>
+                  </div>
+                  <p className="text-label-sm font-label-sm text-on-surface-variant uppercase tracking-widest truncate">
+                    {topDnaGenres}
                   </p>
                 </div>
               </div>
@@ -456,16 +520,22 @@ export default function Recommendations() {
             <section className="space-y-stack-md">
               <div className="flex items-center justify-between">
                 <h4 className="font-title-lg text-title-lg">Current Mood</h4>
-                <span className="text-label-sm font-label-sm text-primary uppercase cursor-pointer">Edit Filter</span>
+                <button
+                  onClick={() => setShowEditFilterModal(true)}
+                  className="text-label-sm font-label-sm text-primary uppercase cursor-pointer hover:underline flex items-center gap-1 bg-transparent border-none p-0 font-bold"
+                >
+                  <span className="material-symbols-outlined text-[14px]">tune</span>
+                  Edit Filter
+                </button>
               </div>
               <div className="flex overflow-x-auto gap-stack-md scrollbar-hide py-2">
-                {moods.map((mood) => (
+                {displayMoods.map((mood) => (
                   <button
                     key={mood}
                     onClick={() => setSelectedMood(mood)}
                     className={`flex-shrink-0 px-stack-md py-stack-sm rounded-full font-label-sm text-label-sm transition-all cursor-pointer ${
                       selectedMood === mood
-                        ? "bg-primary-container text-on-primary-container"
+                        ? "bg-primary-container text-on-primary-container font-bold shadow-[0_0_15px_rgba(229,9,20,0.3)]"
                         : "glass text-on-surface border-white/5 hover:border-primary/40"
                     }`}
                   >
@@ -611,12 +681,41 @@ export default function Recommendations() {
         )}
       </main>
 
-      {/* FAB: AI Re-analyze */}
-      <button className="fixed bottom-24 right-container-margin w-14 h-14 rounded-full bg-gradient-to-br from-secondary to-primary shadow-lg flex items-center justify-center z-50 transition-transform active:scale-90 hover:shadow-primary/20 cursor-pointer border-none">
-        <span className="material-symbols-outlined text-on-primary text-[28px]" style={{ fontVariationSettings: "'FILL' 1" }}>
-          psychology
+      {/* FAB: Spin the Wheel / AI Re-analyze */}
+      <button
+        onClick={() => setShowSpinWheelModal(true)}
+        className="fixed bottom-24 right-container-margin w-14 h-14 rounded-full bg-gradient-to-br from-secondary to-primary shadow-lg flex items-center justify-center z-50 transition-transform active:scale-90 hover:scale-105 hover:shadow-primary/30 cursor-pointer border-none group"
+        title="Spin the Wheel: Can't decide what to watch?"
+      >
+        <span className="material-symbols-outlined text-on-primary text-[28px] group-hover:rotate-45 transition-transform duration-300" style={{ fontVariationSettings: "'FILL' 1" }}>
+          casino
         </span>
       </button>
+
+      {/* Edit Filter Modal */}
+      {showEditFilterModal && (
+        <EditFilterModal
+          userId={user?.id || ""}
+          activeMoods={activeMoods}
+          customMood={customMood}
+          genreWeights={genreWeights}
+          onSave={(newMoods, newCustomMood, newWeights) => {
+            setActiveMoods(newMoods);
+            setCustomMood(newCustomMood);
+            setGenreWeights(newWeights);
+            if (newMoods.length > 0 && !newMoods.includes(selectedMood)) {
+              setSelectedMood(newMoods[0]);
+            }
+            setShowEditFilterModal(false);
+          }}
+          onClose={() => setShowEditFilterModal(false)}
+        />
+      )}
+
+      {/* Spin the Wheel Modal */}
+      {showSpinWheelModal && (
+        <SpinWheelModal onClose={() => setShowSpinWheelModal(false)} />
+      )}
 
       {/* BottomNavBar */}
       <nav className="fixed bottom-0 left-0 right-0 h-[60px] z-50 mb-container-margin mx-container-margin rounded-full bg-surface/40 backdrop-blur-[100px] border border-white/10 shadow-[0_0_20px_rgba(255,180,170,0.1)] flex justify-around items-center w-full px-6 max-w-md md:left-1/2 md:-translate-x-1/2">

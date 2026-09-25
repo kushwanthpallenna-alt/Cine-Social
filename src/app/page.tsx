@@ -1303,7 +1303,7 @@ export default function Home() {
         {/* Top Rated (Numbered Posters) */}
         <section className="mt-stack-xl px-container-margin max-w-screen-xl mx-auto mb-12">
           <div className="flex justify-between items-end mb-stack-md">
-            <h3 className="font-headline-lg text-headline-lg font-serif">Top Rated All Time</h3>
+            <h3 className="font-headline-lg text-headline-lg font-serif">Currently High Rated Movies</h3>
           </div>
           <Carousel containerClassName="gap-12 pb-4 -mx-container-margin px-container-margin md:mx-0 md:px-0 items-center snap-x snap-mandatory scroll-px-container-margin md:scroll-px-0">
             {loading ? (

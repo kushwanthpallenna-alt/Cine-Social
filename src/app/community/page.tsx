@@ -322,9 +322,15 @@ export default function CommunityFeed() {
                           <span className="text-primary font-bold text-xs">{(u.display_name || u.username || "?").slice(0,2).toUpperCase()}</span>
                         </div>
                       )}
-                      <div className="min-w-0">
-                        <p className="font-semibold text-sm text-on-surface truncate">{u.display_name || u.username || "Cine Member"}</p>
-                        {u.username && <p className="text-xs text-on-surface-variant truncate">@{u.username}</p>}
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2 min-w-0 flex-wrap">
+                          <p className="font-semibold text-sm text-on-surface truncate">
+                            {u.display_name || u.username || "Cine Member"}
+                          </p>
+                          <span className="text-xs text-primary/90 bg-primary/10 border border-primary/20 px-1.5 py-0.5 rounded font-mono font-medium flex-shrink-0">
+                            @{u.username || (u.display_name ? u.display_name.toLowerCase().replace(/\s+/g, "") : "user")}
+                          </span>
+                        </div>
                       </div>
                     </Link>
                     {user && <FollowButton targetUserId={u.user_id} currentUserId={user.id} />}

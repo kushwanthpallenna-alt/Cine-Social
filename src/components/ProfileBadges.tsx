@@ -44,7 +44,7 @@ export default function ProfileBadges({
         { tier: 1, name: "Bronze", threshold: 50, description: "Watched 50+ movies" },
         { tier: 2, name: "Silver", threshold: 100, description: "Watched 100+ movies" },
         { tier: 3, name: "Gold", threshold: 200, description: "Watched 200+ movies" },
-        { tier: 4, name: "Platinum", threshold: 500, description: "Watched 500+ movies" },
+        { tier: 4, name: "Platinum", threshold: 2000, description: "Watched 2000+ movies" },
       ],
     },
     {
@@ -70,7 +70,7 @@ export default function ProfileBadges({
         { tier: 1, name: "Bronze", threshold: 5, description: "Written 5+ film reviews" },
         { tier: 2, name: "Silver", threshold: 15, description: "Written 15+ film reviews" },
         { tier: 3, name: "Gold", threshold: 30, description: "Written 30+ film reviews" },
-        { tier: 4, name: "Platinum", threshold: 50, description: "Written 50+ film reviews" },
+        { tier: 4, name: "Platinum", threshold: 500, description: "Written 500+ film reviews" },
       ],
     },
   ];

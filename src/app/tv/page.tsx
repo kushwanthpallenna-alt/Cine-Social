@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useCallback, Suspense } from "react";
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
+import { useSearchParams, useRouter } from "next/navigation";
 import { useSession, signOut } from "next-auth/react";
 import { supabase } from "@/lib/supabase";
 import NotificationBell from "@/components/NotificationBell";
@@ -47,13 +47,30 @@ const DetailsSkeleton = () => (
 
 // ─── Main Component ───────────────────────────────────────────────────────────
 function TvShowDetailsContent() {
+  const router = useRouter();
   const searchParams = useSearchParams();
   const tvId = searchParams.get("id") || "";
   const { data: session } = useSession();
   const user = session?.user as any;
 
   const [showProfileMenu, setShowProfileMenu] = useState(false);
-  const [scrollY, setScrollY] = useState(0);
+  const [scrolled, setScrolled] = useState(false);
+
+  useEffect(() => {
+    const handleScroll = () => {
+      setScrolled(window.scrollY > 40);
+    };
+    window.addEventListener("scroll", handleScroll, { passive: true });
+    return () => window.removeEventListener("scroll", handleScroll);
+  }, []);
+
+  const handleBack = () => {
+    if (typeof window !== "undefined" && window.history.length > 1) {
+      router.back();
+    } else {
+      router.push("/");
+    }
+  };
 
   // TV data
   const [tvShow, setTvShow] = useState<any>(null);
@@ -121,12 +138,6 @@ function TvShowDetailsContent() {
     showToast(posterPath ? "Poster updated!" : "Poster reset to default!");
   }, [showToast]);
 
-  // Scroll listener
-  useEffect(() => {
-    const handleScroll = () => setScrollY(window.scrollY);
-    window.addEventListener("scroll", handleScroll);
-    return () => window.removeEventListener("scroll", handleScroll);
-  }, []);
 
   // Load TV show data
   useEffect(() => {
@@ -540,10 +551,20 @@ function TvShowDetailsContent() {
       )}
 
       {/* Header */}
-      <header className="fixed top-0 left-0 w-full z-50 bg-gradient-to-b from-[#050505]/90 via-[#050505]/40 to-transparent flex justify-between items-center px-6 py-4 transition-all duration-300">
-        <Link href="/" className="flex items-center gap-2 hover:opacity-80 transition-opacity cursor-pointer text-purple-400 drop-shadow-[0_1px_4px_rgba(0,0,0,0.8)]">
+      <header
+        className={`fixed top-0 left-0 w-full z-50 flex justify-between items-center px-6 transition-all duration-300 ${
+          scrolled
+            ? "py-3 bg-[#131313]/90 backdrop-blur-md border-b border-white/10 shadow-[0_8px_32px_0_rgba(0,0,0,0.5)]"
+            : "py-4 bg-gradient-to-b from-[#050505]/90 via-[#050505]/40 to-transparent border-none"
+        }`}
+      >
+        <button
+          onClick={handleBack}
+          aria-label="Go back"
+          className="flex items-center gap-2 hover:opacity-80 transition-opacity cursor-pointer text-purple-400 drop-shadow-[0_1px_4px_rgba(0,0,0,0.8)] bg-transparent border-none p-0"
+        >
           <span className="material-symbols-outlined">arrow_back</span>
-        </Link>
+        </button>
         <Link href="/" className="hover:opacity-90 transition-all block">
           <h1 className="font-display-md text-[24px] text-primary tracking-tighter uppercase select-none font-serif drop-shadow-[0_2px_6px_rgba(0,0,0,0.8)]">
             CINE SOCIAL

@@ -2,7 +2,6 @@
 
 import React, { useState, useEffect, useMemo } from "react";
 import Link from "next/link";
-import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { useSession, signOut } from "next-auth/react";
 import NotificationBell from "@/components/NotificationBell";
@@ -10,6 +9,19 @@ import { getAvatarUrlOrDefault } from "@/lib/avatar";
 
 interface PersonDetailClientProps {
   personId: string;
+}
+
+interface CreditItem {
+  id: number;
+  media_type: "movie" | "tv";
+  title: string;
+  release_date?: string;
+  poster_path?: string | null;
+  vote_average?: number;
+  character?: string;
+  job?: string;
+  department?: string;
+  episode_count?: number;
 }
 
 export default function PersonDetailClient({ personId }: PersonDetailClientProps) {
@@ -21,15 +33,33 @@ export default function PersonDetailClient({ personId }: PersonDetailClientProps
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const [watchedMovieIds, setWatchedMovieIds] = useState<Set<string>>(new Set());
+  const [watchedKeys, setWatchedKeys] = useState<Set<string>>(new Set());
   const [watchedLoading, setWatchedLoading] = useState(false);
 
   const [activeTab, setActiveTab] = useState<"directing" | "acting" | "crew">("directing");
+  const [mediaTypeFilter, setMediaTypeFilter] = useState<"all" | "movie" | "tv">("all");
   const [filterMode, setFilterMode] = useState<"all" | "watched" | "unwatched">("all");
   const [showFullBio, setShowFullBio] = useState(false);
   const [showProfileMenu, setShowProfileMenu] = useState(false);
+  const [scrolled, setScrolled] = useState(false);
 
-  // 1. Fetch Person Details & Credits from TMDB
+  useEffect(() => {
+    const handleScroll = () => {
+      setScrolled(window.scrollY > 40);
+    };
+    window.addEventListener("scroll", handleScroll, { passive: true });
+    return () => window.removeEventListener("scroll", handleScroll);
+  }, []);
+
+  const handleBack = () => {
+    if (typeof window !== "undefined" && window.history.length > 1) {
+      router.back();
+    } else {
+      router.push("/");
+    }
+  };
+
+  // 1. Fetch Person Details & Combined Credits from TMDB
   useEffect(() => {
     if (!personId) return;
 
@@ -37,7 +67,7 @@ export default function PersonDetailClient({ personId }: PersonDetailClientProps
     setLoading(true);
     setError(null);
 
-    fetch(`/api/tmdb?endpoint=person/${personId}&append_to_response=movie_credits`)
+    fetch(`/api/tmdb?endpoint=person/${personId}&append_to_response=combined_credits,movie_credits,tv_credits`)
       .then((res) => {
         if (!res.ok) throw new Error("Failed to load person details.");
         return res.json();
@@ -48,8 +78,8 @@ export default function PersonDetailClient({ personId }: PersonDetailClientProps
 
         // Intelligently set default active tab based on known_for_department or available credits
         const dept = (data.known_for_department || "").toLowerCase();
-        const crew = data.movie_credits?.crew || [];
-        const cast = data.movie_credits?.cast || [];
+        const crew = data.combined_credits?.crew || data.movie_credits?.crew || [];
+        const cast = data.combined_credits?.cast || data.movie_credits?.cast || [];
 
         const hasDirecting = crew.some((c: any) => c.job === "Director");
         const hasActing = cast.length > 0;
@@ -86,30 +116,67 @@ export default function PersonDetailClient({ personId }: PersonDetailClientProps
       .then((res) => (res.ok ? res.json() : []))
       .then((data: any[]) => {
         if (Array.isArray(data)) {
-          const ids = new Set<string>(data.map((w) => String(w.movie_id)));
-          setWatchedMovieIds(ids);
+          const keys = new Set<string>();
+          data.forEach((w) => {
+            const type = w.content_type || "movie";
+            const id = String(w.movie_id);
+            keys.add(`${type}_${id}`);
+            keys.add(id); // fallback for raw id
+          });
+          setWatchedKeys(keys);
         }
       })
       .catch((err) => console.error("Error fetching watched list:", err))
       .finally(() => setWatchedLoading(false));
   }, [user?.id]);
 
+  // Helper to check if credit item is watched
+  const isItemWatched = (item: CreditItem) => {
+    return (
+      watchedKeys.has(`${item.media_type}_${item.id}`) ||
+      (item.media_type === "movie" && watchedKeys.has(String(item.id))) ||
+      watchedKeys.has(String(item.id))
+    );
+  };
+
   // Process & Deduplicate Credits
-  const { directingMovies, actingMovies, otherCrewMovies } = useMemo(() => {
-    if (!person?.movie_credits) {
-      return { directingMovies: [], actingMovies: [], otherCrewMovies: [] };
-    }
+  const { directingCredits, actingCredits, otherCrewCredits } = useMemo(() => {
+    const combined = person?.combined_credits;
+    const movieCredits = person?.movie_credits;
+    const tvCredits = person?.tv_credits;
 
-    const castList: any[] = person.movie_credits.cast || [];
-    const crewList: any[] = person.movie_credits.crew || [];
+    const rawCastList: any[] = [
+      ...(combined?.cast || []),
+      ...((!combined && movieCredits?.cast) ? movieCredits.cast.map((c: any) => ({ ...c, media_type: "movie" })) : []),
+      ...((!combined && tvCredits?.cast) ? tvCredits.cast.map((c: any) => ({ ...c, media_type: "tv" })) : []),
+    ];
 
-    // Deduplicate function by movie ID
-    const dedupe = (items: any[]) => {
-      const map = new Map<number, any>();
+    const rawCrewList: any[] = [
+      ...(combined?.crew || []),
+      ...((!combined && movieCredits?.crew) ? movieCredits.crew.map((c: any) => ({ ...c, media_type: "movie" })) : []),
+      ...((!combined && tvCredits?.crew) ? tvCredits.crew.map((c: any) => ({ ...c, media_type: "tv" })) : []),
+    ];
+
+    // Deduplicate function by (media_type + id)
+    const normalizeAndDedupe = (items: any[]): CreditItem[] => {
+      const map = new Map<string, CreditItem>();
       for (const item of items) {
         if (!item.id) continue;
-        if (!map.has(item.id)) {
-          map.set(item.id, item);
+        const media_type: "movie" | "tv" = item.media_type === "tv" || (!item.title && item.name) ? "tv" : "movie";
+        const key = `${media_type}_${item.id}`;
+        if (!map.has(key)) {
+          map.set(key, {
+            id: item.id,
+            media_type,
+            title: item.title || item.name || "Untitled",
+            release_date: item.release_date || item.first_air_date || "",
+            poster_path: item.poster_path,
+            vote_average: item.vote_average,
+            character: item.character,
+            job: item.job,
+            department: item.department,
+            episode_count: item.episode_count,
+          });
         }
       }
       return Array.from(map.values()).sort((a, b) => {
@@ -119,57 +186,53 @@ export default function PersonDetailClient({ personId }: PersonDetailClientProps
       });
     };
 
-    const directing = dedupe(crewList.filter((c: any) => c.job === "Director"));
-    const acting = dedupe(castList);
-    const otherCrew = dedupe(crewList.filter((c: any) => c.job !== "Director"));
+    const directing = normalizeAndDedupe(rawCrewList.filter((c: any) => c.job === "Director"));
+    const acting = normalizeAndDedupe(rawCastList);
+    const otherCrew = normalizeAndDedupe(rawCrewList.filter((c: any) => c.job !== "Director"));
 
     return {
-      directingMovies: directing,
-      actingMovies: acting,
-      otherCrewMovies: otherCrew,
+      directingCredits: directing,
+      actingCredits: acting,
+      otherCrewCredits: otherCrew,
     };
   }, [person]);
 
-  // Current active list based on tab selection
-  const currentList = useMemo(() => {
-    if (activeTab === "directing") return directingMovies;
-    if (activeTab === "acting") return actingMovies;
-    return otherCrewMovies;
-  }, [activeTab, directingMovies, actingMovies, otherCrewMovies]);
+  // Current active list for selected Role Tab
+  const currentRoleCredits = useMemo(() => {
+    if (activeTab === "directing") return directingCredits;
+    if (activeTab === "acting") return actingCredits;
+    return otherCrewCredits;
+  }, [activeTab, directingCredits, actingCredits, otherCrewCredits]);
 
-  // Calculate Watched Stats for the active list
+  // Counts for media type sub-filter within the active role
+  const roleMovieCount = useMemo(() => currentRoleCredits.filter((c) => c.media_type === "movie").length, [currentRoleCredits]);
+  const roleTvCount = useMemo(() => currentRoleCredits.filter((c) => c.media_type === "tv").length, [currentRoleCredits]);
+
+  // Filter by media type (All vs Movies vs TV Shows)
+  const currentRoleFilteredByMedia = useMemo(() => {
+    if (mediaTypeFilter === "movie") return currentRoleCredits.filter((c) => c.media_type === "movie");
+    if (mediaTypeFilter === "tv") return currentRoleCredits.filter((c) => c.media_type === "tv");
+    return currentRoleCredits;
+  }, [currentRoleCredits, mediaTypeFilter]);
+
+  // Calculate Watched Stats for the active list and media filter
   const activeStats = useMemo(() => {
-    const total = currentList.length;
-    const watchedCount = currentList.filter((m) => watchedMovieIds.has(String(m.id))).length;
+    const total = currentRoleFilteredByMedia.length;
+    const watchedCount = currentRoleFilteredByMedia.filter(isItemWatched).length;
     const percentage = total > 0 ? Math.round((watchedCount / total) * 100) : 0;
 
     return { total, watchedCount, percentage };
-  }, [currentList, watchedMovieIds]);
+  }, [currentRoleFilteredByMedia, watchedKeys]);
 
-  // Overall Total Filmography Watched Stats (across all unique movies)
-  const overallStats = useMemo(() => {
-    const allUnique = new Map<number, any>();
-    [...directingMovies, ...actingMovies, ...otherCrewMovies].forEach((m) => {
-      if (m.id && !allUnique.has(m.id)) allUnique.set(m.id, m);
-    });
-    const total = allUnique.size;
-    let watchedCount = 0;
-    allUnique.forEach((m) => {
-      if (watchedMovieIds.has(String(m.id))) watchedCount++;
-    });
-    const percentage = total > 0 ? Math.round((watchedCount / total) * 100) : 0;
-    return { total, watchedCount, percentage };
-  }, [directingMovies, actingMovies, otherCrewMovies, watchedMovieIds]);
-
-  // Filtered movies to display
-  const displayedMovies = useMemo(() => {
-    return currentList.filter((m) => {
-      const isW = watchedMovieIds.has(String(m.id));
+  // Filtered credits to display (by Watched / Unwatched)
+  const displayedCredits = useMemo(() => {
+    return currentRoleFilteredByMedia.filter((item) => {
+      const isW = isItemWatched(item);
       if (filterMode === "watched") return isW;
       if (filterMode === "unwatched") return !isW;
       return true;
     });
-  }, [currentList, filterMode, watchedMovieIds]);
+  }, [currentRoleFilteredByMedia, filterMode, watchedKeys]);
 
   if (loading) {
     return (
@@ -200,8 +263,8 @@ export default function PersonDetailClient({ personId }: PersonDetailClientProps
         <h2 className="text-2xl font-bold font-serif text-white mb-2">Person Not Found</h2>
         <p className="text-on-surface-variant max-w-md mb-6">{error || "Could not retrieve details for this person."}</p>
         <button
-          onClick={() => router.back()}
-          className="px-6 py-2.5 rounded-full bg-primary-container text-on-primary-container font-semibold flex items-center gap-2 hover:opacity-90 transition-all cursor-pointer"
+          onClick={handleBack}
+          className="px-6 py-2.5 rounded-full bg-primary-container text-on-primary-container font-semibold flex items-center gap-2 hover:opacity-90 transition-all cursor-pointer border-none"
         >
           <span className="material-symbols-outlined text-sm">arrow_back</span>
           Go Back
@@ -216,11 +279,18 @@ export default function PersonDetailClient({ personId }: PersonDetailClientProps
 
   return (
     <div className="bg-[#050505] text-[#e5e2e1] font-body-md overflow-x-clip min-h-screen relative pb-32">
-      {/* Top Header — Letterboxd-style transparent blended header */}
-      <header className="fixed top-0 left-0 w-full z-50 bg-gradient-to-b from-[#050505]/90 via-[#050505]/40 to-transparent flex justify-between items-center px-container-margin py-stack-md transition-all duration-300">
+      {/* Top Header */}
+      <header
+        className={`fixed top-0 left-0 w-full z-50 flex justify-between items-center px-container-margin transition-all duration-300 ${
+          scrolled
+            ? "py-stack-sm bg-[#131313]/90 backdrop-blur-md border-b border-white/10 shadow-[0_8px_32px_0_rgba(0,0,0,0.5)]"
+            : "py-stack-md bg-gradient-to-b from-[#050505]/90 via-[#050505]/40 to-transparent border-none"
+        }`}
+      >
         <button
-          onClick={() => router.back()}
-          className="flex items-center gap-stack-sm hover:opacity-80 transition-opacity cursor-pointer text-primary bg-transparent border-none drop-shadow-[0_1px_4px_rgba(0,0,0,0.8)]"
+          onClick={handleBack}
+          aria-label="Go back"
+          className="flex items-center gap-stack-sm hover:opacity-80 transition-opacity cursor-pointer text-primary bg-transparent border-none drop-shadow-[0_1px_4px_rgba(0,0,0,0.8)] p-0"
         >
           <span className="material-symbols-outlined">arrow_back</span>
         </button>
@@ -343,10 +413,16 @@ export default function PersonDetailClient({ personId }: PersonDetailClientProps
                 {user?.id ? (
                   <>
                     You've watched <strong className="text-white font-bold">{activeStats.watchedCount}</strong> of{" "}
-                    <strong className="text-white font-bold">{activeStats.total}</strong> movies in this section.
+                    <strong className="text-white font-bold">{activeStats.total}</strong>{" "}
+                    {mediaTypeFilter === "movie"
+                      ? "movies"
+                      : mediaTypeFilter === "tv"
+                      ? "TV shows"
+                      : "titles"}{" "}
+                    in this view.
                   </>
                 ) : (
-                  "Sign in to track how many of this person's movies you've watched!"
+                  "Sign in to track how many of this person's movies & TV shows you've watched!"
                 )}
               </p>
             </div>
@@ -376,54 +452,99 @@ export default function PersonDetailClient({ personId }: PersonDetailClientProps
           </div>
         </section>
 
-        {/* Tab & Filter Controls */}
+        {/* Role Tabs */}
+        <div className="mb-4 flex items-center gap-2 overflow-x-auto no-scrollbar pb-1">
+          {directingCredits.length > 0 && (
+            <button
+              onClick={() => {
+                setActiveTab("directing");
+                setMediaTypeFilter("all");
+              }}
+              className={`px-4 py-2 rounded-full text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 flex-shrink-0 ${
+                activeTab === "directing"
+                  ? "bg-primary text-black shadow-[0_0_15px_rgba(255,180,170,0.3)]"
+                  : "bg-white/5 text-on-surface-variant hover:bg-white/10 border border-white/10"
+              }`}
+            >
+              <span className="material-symbols-outlined text-sm">movie</span>
+              Directing ({directingCredits.length})
+            </button>
+          )}
+
+          {actingCredits.length > 0 && (
+            <button
+              onClick={() => {
+                setActiveTab("acting");
+                setMediaTypeFilter("all");
+              }}
+              className={`px-4 py-2 rounded-full text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 flex-shrink-0 ${
+                activeTab === "acting"
+                  ? "bg-primary text-black shadow-[0_0_15px_rgba(255,180,170,0.3)]"
+                  : "bg-white/5 text-on-surface-variant hover:bg-white/10 border border-white/10"
+              }`}
+            >
+              <span className="material-symbols-outlined text-sm">theater_comedy</span>
+              Acting ({actingCredits.length})
+            </button>
+          )}
+
+          {otherCrewCredits.length > 0 && (
+            <button
+              onClick={() => {
+                setActiveTab("crew");
+                setMediaTypeFilter("all");
+              }}
+              className={`px-4 py-2 rounded-full text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 flex-shrink-0 ${
+                activeTab === "crew"
+                  ? "bg-primary text-black shadow-[0_0_15px_rgba(255,180,170,0.3)]"
+                  : "bg-white/5 text-on-surface-variant hover:bg-white/10 border border-white/10"
+              }`}
+            >
+              <span className="material-symbols-outlined text-sm">video_settings</span>
+              Other Crew ({otherCrewCredits.length})
+            </button>
+          )}
+        </div>
+
+        {/* Sub-Filters: Media Type Toggle (Movies vs TV) & Watched/Unwatched */}
         <section className="mb-stack-md flex flex-col md:flex-row justify-between items-start md:items-center gap-4 border-b border-white/10 pb-4">
-          {/* Role Tabs (Directing / Acting / Other Crew) */}
-          <div className="flex items-center gap-2 overflow-x-auto no-scrollbar w-full md:w-auto">
-            {directingMovies.length > 0 && (
-              <button
-                onClick={() => setActiveTab("directing")}
-                className={`px-4 py-2 rounded-full text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 flex-shrink-0 ${
-                  activeTab === "directing"
-                    ? "bg-primary text-black shadow-[0_0_15px_rgba(255,180,170,0.3)]"
-                    : "bg-white/5 text-on-surface-variant hover:bg-white/10 border border-white/10"
-                }`}
-              >
-                <span className="material-symbols-outlined text-sm">movie</span>
-                Directing ({directingMovies.length})
-              </button>
-            )}
-
-            {actingMovies.length > 0 && (
-              <button
-                onClick={() => setActiveTab("acting")}
-                className={`px-4 py-2 rounded-full text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 flex-shrink-0 ${
-                  activeTab === "acting"
-                    ? "bg-primary text-black shadow-[0_0_15px_rgba(255,180,170,0.3)]"
-                    : "bg-white/5 text-on-surface-variant hover:bg-white/10 border border-white/10"
-                }`}
-              >
-                <span className="material-symbols-outlined text-sm">theater_comedy</span>
-                Acting ({actingMovies.length})
-              </button>
-            )}
-
-            {otherCrewMovies.length > 0 && (
-              <button
-                onClick={() => setActiveTab("crew")}
-                className={`px-4 py-2 rounded-full text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 flex-shrink-0 ${
-                  activeTab === "crew"
-                    ? "bg-primary text-black shadow-[0_0_15px_rgba(255,180,170,0.3)]"
-                    : "bg-white/5 text-on-surface-variant hover:bg-white/10 border border-white/10"
-                }`}
-              >
-                <span className="material-symbols-outlined text-sm">video_settings</span>
-                Other Crew ({otherCrewMovies.length})
-              </button>
-            )}
+          {/* Media Type Filter (All / Movies / TV Shows) */}
+          <div className="flex items-center gap-1.5 bg-white/5 p-1 rounded-xl border border-white/10">
+            <button
+              onClick={() => setMediaTypeFilter("all")}
+              className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer flex items-center gap-1 ${
+                mediaTypeFilter === "all"
+                  ? "bg-white/20 text-white shadow-sm"
+                  : "text-on-surface-variant/70 hover:text-white"
+              }`}
+            >
+              All ({currentRoleCredits.length})
+            </button>
+            <button
+              onClick={() => setMediaTypeFilter("movie")}
+              className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer flex items-center gap-1 ${
+                mediaTypeFilter === "movie"
+                  ? "bg-primary/20 text-primary border border-primary/30 font-bold"
+                  : "text-on-surface-variant/70 hover:text-white"
+              }`}
+            >
+              <span className="material-symbols-outlined text-xs">local_movies</span>
+              Movies ({roleMovieCount})
+            </button>
+            <button
+              onClick={() => setMediaTypeFilter("tv")}
+              className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer flex items-center gap-1 ${
+                mediaTypeFilter === "tv"
+                  ? "bg-purple-600/30 text-purple-300 border border-purple-500/40 font-bold"
+                  : "text-on-surface-variant/70 hover:text-white"
+              }`}
+            >
+              <span className="material-symbols-outlined text-xs">tv</span>
+              TV Shows ({roleTvCount})
+            </button>
           </div>
 
-          {/* Watched Filter Pills */}
+          {/* Watched / Unwatched Filter Pills */}
           <div className="flex items-center gap-2 flex-shrink-0">
             <span className="text-xs text-on-surface-variant/60 hidden md:inline">Filter:</span>
             <button
@@ -432,7 +553,7 @@ export default function PersonDetailClient({ personId }: PersonDetailClientProps
                 filterMode === "all" ? "bg-white/20 text-white" : "text-on-surface-variant/60 hover:text-white"
               }`}
             >
-              All ({currentList.length})
+              All ({currentRoleFilteredByMedia.length})
             </button>
             <button
               onClick={() => setFilterMode("watched")}
@@ -453,45 +574,50 @@ export default function PersonDetailClient({ personId }: PersonDetailClientProps
           </div>
         </section>
 
-        {/* Filmography Movie Grid */}
-        {displayedMovies.length === 0 ? (
+        {/* Filmography Credits Grid */}
+        {displayedCredits.length === 0 ? (
           <div className="glass-panel rounded-2xl p-12 text-center text-on-surface-variant/60 space-y-3">
             <span className="material-symbols-outlined text-4xl">movie_off</span>
-            <p className="text-sm font-semibold">No movies match the selected filter.</p>
+            <p className="text-sm font-semibold">No titles match the selected filter.</p>
           </div>
         ) : (
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-stack-md">
-            {displayedMovies.map((movie: any) => {
-              const isWatched = watchedMovieIds.has(String(movie.id));
-              const year = movie.release_date ? new Date(movie.release_date).getFullYear() : "";
-              const rating = movie.vote_average ? movie.vote_average.toFixed(1) : null;
-              const roleLabel = activeTab === "directing" ? "Director" : movie.character || movie.job || "";
+            {displayedCredits.map((item) => {
+              const isWatched = isItemWatched(item);
+              const isTv = item.media_type === "tv";
+              const year = item.release_date ? new Date(item.release_date).getFullYear() : "";
+              const rating = item.vote_average ? item.vote_average.toFixed(1) : null;
+              const roleLabel =
+                activeTab === "directing"
+                  ? "Director"
+                  : item.character || item.job || "";
+              const href = isTv ? `/tv?id=${item.id}` : `/movies?id=${item.id}`;
 
               return (
-                <div key={movie.id} className="group/card relative block animate-fade-in">
-                  <Link href={`/movies?id=${movie.id}`} className="cursor-pointer block">
+                <div key={`${item.media_type}_${item.id}`} className="group/card relative block animate-fade-in">
+                  <Link href={href} className="cursor-pointer block">
                     <div className="relative aspect-[2/3] rounded-xl overflow-hidden glass-panel mb-2 bg-white/5">
                       <img
-                        alt={movie.title || movie.name}
+                        alt={item.title}
                         className="w-full h-full object-cover transition-transform duration-500 group-hover/card:scale-105"
                         src={
-                          movie.poster_path
-                            ? `https://image.tmdb.org/t/p/w342${movie.poster_path}`
+                          item.poster_path
+                            ? `https://image.tmdb.org/t/p/w342${item.poster_path}`
                             : "https://images.unsplash.com/photo-1594909122845-11baa439b7bf?w=500"
                         }
                         loading="lazy"
                       />
-                      {/* Gradient overlay */}
-                      <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-0 group-hover/card:opacity-100 transition-opacity flex flex-col justify-end p-2">
-                        {rating && (
-                          <span className="text-secondary text-xs flex items-center gap-1 font-bold">
-                            <span className="material-symbols-outlined text-xs" style={{ fontVariationSettings: "'FILL' 1" }}>
-                              star
-                            </span>
-                            {rating}
-                          </span>
-                        )}
-                      </div>
+
+                      {/* Content Type Badge */}
+                      <span
+                        className={`absolute top-2 right-2 z-10 text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded backdrop-blur-md shadow-md ${
+                          isTv
+                            ? "bg-purple-600/90 text-white border border-purple-400/30"
+                            : "bg-black/60 text-white/80 border border-white/10"
+                        }`}
+                      >
+                        {isTv ? "TV Show" : "Movie"}
+                      </span>
 
                       {/* Watched Badge */}
                       {isWatched && (
@@ -502,10 +628,22 @@ export default function PersonDetailClient({ personId }: PersonDetailClientProps
                           Watched
                         </div>
                       )}
+
+                      {/* Gradient overlay with rating */}
+                      <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-0 group-hover/card:opacity-100 transition-opacity flex flex-col justify-end p-2">
+                        {rating && (
+                          <span className="text-secondary text-xs flex items-center gap-1 font-bold">
+                            <span className="material-symbols-outlined text-xs" style={{ fontVariationSettings: "'FILL' 1" }}>
+                              star
+                            </span>
+                            {rating}
+                          </span>
+                        )}
+                      </div>
                     </div>
 
                     <h4 className="text-body-md font-semibold group-hover/card:text-primary truncate transition-colors">
-                      {movie.title || movie.name}
+                      {item.title}
                     </h4>
                     <div className="flex justify-between items-center text-xs text-on-surface-variant/70 mt-0.5">
                       <span className="truncate max-w-[110px]">{roleLabel}</span>

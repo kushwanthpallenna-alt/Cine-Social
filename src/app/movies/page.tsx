@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useCallback, useMemo, Suspense } from "react";
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
+import { useSearchParams, useRouter } from "next/navigation";
 import { useSession, signOut } from "next-auth/react";
 import { supabase } from "@/lib/supabase";
 import NotificationBell from "@/components/NotificationBell";
@@ -109,12 +109,29 @@ const DetailsSkeleton = () => (
 );
 
 function MovieDetailsView({ movieId }: { movieId: string }) {
+  const router = useRouter();
   const { data: session } = useSession();
   const user = session?.user as any;
   const [showProfileMenu, setShowProfileMenu] = useState(false);
 
-  const [scrollY, setScrollY] = useState(0);
+  const [scrolled, setScrolled] = useState(false);
   const [movie, setMovie] = useState<any>(null);
+
+  useEffect(() => {
+    const handleScroll = () => {
+      setScrolled(window.scrollY > 40);
+    };
+    window.addEventListener("scroll", handleScroll, { passive: true });
+    return () => window.removeEventListener("scroll", handleScroll);
+  }, []);
+
+  const handleBack = () => {
+    if (typeof window !== "undefined" && window.history.length > 1) {
+      router.back();
+    } else {
+      router.push("/");
+    }
+  };
   const [cast, setCast] = useState<any[]>([]);
   const [directors, setDirectors] = useState<any[]>([]);
   const [similarMovies, setSimilarMovies] = useState<any[]>([]);
@@ -601,13 +618,6 @@ function MovieDetailsView({ movieId }: { movieId: string }) {
   };
 
 
-  useEffect(() => {
-    const handleScroll = () => {
-      setScrollY(window.scrollY);
-    };
-    window.addEventListener("scroll", handleScroll);
-    return () => window.removeEventListener("scroll", handleScroll);
-  }, []);
 
   useEffect(() => {
     async function fetchMovieDetails() {
@@ -730,14 +740,21 @@ function MovieDetailsView({ movieId }: { movieId: string }) {
 
   return (
     <div className="bg-[#050505] text-[#e5e2e1] font-body-md overflow-x-clip min-h-screen relative pb-32">
-      {/* Top Navigation Bar — Letterboxd-style transparent blended header */}
-      <header className="fixed top-0 left-0 w-full z-50 bg-gradient-to-b from-[#050505]/90 via-[#050505]/40 to-transparent flex justify-between items-center px-container-margin py-stack-md transition-all duration-300">
-        <Link
-          href="/"
-          className="flex items-center gap-stack-sm hover:opacity-80 transition-opacity cursor-pointer text-primary drop-shadow-[0_1px_4px_rgba(0,0,0,0.8)]"
+      {/* Top Navigation Bar */}
+      <header
+        className={`fixed top-0 left-0 w-full z-50 flex justify-between items-center px-container-margin transition-all duration-300 ${
+          scrolled
+            ? "py-stack-sm bg-[#131313]/90 backdrop-blur-md border-b border-white/10 shadow-[0_8px_32px_0_rgba(0,0,0,0.5)]"
+            : "py-stack-md bg-gradient-to-b from-[#050505]/90 via-[#050505]/40 to-transparent border-none"
+        }`}
+      >
+        <button
+          onClick={handleBack}
+          aria-label="Go back"
+          className="flex items-center gap-stack-sm hover:opacity-80 transition-opacity cursor-pointer text-primary drop-shadow-[0_1px_4px_rgba(0,0,0,0.8)] bg-transparent border-none p-0"
         >
           <span className="material-symbols-outlined">arrow_back</span>
-        </Link>
+        </button>
         <Link href="/" className="hover:opacity-90 active:scale-98 transition-all block">
           <h1 className="font-display-md text-[24px] text-primary tracking-tighter uppercase select-none font-serif drop-shadow-[0_2px_6px_rgba(0,0,0,0.8)]">
             CINE SOCIAL

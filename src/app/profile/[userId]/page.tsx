@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useMemo } from "react";
 import Link from "next/link";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { supabase } from "@/lib/supabase";
 import { useToast } from "@/components/ToastProvider";
@@ -156,11 +156,30 @@ function UserProfileSkeleton() {
 }
 
 export default function PublicProfilePage() {
+  const router = useRouter();
   const routeParams = useParams();
   const targetUserId = (routeParams?.userId as string) || "";
   const { data: session } = useSession();
   const currentUser = session?.user as any;
   const { showToast } = useToast();
+
+  const [scrolled, setScrolled] = useState(false);
+
+  useEffect(() => {
+    const handleScroll = () => {
+      setScrolled(window.scrollY > 40);
+    };
+    window.addEventListener("scroll", handleScroll, { passive: true });
+    return () => window.removeEventListener("scroll", handleScroll);
+  }, []);
+
+  const handleBack = () => {
+    if (typeof window !== "undefined" && window.history.length > 1) {
+      router.back();
+    } else {
+      router.push("/community");
+    }
+  };
 
   const [profile, setProfile] = useState<any>(null);
   const [loading, setLoading] = useState(true);
@@ -469,11 +488,21 @@ export default function PublicProfilePage() {
   return (
     <div className="font-body-md text-body-md bg-[#050505] text-[#e5e2e1] min-h-screen pb-32">
       {/* Header */}
-      <header className="fixed top-0 left-0 w-full z-50 bg-gradient-to-b from-[#050505]/90 via-[#050505]/40 to-transparent flex justify-between items-center px-6 py-4 transition-all duration-300">
-        <Link href="/community" className="flex items-center gap-2 text-on-surface-variant hover:text-primary transition-colors drop-shadow-[0_1px_4px_rgba(0,0,0,0.8)]">
+      <header
+        className={`fixed top-0 left-0 w-full z-50 flex justify-between items-center px-6 transition-all duration-300 ${
+          scrolled
+            ? "py-3 bg-[#131313]/90 backdrop-blur-md border-b border-white/10 shadow-[0_8px_32px_0_rgba(0,0,0,0.5)]"
+            : "py-4 bg-gradient-to-b from-[#050505]/90 via-[#050505]/40 to-transparent border-none"
+        }`}
+      >
+        <button
+          onClick={handleBack}
+          aria-label="Go back"
+          className="flex items-center gap-2 text-on-surface-variant hover:text-primary transition-colors drop-shadow-[0_1px_4px_rgba(0,0,0,0.8)] bg-transparent border-none p-0 cursor-pointer"
+        >
           <span className="material-symbols-outlined text-sm">arrow_back</span>
-          <span className="text-sm font-semibold">Social</span>
-        </Link>
+          <span className="text-sm font-semibold">Back</span>
+        </button>
         <h1 className="font-serif text-lg text-primary tracking-tight font-bold drop-shadow-[0_2px_6px_rgba(0,0,0,0.8)]">{displayName}</h1>
         <div className="flex items-center">
           <NotificationBell />

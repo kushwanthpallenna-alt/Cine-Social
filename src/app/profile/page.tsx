@@ -128,6 +128,16 @@ export default function ProfilePage() {
   const { data: session } = useSession();
   const user = session?.user as any;
 
+  const [scrolled, setScrolled] = useState(false);
+
+  useEffect(() => {
+    const handleScroll = () => {
+      setScrolled(window.scrollY > 40);
+    };
+    window.addEventListener("scroll", handleScroll, { passive: true });
+    return () => window.removeEventListener("scroll", handleScroll);
+  }, []);
+
   const [loading, setLoading] = useState(true);
   const [watchlist, setWatchlist] = useState<any[]>([]);
   const [watched, setWatched] = useState<any[]>([]);
@@ -828,8 +838,14 @@ export default function ProfilePage() {
 
   return (
     <div className="font-body-md text-body-md bg-[#050505] text-[#e5e2e1] min-h-screen relative pb-32 overflow-x-clip">
-      {/* Header — Letterboxd-style transparent blended header */}
-      <header className="fixed top-0 left-0 w-full z-50 bg-gradient-to-b from-[#050505]/90 via-[#050505]/40 to-transparent flex justify-between items-center px-container-margin py-stack-md transition-all duration-300">
+      {/* Header — Letterboxd-style blended header */}
+      <header
+        className={`fixed top-0 left-0 w-full z-50 flex justify-between items-center px-container-margin transition-all duration-300 ${
+          scrolled
+            ? "py-stack-sm bg-[#131313]/90 backdrop-blur-md border-b border-white/10 shadow-[0_8px_32px_0_rgba(0,0,0,0.5)]"
+            : "py-stack-md bg-gradient-to-b from-[#050505]/90 via-[#050505]/40 to-transparent border-none"
+        }`}
+      >
         <Link href="/" className="hover:opacity-90 active:scale-98 transition-all block">
           <h1 className="font-display-md text-[24px] text-primary tracking-tighter uppercase select-none font-serif drop-shadow-[0_2px_6px_rgba(0,0,0,0.8)]">
             PROFILE

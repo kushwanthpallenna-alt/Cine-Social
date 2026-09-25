@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useSession, signOut } from "next-auth/react";
 import { supabase } from "@/lib/supabase";
 import { useToast } from "@/components/ToastProvider";
@@ -19,9 +20,18 @@ interface ProfilePrefs {
 }
 
 export default function SettingsPage() {
+  const router = useRouter();
   const { data: session, update: updateSession } = useSession();
   const user = session?.user as any;
   const { showToast } = useToast();
+
+  const handleBack = () => {
+    if (typeof window !== "undefined" && window.history.length > 1) {
+      router.back();
+    } else {
+      router.push("/profile");
+    }
+  };
 
   const [prefs, setPrefs] = useState<ProfilePrefs | null>(null);
   const [loading, setLoading] = useState(true);
@@ -251,13 +261,14 @@ export default function SettingsPage() {
   return (
     <div className="min-h-screen bg-[#050505] text-[#e5e2e1] pb-20">
       {/* Header */}
-      <header className="fixed top-0 left-0 w-full z-50 bg-[#0a0a0a]/80 backdrop-blur-xl border-b border-white/10 flex items-center px-4 md:px-8 py-4 gap-4">
-        <Link
-          href="/profile"
-          className="w-9 h-9 flex items-center justify-center rounded-full bg-white/5 hover:bg-white/10 transition-colors text-white/60 hover:text-white"
+      <header className="fixed top-0 left-0 w-full z-50 bg-[#131313]/60 backdrop-blur-[40px] border-b border-white/10 flex items-center px-4 md:px-8 py-4 gap-4 shadow-[0_8px_32px_0_rgba(255,180,170,0.05)]">
+        <button
+          onClick={handleBack}
+          aria-label="Go back"
+          className="w-9 h-9 flex items-center justify-center rounded-full bg-white/5 hover:bg-white/10 transition-colors text-white/60 hover:text-white cursor-pointer border-none"
         >
           <span className="material-symbols-outlined text-xl">arrow_back</span>
-        </Link>
+        </button>
         <h1 className="font-serif text-xl font-bold text-white tracking-tight">Settings</h1>
       </header>
 

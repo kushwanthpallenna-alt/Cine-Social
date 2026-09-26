@@ -9,6 +9,7 @@ import NotificationBell from "@/components/NotificationBell";
 import ReviewCard from "@/components/ReviewCard";
 import Carousel from "@/components/Carousel";
 import PosterPickerModal from "@/components/PosterPickerModal";
+import AddToListModal from "@/components/AddToListModal";
 import { getAvatarUrlOrDefault } from "@/lib/avatar";
 
 
@@ -167,6 +168,12 @@ function MovieDetailsView({ movieId }: { movieId: string }) {
   // Streaming / watch providers
   const [watchProviders, setWatchProviders] = useState<any[]>([]);
 
+  // Custom List & Watched Date states
+  const [showAddToListModal, setShowAddToListModal] = useState(false);
+  const [showWatchedDatePicker, setShowWatchedDatePicker] = useState(false);
+  const [watchedDate, setWatchedDate] = useState<string>(new Date().toISOString().split("T")[0]);
+  const [watchedAtTimestamp, setWatchedAtTimestamp] = useState<string | null>(null);
+
   // Poster preference
   const [preferredPoster, setPreferredPoster] = useState<string | null>(null);
   const [showPosterPicker, setShowPosterPicker] = useState(false);
@@ -272,6 +279,10 @@ function MovieDetailsView({ movieId }: { movieId: string }) {
         if (res.ok) {
           const data = await res.json();
           setIsWatched(!!data);
+          if (data?.watched_at) {
+            setWatchedAtTimestamp(data.watched_at);
+            setWatchedDate(new Date(data.watched_at).toISOString().split("T")[0]);
+          }
         }
       } catch (err) {
         console.error("Error checking watched:", err);
@@ -280,8 +291,8 @@ function MovieDetailsView({ movieId }: { movieId: string }) {
     checkWatched();
   }, [user, movieId]);
 
-  // Toggle watched status
-  const handleWatchedToggle = async () => {
+  // Toggle watched status (or update watched date)
+  const handleWatchedToggle = async (customDate?: string) => {
     if (!user?.id || !movie) {
       if (!user?.id && typeof window !== "undefined") {
         window.location.href = `/auth/signin?callbackUrl=${encodeURIComponent(window.location.pathname + window.location.search)}`;
@@ -291,15 +302,17 @@ function MovieDetailsView({ movieId }: { movieId: string }) {
     const userId = user.id;
     setWatchedLoading(true);
     try {
-      if (isWatched) {
+      if (isWatched && !customDate) {
         const res = await fetch(`/api/watched?userId=${userId}&movieId=${movieId}&contentType=movie`, {
           method: "DELETE"
         });
         if (res.ok) {
           setIsWatched(false);
+          setWatchedAtTimestamp(null);
           showToast("Removed from watched!");
         }
       } else {
+        const targetDate = customDate || watchedDate;
         const res = await fetch("/api/watched", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -307,12 +320,16 @@ function MovieDetailsView({ movieId }: { movieId: string }) {
             user_id: userId,
             movie_id: movieId,
             movie_title: movie.title || movie.name || "Unknown Movie",
-            poster_path: movie.poster_path || "",
-            content_type: "movie"
+            poster_path: preferredPoster || movie.poster_path || "",
+            content_type: "movie",
+            watched_at: targetDate ? new Date(targetDate).toISOString() : undefined,
           })
         });
         if (res.ok) {
           setIsWatched(true);
+          const savedTimestamp = targetDate ? new Date(targetDate).toISOString() : new Date().toISOString();
+          setWatchedAtTimestamp(savedTimestamp);
+          setWatchedDate(savedTimestamp.split("T")[0]);
           // If in watchlist, remove from watchlist
           if (isInWatchlist) {
             await supabase
@@ -323,7 +340,8 @@ function MovieDetailsView({ movieId }: { movieId: string }) {
               .or("content_type.eq.movie,content_type.is.null");
             setIsInWatchlist(false);
           }
-          showToast("Marked as watched!");
+          showToast(isWatched ? "Updated watched date!" : "Marked as watched!");
+          setShowWatchedDatePicker(false);
         }
       }
     } catch (err) {
@@ -767,11 +785,15 @@ function MovieDetailsView({ movieId }: { movieId: string }) {
               onClick={() => setShowProfileMenu(!showProfileMenu)}
               className="w-8 h-8 rounded-full overflow-hidden border border-white/10 hover:opacity-80 transition-all focus:outline-none cursor-pointer flex items-center justify-center bg-white/5"
             >
-              <img
-                alt={user?.name || "User"}
-                className="w-full h-full object-cover"
-                src={getAvatarUrlOrDefault(user?.image)}
-              />
+              {user?.image ? (
+                <img
+                  alt={user?.name || "User"}
+                  className="w-full h-full object-cover"
+                  src={getAvatarUrlOrDefault(user.image)}
+                />
+              ) : (
+                <span className="material-symbols-outlined text-on-surface-variant text-base">person</span>
+              )}
             </button>
 
             {showProfileMenu && (
@@ -939,19 +961,52 @@ function MovieDetailsView({ movieId }: { movieId: string }) {
                   </span>
                   {isInWatchlist ? "In Watchlist" : "Add to Watchlist"}
                 </button>
+                <div className="flex items-center gap-1.5">
+                  <button
+                    onClick={() => handleWatchedToggle()}
+                    disabled={watchedLoading}
+                    className={`px-6 py-3 rounded-full font-title-lg flex items-center gap-2 active:scale-95 transition-all duration-200 cursor-pointer border-none ${isWatched
+                      ? "bg-secondary text-black shadow-[0_0_20px_rgba(233,195,73,0.35)]"
+                      : "bg-primary-container text-on-primary-container"
+                      }`}
+                  >
+                    <span className="material-symbols-outlined" style={{ fontVariationSettings: isWatched ? "'FILL' 1" : "" }}>
+                      {isWatched ? "visibility" : "visibility_off"}
+                    </span>
+                    {isWatched ? "Watched" : "Mark as Watched"}
+                  </button>
+
+                  {user?.id && (
+                    <button
+                      onClick={() => setShowWatchedDatePicker(true)}
+                      title={isWatched ? "Change watched date" : "Set custom watched date"}
+                      className={`p-3 rounded-full flex items-center justify-center transition-all cursor-pointer border ${
+                        isWatched
+                          ? "bg-secondary/20 text-secondary border-secondary/30 hover:bg-secondary/30"
+                          : "glass-card text-on-surface-variant hover:text-white border-white/10"
+                      }`}
+                    >
+                      <span className="material-symbols-outlined text-sm">calendar_month</span>
+                    </button>
+                  )}
+                </div>
+
                 <button
-                  onClick={handleWatchedToggle}
-                  disabled={watchedLoading}
-                  className={`px-6 py-3 rounded-full font-title-lg flex items-center gap-2 active:scale-95 transition-all duration-200 cursor-pointer border-none ${isWatched
-                    ? "bg-secondary text-black shadow-[0_0_20px_rgba(233,195,73,0.35)]"
-                    : "bg-primary-container text-on-primary-container"
-                    }`}
+                  onClick={() => {
+                    if (!user?.id) {
+                      if (typeof window !== "undefined") {
+                        window.location.href = `/auth/signin?callbackUrl=${encodeURIComponent(window.location.pathname + window.location.search)}`;
+                      }
+                      return;
+                    }
+                    setShowAddToListModal(true);
+                  }}
+                  className="px-6 py-3 rounded-full font-title-lg flex items-center gap-2 active:scale-95 transition-all duration-200 glass-card cursor-pointer border border-white/10 text-on-surface hover:border-primary/40 hover:text-primary"
                 >
-                  <span className="material-symbols-outlined" style={{ fontVariationSettings: isWatched ? "'FILL' 1" : "" }}>
-                    {isWatched ? "visibility" : "visibility_off"}
-                  </span>
-                  {isWatched ? "Watched" : "Mark as Watched"}
+                  <span className="material-symbols-outlined">playlist_add</span>
+                  Add to List
                 </button>
+
                 {trailerKey && (
                   <button
                     onClick={() => setShowTrailerModal(true)}
@@ -998,6 +1053,22 @@ function MovieDetailsView({ movieId }: { movieId: string }) {
                   <span className="material-symbols-outlined">share</span>
                 </button>
               </div>
+
+              {/* Watched Date indicator */}
+              {isWatched && watchedAtTimestamp && (
+                <div className="flex items-center gap-2 mt-3 text-xs text-on-surface-variant/80">
+                  <span className="material-symbols-outlined text-sm text-secondary">event_available</span>
+                  <span>
+                    Watched on <strong className="text-on-surface">{new Date(watchedAtTimestamp).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })}</strong>
+                  </span>
+                  <button
+                    onClick={() => setShowWatchedDatePicker(true)}
+                    className="text-primary hover:underline ml-1 cursor-pointer bg-transparent border-none p-0 text-xs font-semibold"
+                  >
+                    Edit date
+                  </button>
+                </div>
+              )}
             </div>
           </div>
 
@@ -1424,6 +1495,80 @@ function MovieDetailsView({ movieId }: { movieId: string }) {
               allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
               allowFullScreen
             />
+          </div>
+        </div>
+      )}
+
+      {/* Add To List Modal */}
+      {showAddToListModal && user?.id && (
+        <AddToListModal
+          isOpen={showAddToListModal}
+          onClose={() => setShowAddToListModal(false)}
+          movieId={movieId}
+          movieTitle={movie.title || movie.name || "Unknown Movie"}
+          posterPath={preferredPoster || movie.poster_path || ""}
+          contentType="movie"
+          userId={user.id}
+        />
+      )}
+
+      {/* Watched Date Picker Modal */}
+      {showWatchedDatePicker && (
+        <div
+          className="fixed inset-0 z-[200] bg-black/80 backdrop-blur-md flex items-center justify-center p-4 animate-fade-in"
+          onClick={() => setShowWatchedDatePicker(false)}
+        >
+          <div
+            className="glass-panel w-full max-w-sm rounded-2xl border border-white/10 p-6 space-y-4 shadow-2xl animate-scale-up"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between border-b border-white/10 pb-3">
+              <div className="flex items-center gap-2">
+                <span className="material-symbols-outlined text-secondary text-lg">calendar_month</span>
+                <h3 className="font-serif text-base font-bold text-on-surface">Set Watched Date</h3>
+              </div>
+              <button
+                onClick={() => setShowWatchedDatePicker(false)}
+                className="text-on-surface-variant hover:text-white transition-colors cursor-pointer bg-transparent border-none"
+              >
+                <span className="material-symbols-outlined">close</span>
+              </button>
+            </div>
+
+            <div>
+              <label className="text-xs text-on-surface-variant uppercase tracking-widest font-semibold block mb-2">
+                When did you watch this?
+              </label>
+              <input
+                type="date"
+                value={watchedDate}
+                onChange={(e) => setWatchedDate(e.target.value)}
+                className="w-full bg-white/5 border border-white/10 rounded-xl p-3 text-on-surface text-sm focus:outline-none focus:border-primary/50 transition-all [color-scheme:dark]"
+              />
+            </div>
+
+            <div className="flex gap-2 pt-2">
+              <button
+                onClick={() => handleWatchedToggle(watchedDate)}
+                disabled={watchedLoading}
+                className="flex-1 py-2.5 rounded-full bg-secondary text-black font-bold text-xs hover:brightness-110 active:scale-95 transition-all shadow-md cursor-pointer border-none flex items-center justify-center gap-1.5"
+              >
+                {watchedLoading ? (
+                  <div className="w-3.5 h-3.5 border-2 border-black border-t-transparent rounded-full animate-spin"></div>
+                ) : (
+                  <>
+                    <span className="material-symbols-outlined text-sm">save</span>
+                    Save Date
+                  </>
+                )}
+              </button>
+              <button
+                onClick={() => setShowWatchedDatePicker(false)}
+                className="px-4 py-2.5 rounded-full border border-white/10 text-on-surface-variant text-xs hover:text-white transition-colors cursor-pointer bg-transparent"
+              >
+                Cancel
+              </button>
+            </div>
           </div>
         </div>
       )}

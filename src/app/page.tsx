@@ -48,26 +48,10 @@ function getGenresString(genreIds: number[], releaseDate: string) {
 }
 
 const HeroSkeleton = () => (
-  <section className="relative w-full h-[650px] md:h-[750px] overflow-hidden bg-[#121212] flex items-end p-container-margin animate-skeleton-pulse">
-    <div className="absolute inset-0 bg-gradient-to-t from-[#050505] via-[#121212]/60 to-transparent"></div>
-    <div className="relative z-10 max-w-screen-xl mx-auto w-full pb-10">
-      <div className="glass-panel p-6 md:p-8 rounded-2xl max-w-2xl space-y-4 border border-white/10 bg-white/5 backdrop-blur-md">
-        <div className="flex items-center gap-3">
-          <div className="h-5 bg-white/15 rounded-md w-28 animate-skeleton-pulse"></div>
-          <div className="h-4 bg-white/10 rounded-md w-36 animate-skeleton-pulse"></div>
-        </div>
-        <div className="h-10 md:h-14 bg-white/15 rounded-xl w-4/5 animate-skeleton-pulse"></div>
-        <div className="space-y-2">
-          <div className="h-4 bg-white/10 rounded w-full animate-skeleton-pulse"></div>
-          <div className="h-4 bg-white/10 rounded w-11/12 animate-skeleton-pulse"></div>
-          <div className="h-4 bg-white/10 rounded w-3/4 animate-skeleton-pulse"></div>
-        </div>
-        <div className="flex gap-4 pt-2">
-          <div className="h-11 bg-white/15 rounded-full w-36 animate-skeleton-pulse"></div>
-          <div className="h-11 bg-white/15 rounded-full w-32 animate-skeleton-pulse"></div>
-        </div>
-      </div>
-    </div>
+  <section className="pt-24 pb-8 md:pt-32 md:pb-12 px-container-margin max-w-screen-xl mx-auto text-center space-y-4 animate-skeleton-pulse">
+    <div className="h-6 bg-white/10 rounded-full w-44 mx-auto"></div>
+    <div className="h-12 bg-white/15 rounded-2xl w-72 mx-auto"></div>
+    <div className="h-4 bg-white/10 rounded-md w-64 mx-auto"></div>
   </section>
 );
 
@@ -91,7 +75,6 @@ export default function Home() {
   const user = session?.user as any;
   const [showProfileMenu, setShowProfileMenu] = useState(false);
   const [scrolled, setScrolled] = useState(false);
-  const [heroMovie, setHeroMovie] = useState<any>(null);
   const [trendingMovies, setTrendingMovies] = useState<any[]>([]);
   const [topRatedMovies, setTopRatedMovies] = useState<any[]>([]);
   const [trendingTv, setTrendingTv] = useState<any[]>([]);
@@ -120,6 +103,7 @@ export default function Home() {
   const [logHoverRating, setLogHoverRating] = useState<number>(5);
   const [logReviewText, setLogReviewText] = useState("");
   const [logLiked, setLogLiked] = useState<boolean>(false);
+  const [logWatchedDate, setLogWatchedDate] = useState<string>(new Date().toISOString().split("T")[0]);
   const [isLogSubmitting, setIsLogSubmitting] = useState(false);
 
   // Friends activity states
@@ -128,10 +112,6 @@ export default function Home() {
 
   // View mode state for trending movies
   const [viewMode, setViewMode] = useState<"slider" | "grid">("slider");
-
-  // Hero trailer states
-  const [heroTrailerKey, setHeroTrailerKey] = useState<string | null>(null);
-  const [showTrailerModal, setShowTrailerModal] = useState(false);
 
   // Watchlist states
   const [watchlistIds, setWatchlistIds] = useState<Set<string>>(new Set());
@@ -225,31 +205,6 @@ export default function Home() {
     fetchWatchlist();
   }, [user]);
 
-  // Fetch hero movie trailer
-  useEffect(() => {
-    if (!heroMovie?.id) return;
-    async function fetchHeroTrailer() {
-      try {
-        const videosRes = await fetch(`/api/tmdb?endpoint=movie/${heroMovie.id}/videos`);
-        if (videosRes.ok) {
-          const videosData = await videosRes.json();
-          if (videosData?.results) {
-            const trailer = videosData.results.find((v: any) => v.site === "YouTube" && v.type === "Trailer");
-            if (trailer) {
-              setHeroTrailerKey(trailer.key);
-            } else {
-              const anyVideo = videosData.results.find((v: any) => v.site === "YouTube");
-              if (anyVideo) setHeroTrailerKey(anyVideo.key);
-            }
-          }
-        }
-      } catch (err) {
-        console.error("Error loading hero trailer:", err);
-      }
-    }
-    fetchHeroTrailer();
-  }, [heroMovie]);
-
   // Watchlist Toggle with optimistic updates
   const handleWatchlistToggle = async (movie: any) => {
     if (!user) {
@@ -342,8 +297,7 @@ export default function Home() {
         ]);
 
         if (trendingRes.status === "fulfilled" && trendingRes.value?.results?.length > 0) {
-          setHeroMovie(trendingRes.value.results[0]);
-          setTrendingMovies(trendingRes.value.results.slice(1, 11)); // Next 10 movies
+          setTrendingMovies(trendingRes.value.results.slice(0, 10)); // Top 10 trending movies
         }
         if (topRatedRes.status === "fulfilled" && topRatedRes.value?.results?.length > 0) {
           setTopRatedMovies(topRatedRes.value.results.slice(0, 5)); // Top 5 movies
@@ -424,6 +378,7 @@ export default function Home() {
           movie_title: title,
           poster_path: posterPath,
           content_type: contentType,
+          watched_at: logWatchedDate ? new Date(logWatchedDate).toISOString() : undefined,
         }),
       });
 
@@ -487,6 +442,7 @@ export default function Home() {
       setLogRating(null);
       setLogReviewText("");
       setLogLiked(false);
+      setLogWatchedDate(new Date().toISOString().split("T")[0]);
     } catch (err) {
       console.error("Error saving log entry:", err);
       showToast("Failed to save entry");
@@ -763,98 +719,62 @@ export default function Home() {
           </section>
         ) : (
           <>
-            {/* Hero Section */}
+            {/* Branded Identity Header */}
             {loading ? (
               <HeroSkeleton />
-            ) : heroMovie ? (
-              <section className="relative w-full h-screen overflow-hidden">
-                <div className="absolute inset-0">
-                  {heroMovie.backdrop_path && (
-                    <link
-                      rel="preload"
-                      as="image"
-                      href={`https://image.tmdb.org/t/p/original${heroMovie.backdrop_path}`}
-                      fetchPriority="high"
-                    />
-                  )}
-                  <Image
-                    alt={heroMovie.title || "Trending Movie Backdrop"}
-                    className="object-cover"
-                    src={heroMovie.backdrop_path ? `https://image.tmdb.org/t/p/original${heroMovie.backdrop_path}` : "https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?w=1600"}
-                    fill
-                    priority
-                    sizes="100vw"
-                    quality={85}
-                  />
-                  <div className="absolute inset-0 hero-gradient"></div>
+            ) : (
+              <section className="relative pt-24 pb-8 md:pt-32 md:pb-12 px-container-margin max-w-screen-xl mx-auto overflow-hidden">
+                <div className="absolute inset-0 -z-10 flex items-center justify-center opacity-30 pointer-events-none">
+                  <div className="w-[500px] h-[250px] bg-primary/20 blur-[120px] rounded-full"></div>
+                  <div className="w-[400px] h-[200px] bg-secondary/15 blur-[100px] rounded-full -ml-32"></div>
                 </div>
-                <div className="absolute bottom-0 left-0 right-0 p-container-margin z-10 max-w-screen-xl mx-auto w-full">
-                  <div className="glass-panel p-stack-lg rounded-xl max-w-2xl transform transition-all duration-500 hover:scale-[1.01]">
-                    <div className="flex items-center gap-stack-sm mb-stack-sm">
-                      <span className="bg-primary/20 text-primary px-2 py-0.5 rounded text-[10px] font-bold tracking-widest uppercase">
-                        Trending Now
-                      </span>
-                      <span className="text-on-surface-variant text-label-sm">
-                        {getGenresString(heroMovie.genre_ids, heroMovie.release_date)}
-                      </span>
-                    </div>
-                    <h2 className="font-display-lg text-display-lg text-on-surface mb-stack-md leading-none font-serif">
-                      {(heroMovie.title || heroMovie.name || "").toUpperCase()}
-                    </h2>
-                    <p className="text-body-lg text-on-surface-variant mb-stack-lg line-clamp-3">
-                      {heroMovie.overview}
-                    </p>
-                    <div className="flex flex-wrap gap-stack-md">
-                      <Link
-                        href={`/movies?id=${heroMovie.id}`}
-                        className="bg-primary-container text-on-primary-container px-stack-lg py-3 rounded-full font-semibold flex items-center gap-2 hover:opacity-90 active:scale-95 transition-all"
-                      >
-                        <span className="material-symbols-outlined" style={{ fontVariationSettings: "'FILL' 1" }}>
-                          info
-                        </span>
-                        Watch Details
-                      </Link>
 
-                      {heroTrailerKey && (
-                        <button
-                          onClick={() => setShowTrailerModal(true)}
-                          className="bg-secondary text-black px-stack-lg py-3 rounded-full font-semibold flex items-center gap-2 hover:opacity-90 active:scale-95 transition-all border-none cursor-pointer"
-                        >
-                          <span className="material-symbols-outlined" style={{ fontVariationSettings: "'FILL' 1" }}>
-                            play_arrow
-                          </span>
-                          Watch Trailer
-                        </button>
-                      )}
+                <div className="text-center max-w-3xl mx-auto space-y-4">
+                  <div className="inline-flex items-center gap-2 px-3.5 py-1 rounded-full bg-white/5 border border-white/10 text-[11px] font-semibold tracking-widest text-primary uppercase backdrop-blur-md">
+                    <span className="w-1.5 h-1.5 rounded-full bg-primary animate-ping"></span>
+                    Social Cinema Experience
+                  </div>
 
-                      <button
-                        onClick={() => handleWatchlistToggle(heroMovie)}
-                        disabled={watchlistLoadingId === String(heroMovie.id)}
-                        className={`px-stack-lg py-3 rounded-full font-semibold flex items-center gap-2 transition-all backdrop-blur-md cursor-pointer ${
-                          watchlistIds.has(String(heroMovie.id))
-                            ? "bg-primary text-black shadow-[0_0_20px_rgba(255,180,170,0.3)] border-none"
-                            : "border border-secondary text-secondary bg-transparent hover:bg-secondary/10"
-                        }`}
-                      >
-                        {watchlistLoadingId === String(heroMovie.id) ? (
-                          <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin"></div>
-                        ) : (
-                          <>
-                            <span className="material-symbols-outlined" style={{ fontVariationSettings: watchlistIds.has(String(heroMovie.id)) ? "'FILL' 1" : "" }}>
-                              {watchlistIds.has(String(heroMovie.id)) ? "check" : "add"}
-                            </span>
-                            Watchlist
-                          </>
-                        )}
-                      </button>
-                    </div>
+                  <h1 className="font-serif text-4xl sm:text-5xl md:text-6xl font-black text-on-surface tracking-tight leading-tight">
+                    CINE <span className="text-primary italic font-normal">SOCIAL</span>
+                  </h1>
+
+                  <p className="text-on-surface-variant text-base sm:text-lg font-light tracking-wide max-w-xl mx-auto">
+                    Track. Rate. Discover. Together.
+                  </p>
+
+                  <div className="flex items-center justify-center gap-3 pt-2">
+                    <button
+                      onClick={() => {
+                        if (!user?.id) {
+                          if (typeof window !== "undefined") {
+                            window.location.href = `/auth/signin?callbackUrl=${encodeURIComponent(window.location.pathname + window.location.search)}`;
+                          }
+                          return;
+                        }
+                        setShowQuickLogModal(true);
+                      }}
+                      className="inline-flex items-center gap-2 px-6 py-2.5 rounded-full bg-primary text-black font-bold text-sm hover:brightness-110 active:scale-95 transition-all shadow-[0_0_20px_rgba(255,180,170,0.25)] border-none cursor-pointer"
+                    >
+                      <span className="material-symbols-outlined text-[18px]" style={{ fontVariationSettings: "'FILL' 1" }}>
+                        add_circle
+                      </span>
+                      Quick Log
+                    </button>
+                    <Link
+                      href="/recommendations"
+                      className="inline-flex items-center gap-2 px-6 py-2.5 rounded-full bg-white/5 hover:bg-white/10 text-on-surface border border-white/10 font-semibold text-sm active:scale-95 transition-all backdrop-blur-md"
+                    >
+                      <span className="material-symbols-outlined text-[18px]">explore</span>
+                      Discover
+                    </Link>
                   </div>
                 </div>
               </section>
-            ) : null}
+            )}
 
         {/* Friends Activity / Popular This Week (Real Data) */}
-        <section className="mt-stack-xl px-container-margin max-w-screen-xl mx-auto">
+        <section className="mt-4 px-container-margin max-w-screen-xl mx-auto">
           <div className="glass-panel p-stack-lg rounded-2xl border-primary/10">
             {friendsActivity.length > 0 ? (
               <>
@@ -1629,6 +1549,20 @@ export default function Home() {
                     </button>
                   </div>
 
+                  {/* Watched Date Section */}
+                  <div>
+                    <label className="text-xs text-on-surface-variant uppercase tracking-widest font-semibold flex items-center gap-1 mb-2">
+                      <span className="material-symbols-outlined text-xs text-primary">calendar_today</span>
+                      Watched Date (Optional)
+                    </label>
+                    <input
+                      type="date"
+                      value={logWatchedDate}
+                      onChange={(e) => setLogWatchedDate(e.target.value)}
+                      className="w-full bg-white/5 border border-white/10 rounded-xl p-3 text-on-surface text-sm focus:outline-none focus:border-primary/50 transition-all [color-scheme:dark]"
+                    />
+                  </div>
+
                   {/* Review Section */}
                   <div>
                     <label className="text-xs text-on-surface-variant uppercase tracking-widest font-semibold flex items-center gap-1 mb-2">
@@ -1674,27 +1608,6 @@ export default function Home() {
                 </div>
               </>
             )}
-          </div>
-        </div>
-      )}
-
-      {/* Trailer Modal */}
-      {showTrailerModal && heroTrailerKey && (
-        <div className="fixed inset-0 z-[300] bg-black/90 backdrop-blur-xl flex items-center justify-center p-4 animate-fade-in" onClick={() => setShowTrailerModal(false)}>
-          <div className="relative w-full max-w-4xl aspect-video bg-black rounded-2xl overflow-hidden border border-white/10 shadow-2xl" onClick={e => e.stopPropagation()}>
-            <iframe
-              src={`https://www.youtube.com/embed/${heroTrailerKey}?autoplay=1`}
-              title="Hero Trailer"
-              className="w-full h-full border-none"
-              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-              allowFullScreen
-            />
-            <button
-              onClick={() => setShowTrailerModal(false)}
-              className="absolute top-4 right-4 w-9 h-9 rounded-full bg-black/60 hover:bg-black/80 backdrop-blur-md flex items-center justify-center text-white border border-white/10 transition-colors cursor-pointer"
-            >
-              <span className="material-symbols-outlined text-sm">close</span>
-            </button>
           </div>
         </div>
       )}

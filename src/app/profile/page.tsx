@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useMemo } from "react";
+import { createPortal } from "react-dom";
 import Link from "next/link";
 import { supabase } from "@/lib/supabase";
 import { useSession, signOut } from "next-auth/react";
@@ -15,17 +16,35 @@ type SortOption =
   | "default"
   | "rating_desc"
   | "rating_asc"
+  | "tmdb_desc"
+  | "tmdb_asc"
   | "year_desc"
   | "year_asc"
-  | "title_asc";
+  | "title_asc"
+  | "date_added_desc"
+  | "date_added_asc";
 
 const SORT_OPTIONS: { id: SortOption; label: string }[] = [
   { id: "default", label: "Default (Date Watched)" },
-  { id: "rating_desc", label: "Rating (Highest)" },
-  { id: "rating_asc", label: "Rating (Lowest)" },
+  { id: "rating_desc", label: "My Rating (Highest)" },
+  { id: "rating_asc", label: "My Rating (Lowest)" },
+  { id: "tmdb_desc", label: "TMDB Rating (Highest)" },
+  { id: "tmdb_asc", label: "TMDB Rating (Lowest)" },
   { id: "year_desc", label: "Release Year (Newest)" },
   { id: "year_asc", label: "Release Year (Oldest)" },
   { id: "title_asc", label: "Title (A-Z)" },
+  { id: "date_added_desc", label: "Date Added (Newest)" },
+  { id: "date_added_asc", label: "Date Added (Oldest)" },
+];
+
+const WATCHLIST_SORT_OPTIONS: { id: SortOption; label: string }[] = [
+  { id: "default", label: "Default (Date Added)" },
+  { id: "tmdb_desc", label: "TMDB Rating (Highest)" },
+  { id: "tmdb_asc", label: "TMDB Rating (Lowest)" },
+  { id: "year_desc", label: "Release Year (Newest)" },
+  { id: "year_asc", label: "Release Year (Oldest)" },
+  { id: "title_asc", label: "Title (A-Z)" },
+  { id: "date_added_asc", label: "Date Added (Oldest)" },
 ];
 
 const GENRE_MAP: { [key: number]: string } = {
@@ -139,6 +158,12 @@ export default function ProfilePage() {
   }, []);
 
   const [loading, setLoading] = useState(true);
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
   const [watchlist, setWatchlist] = useState<any[]>([]);
   const [watched, setWatched] = useState<any[]>([]);
   const [ratings, setRatings] = useState<any[]>([]);
@@ -170,9 +195,34 @@ export default function ProfilePage() {
   const [searchModal, setSearchModal] = useState<{ isOpen: boolean; type: "movie" | "tv" | "person"; slotType: string } | null>(null);
   const [optionsModal, setOptionsModal] = useState<{ isOpen: boolean; slotType: string; name: string } | null>(null);
 
-  const [activeTab, setActiveTab] = useState<"watched" | "watchlist" | "reviews" | "stats">("watched");
+  const [activeTab, setActiveTab] = useState<"watched" | "watchlist" | "reviews" | "lists" | "stats">("watched");
+
+  // Custom Lists state
+  const [userLists, setUserLists] = useState<any[]>([]);
+  const [listsLoading, setListsLoading] = useState(false);
+
+  // Import/Export state
+  const [importModalOpen, setImportModalOpen] = useState(false);
+  const [importFile, setImportFile] = useState<File | null>(null);
+  const [importMode, setImportMode] = useState<"watchlist" | "watched">("watchlist");
+  const [importing, setImporting] = useState(false);
+  const [importResult, setImportResult] = useState<{ imported: number; skipped: number; errors: string[] } | null>(null);
+  const [exporting, setExporting] = useState(false);
   const [mediaType, setMediaType] = useState<"movie" | "tv">("movie");
   const [watchedSort, setWatchedSort] = useState<SortOption>("default");
+  const [watchlistSort, setWatchlistSort] = useState<SortOption>("default");
+
+  // Multi-select & Bulk Delete State
+  const [isWatchedSelectMode, setIsWatchedSelectMode] = useState(false);
+  const [selectedWatched, setSelectedWatched] = useState<Set<string>>(new Set());
+  const [isWatchlistSelectMode, setIsWatchlistSelectMode] = useState(false);
+  const [selectedWatchlist, setSelectedWatchlist] = useState<Set<string>>(new Set());
+  const [bulkDeleteModal, setBulkDeleteModal] = useState<{
+    isOpen: boolean;
+    type: "watched" | "watchlist";
+    count: number;
+    isDeleting: boolean;
+  } | null>(null);
 
   // Profile Reviews Edit State
   const [profileEditReviewId, setProfileEditReviewId] = useState<string | null>(null);
@@ -277,6 +327,12 @@ export default function ProfilePage() {
           fetch(`/api/watched?userId=${realUserId}`).then(r => r.ok ? r.json() : []).catch(() => []),
           fetch(`/api/favorites?userId=${realUserId}`).then(r => r.ok ? r.json() : []).catch(() => []),
         ]);
+
+        // Fetch custom lists
+        fetch(`/api/lists?userId=${encodeURIComponent(realUserId)}`)
+          .then(r => r.ok ? r.json() : [])
+          .then(data => { if (Array.isArray(data)) setUserLists(data); })
+          .catch(() => {});
 
         if (followCountsRes) {
           setFollowCounts({
@@ -792,16 +848,24 @@ export default function ProfilePage() {
       const itemB = mediaDetails[`${typeB}_${b.movie_id}`] || mediaDetails[b.movie_id] || b;
 
       if (watchedSort === "rating_desc" || watchedSort === "rating_asc") {
-        const ratingA = ratingsMap[`${typeA}_${a.movie_id}`] ?? itemA?.vote_average ?? 0;
-        const ratingB = ratingsMap[`${typeB}_${b.movie_id}`] ?? itemB?.vote_average ?? 0;
+        const ratingA = ratingsMap[`${typeA}_${a.movie_id}`] ?? ratingsMap[a.movie_id] ?? 0;
+        const ratingB = ratingsMap[`${typeB}_${b.movie_id}`] ?? ratingsMap[b.movie_id] ?? 0;
         if (ratingA !== ratingB) {
           return watchedSort === "rating_desc" ? ratingB - ratingA : ratingA - ratingB;
         }
       }
 
+      if (watchedSort === "tmdb_desc" || watchedSort === "tmdb_asc") {
+        const voteA = itemA?.vote_average ?? 0;
+        const voteB = itemB?.vote_average ?? 0;
+        if (voteA !== voteB) {
+          return watchedSort === "tmdb_desc" ? voteB - voteA : voteA - voteB;
+        }
+      }
+
       if (watchedSort === "year_desc" || watchedSort === "year_asc") {
-        const dateA = itemA.release_date || itemA.first_air_date || itemA.year || "";
-        const dateB = itemB.release_date || itemB.first_air_date || itemB.year || "";
+        const dateA = itemA?.release_date || itemA?.first_air_date || itemA?.year || "";
+        const dateB = itemB?.release_date || itemB?.first_air_date || itemB?.year || "";
         const yearA = dateA ? parseInt(String(dateA).substring(0, 4), 10) || 0 : 0;
         const yearB = dateB ? parseInt(String(dateB).substring(0, 4), 10) || 0 : 0;
         if (yearA !== yearB) {
@@ -810,10 +874,22 @@ export default function ProfilePage() {
       }
 
       if (watchedSort === "title_asc") {
-        const titleA = String(itemA.movie_title || itemA.title || itemA.name || "").toLowerCase();
-        const titleB = String(itemB.movie_title || itemB.title || itemB.name || "").toLowerCase();
+        const titleA = String(itemA?.movie_title || itemA?.title || itemA?.name || "").toLowerCase();
+        const titleB = String(itemB?.movie_title || itemB?.title || itemB?.name || "").toLowerCase();
         const comp = titleA.localeCompare(titleB);
         if (comp !== 0) return comp;
+      }
+
+      if (watchedSort === "date_added_desc") {
+        const timeA = a.created_at ? new Date(a.created_at).getTime() : (a.watched_at ? new Date(a.watched_at).getTime() : 0);
+        const timeB = b.created_at ? new Date(b.created_at).getTime() : (b.watched_at ? new Date(b.watched_at).getTime() : 0);
+        return timeB - timeA;
+      }
+
+      if (watchedSort === "date_added_asc") {
+        const timeA = a.created_at ? new Date(a.created_at).getTime() : (a.watched_at ? new Date(a.watched_at).getTime() : 0);
+        const timeB = b.created_at ? new Date(b.created_at).getTime() : (b.watched_at ? new Date(b.watched_at).getTime() : 0);
+        return timeA - timeB;
       }
 
       // Default or fallback: date watched (newest first)
@@ -822,6 +898,159 @@ export default function ProfilePage() {
       return timeB - timeA;
     });
   }, [currentWatched, watchedSort, mediaDetails, ratingsMap]);
+
+  const sortedWatchlist = useMemo(() => {
+    if (!currentWatchlist || currentWatchlist.length === 0) return [];
+    const list = [...currentWatchlist];
+
+    return list.sort((a, b) => {
+      const typeA = a.content_type === "tv" ? "tv" : "movie";
+      const typeB = b.content_type === "tv" ? "tv" : "movie";
+      const itemA = mediaDetails[`${typeA}_${a.movie_id}`] || mediaDetails[a.movie_id] || a;
+      const itemB = mediaDetails[`${typeB}_${b.movie_id}`] || mediaDetails[b.movie_id] || b;
+
+      if (watchlistSort === "tmdb_desc" || watchlistSort === "tmdb_asc") {
+        const voteA = itemA?.vote_average ?? 0;
+        const voteB = itemB?.vote_average ?? 0;
+        if (voteA !== voteB) {
+          return watchlistSort === "tmdb_desc" ? voteB - voteA : voteA - voteB;
+        }
+      }
+
+      if (watchlistSort === "year_desc" || watchlistSort === "year_asc") {
+        const dateA = itemA?.release_date || itemA?.first_air_date || itemA?.year || "";
+        const dateB = itemB?.release_date || itemB?.first_air_date || itemB?.year || "";
+        const yearA = dateA ? parseInt(String(dateA).substring(0, 4), 10) || 0 : 0;
+        const yearB = dateB ? parseInt(String(dateB).substring(0, 4), 10) || 0 : 0;
+        if (yearA !== yearB) {
+          return watchlistSort === "year_desc" ? yearB - yearA : yearA - yearB;
+        }
+      }
+
+      if (watchlistSort === "title_asc") {
+        const titleA = String(itemA?.movie_title || itemA?.title || itemA?.name || "").toLowerCase();
+        const titleB = String(itemB?.movie_title || itemB?.title || itemB?.name || "").toLowerCase();
+        const comp = titleA.localeCompare(titleB);
+        if (comp !== 0) return comp;
+      }
+
+      if (watchlistSort === "date_added_asc") {
+        const timeA = a.created_at ? new Date(a.created_at).getTime() : (a.added_at ? new Date(a.added_at).getTime() : 0);
+        const timeB = b.created_at ? new Date(b.created_at).getTime() : (b.added_at ? new Date(b.added_at).getTime() : 0);
+        return timeA - timeB;
+      }
+
+      // Default or date_added_desc: date added to watchlist (newest first)
+      const timeA = a.created_at ? new Date(a.created_at).getTime() : (a.added_at ? new Date(a.added_at).getTime() : 0);
+      const timeB = b.created_at ? new Date(b.created_at).getTime() : (b.added_at ? new Date(b.added_at).getTime() : 0);
+      return timeB - timeA;
+    });
+  }, [currentWatchlist, watchlistSort, mediaDetails]);
+
+  // Multi-select helpers
+  const toggleWatchedItemSelection = (itemKey: string) => {
+    setSelectedWatched(prev => {
+      const next = new Set(prev);
+      if (next.has(itemKey)) next.delete(itemKey);
+      else next.add(itemKey);
+      return next;
+    });
+  };
+
+  const handleSelectAllWatched = () => {
+    const allKeys = new Set(sortedWatched.map(item => `${item.content_type === "tv" ? "tv" : "movie"}_${item.movie_id}`));
+    setSelectedWatched(allKeys);
+  };
+
+  const handleDeselectAllWatched = () => {
+    setSelectedWatched(new Set());
+  };
+
+  const toggleWatchlistItemSelection = (itemKey: string) => {
+    setSelectedWatchlist(prev => {
+      const next = new Set(prev);
+      if (next.has(itemKey)) next.delete(itemKey);
+      else next.add(itemKey);
+      return next;
+    });
+  };
+
+  const handleSelectAllWatchlist = () => {
+    const allKeys = new Set(sortedWatchlist.map(item => `${item.content_type === "tv" ? "tv" : "movie"}_${item.movie_id}`));
+    setSelectedWatchlist(allKeys);
+  };
+
+  const handleDeselectAllWatchlist = () => {
+    setSelectedWatchlist(new Set());
+  };
+
+  const handleConfirmBulkDeleteWatched = async () => {
+    if (!user?.id || selectedWatched.size === 0) return;
+    const realUserId = profileUserId || user.id;
+    setBulkDeleteModal(prev => prev ? { ...prev, isDeleting: true } : null);
+
+    try {
+      const itemsToDelete = Array.from(selectedWatched).map(key => {
+        const idx = key.indexOf("_");
+        const type = idx !== -1 ? key.slice(0, idx) : "movie";
+        const movieId = idx !== -1 ? key.slice(idx + 1) : key;
+        return { content_type: type, movie_id: movieId };
+      });
+
+      const movieIds = itemsToDelete.map(i => i.movie_id);
+
+      // Permanently remove watched entries, ratings, and reviews from Supabase in parallel
+      await Promise.all([
+        supabase.from("watched").delete().eq("user_id", realUserId).in("movie_id", movieIds),
+        supabase.from("ratings").delete().eq("user_id", realUserId).in("movie_id", movieIds),
+        supabase.from("reviews").delete().eq("user_id", realUserId).in("movie_id", movieIds),
+      ]);
+
+      // Update local state immediately
+      const toDeleteKeys = new Set(selectedWatched);
+      setWatched(prev => prev.filter(w => !toDeleteKeys.has(`${w.content_type || 'movie'}_${w.movie_id}`) && !toDeleteKeys.has(w.movie_id)));
+      setRatings(prev => prev.filter(r => !toDeleteKeys.has(`${r.content_type || 'movie'}_${r.movie_id}`) && !toDeleteKeys.has(r.movie_id)));
+      setReviews(prev => prev.filter(r => !toDeleteKeys.has(`${r.content_type || 'movie'}_${r.movie_id}`) && !toDeleteKeys.has(r.movie_id)));
+
+      setSelectedWatched(new Set());
+      setIsWatchedSelectMode(false);
+      setBulkDeleteModal(null);
+    } catch (err) {
+      console.error("Error bulk deleting watched items:", err);
+      alert("An error occurred while deleting items. Please try again.");
+      setBulkDeleteModal(prev => prev ? { ...prev, isDeleting: false } : null);
+    }
+  };
+
+  const handleConfirmBulkDeleteWatchlist = async () => {
+    if (!user?.id || selectedWatchlist.size === 0) return;
+    const realUserId = profileUserId || user.id;
+    setBulkDeleteModal(prev => prev ? { ...prev, isDeleting: true } : null);
+
+    try {
+      const itemsToDelete = Array.from(selectedWatchlist).map(key => {
+        const idx = key.indexOf("_");
+        const type = idx !== -1 ? key.slice(0, idx) : "movie";
+        const movieId = idx !== -1 ? key.slice(idx + 1) : key;
+        return { content_type: type, movie_id: movieId };
+      });
+
+      const movieIds = itemsToDelete.map(i => i.movie_id);
+
+      await supabase.from("watchlist").delete().eq("user_id", realUserId).in("movie_id", movieIds);
+
+      const toDeleteKeys = new Set(selectedWatchlist);
+      setWatchlist(prev => prev.filter(w => !toDeleteKeys.has(`${w.content_type || 'movie'}_${w.movie_id}`) && !toDeleteKeys.has(w.movie_id)));
+
+      setSelectedWatchlist(new Set());
+      setIsWatchlistSelectMode(false);
+      setBulkDeleteModal(null);
+    } catch (err) {
+      console.error("Error bulk removing watchlist items:", err);
+      alert("An error occurred while removing items. Please try again.");
+      setBulkDeleteModal(prev => prev ? { ...prev, isDeleting: false } : null);
+    }
+  };
 
   // Calculate Unique Genres Watched
   const uniqueGenres = useMemo(() => {
@@ -1266,6 +1495,13 @@ export default function ProfilePage() {
                 {activeTab === "reviews" && <div className="absolute bottom-[-10px] left-0 w-full h-0.5 bg-primary shadow-[0_0_8px_rgba(255,180,170,0.8)]"></div>}
               </button>
               <button
+                onClick={() => setActiveTab("lists")}
+                className={`pb-2 px-2 font-bold uppercase tracking-widest text-[12px] whitespace-nowrap transition-colors relative border-none bg-transparent cursor-pointer ${activeTab === "lists" ? "text-primary" : "text-on-surface-variant hover:text-white"}`}
+              >
+                Lists
+                {activeTab === "lists" && <div className="absolute bottom-[-10px] left-0 w-full h-0.5 bg-primary shadow-[0_0_8px_rgba(255,180,170,0.8)]"></div>}
+              </button>
+              <button
                 onClick={() => setActiveTab("stats")}
                 className={`pb-2 px-2 font-bold uppercase tracking-widest text-[12px] whitespace-nowrap transition-colors relative border-none bg-transparent cursor-pointer ${activeTab === "stats" ? "text-primary" : "text-on-surface-variant hover:text-white"}`}
               >
@@ -1274,7 +1510,8 @@ export default function ProfilePage() {
               </button>
             </div>
 
-            {/* Media Type Split Toggle (Movies vs TV Shows) */}
+            {/* Media Type Split Toggle (Movies vs TV Shows) — hidden on Lists tab */}
+            {activeTab !== "lists" && (
             <div className="flex items-center gap-2 mb-6">
               <button
                 onClick={() => setMediaType("movie")}
@@ -1298,6 +1535,7 @@ export default function ProfilePage() {
                 TV Shows ({activeTab === "watched" ? watchedTv.length : activeTab === "watchlist" ? watchlistTv.length : activeTab === "reviews" ? reviewsTv.length : watchedTv.length})
               </button>
             </div>
+            )}
 
             {/* Tab Content */}
             {activeTab === "watched" && (
@@ -1313,29 +1551,87 @@ export default function ProfilePage() {
                   </div>
                 ) : (
                   <>
-                    {/* Sort/Filter Bar */}
-                    <div className="flex items-center gap-2 overflow-x-auto pb-3 mb-4 no-scrollbar scroll-smooth">
-                      <span className="text-xs text-on-surface-variant uppercase tracking-widest font-semibold flex items-center gap-1 shrink-0 mr-1 opacity-70">
-                        <span className="material-symbols-outlined text-[15px]">sort</span>
-                        Sort:
-                      </span>
-                      {SORT_OPTIONS.map(option => {
-                        const isActive = watchedSort === option.id;
-                        return (
-                          <button
-                            key={option.id}
-                            onClick={() => setWatchedSort(option.id)}
-                            className={`px-3.5 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap transition-all duration-200 cursor-pointer border flex items-center gap-1.5 select-none shrink-0 ${isActive
-                              ? (mediaType === "tv" ? "bg-[#a855f7] text-white border-[#a855f7] shadow-[0_0_12px_rgba(168,85,247,0.4)] font-bold scale-[1.02]" : "bg-[#e50914] text-white border-[#e50914] shadow-[0_0_12px_rgba(229,9,20,0.4)] font-bold scale-[1.02]")
-                              : "bg-white/5 text-on-surface-variant border-white/10 hover:bg-white/10 hover:text-white hover:border-white/20"
-                              }`}
-                          >
-                            {isActive && <span className="material-symbols-outlined text-[13px] font-bold">check</span>}
-                            {option.label}
-                          </button>
-                        );
-                      })}
+                    {/* Sort/Filter & Select Bar */}
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4 pb-1">
+                      {/* Sort/Filter Bar */}
+                      <div className="flex items-center gap-2 overflow-x-auto no-scrollbar scroll-smooth flex-grow py-1">
+                        <span className="text-xs text-on-surface-variant uppercase tracking-widest font-semibold flex items-center gap-1 shrink-0 mr-1 opacity-70">
+                          <span className="material-symbols-outlined text-[15px]">sort</span>
+                          Sort:
+                        </span>
+                        {SORT_OPTIONS.map(option => {
+                          const isActive = watchedSort === option.id;
+                          return (
+                            <button
+                              key={option.id}
+                              onClick={() => setWatchedSort(option.id)}
+                              className={`px-3.5 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap transition-all duration-200 cursor-pointer border flex items-center gap-1.5 select-none shrink-0 ${isActive
+                                ? (mediaType === "tv" ? "bg-[#a855f7] text-white border-[#a855f7] shadow-[0_0_12px_rgba(168,85,247,0.4)] font-bold scale-[1.02]" : "bg-[#e50914] text-white border-[#e50914] shadow-[0_0_12px_rgba(229,9,20,0.4)] font-bold scale-[1.02]")
+                                : "bg-white/5 text-on-surface-variant border-white/10 hover:bg-white/10 hover:text-white hover:border-white/20"
+                                }`}
+                            >
+                              {isActive && <span className="material-symbols-outlined text-[13px] font-bold">check</span>}
+                              {option.label}
+                            </button>
+                          );
+                        })}
+                      </div>
+
+                      {/* Select Mode Toggle */}
+                      <div className="flex items-center gap-2 shrink-0">
+                        <button
+                          onClick={() => {
+                            setIsWatchedSelectMode(!isWatchedSelectMode);
+                            if (isWatchedSelectMode) setSelectedWatched(new Set());
+                          }}
+                          className={`px-3.5 py-1.5 rounded-full text-xs font-bold transition-all duration-200 cursor-pointer border flex items-center gap-1.5 select-none ${
+                            isWatchedSelectMode
+                              ? "bg-white/20 text-white border-white/40 shadow-md"
+                              : "bg-white/5 text-on-surface-variant border-white/10 hover:bg-white/10 hover:text-white"
+                          }`}
+                        >
+                          <span className="material-symbols-outlined text-[15px]">
+                            {isWatchedSelectMode ? "close" : "checklist"}
+                          </span>
+                          {isWatchedSelectMode ? "Cancel" : "Select"}
+                        </button>
+                      </div>
                     </div>
+
+                    {/* Bulk Selection Bar */}
+                    {isWatchedSelectMode && (
+                      <div className="flex flex-wrap items-center justify-between gap-3 p-3 mb-4 rounded-xl bg-white/5 border border-white/10 animate-fade-in">
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs font-bold bg-primary/20 text-primary px-2.5 py-1 rounded-full border border-primary/30">
+                            {selectedWatched.size} selected
+                          </span>
+                          <button
+                            onClick={handleSelectAllWatched}
+                            className="text-xs text-on-surface-variant hover:text-white transition-colors underline cursor-pointer bg-transparent border-none px-2 py-1"
+                          >
+                            Select All ({sortedWatched.length})
+                          </button>
+                          {selectedWatched.size > 0 && (
+                            <button
+                              onClick={handleDeselectAllWatched}
+                              className="text-xs text-on-surface-variant hover:text-white transition-colors underline cursor-pointer bg-transparent border-none px-2 py-1"
+                            >
+                              Clear
+                            </button>
+                          )}
+                        </div>
+
+                        {selectedWatched.size > 0 && (
+                          <button
+                            onClick={() => setBulkDeleteModal({ isOpen: true, type: "watched", count: selectedWatched.size, isDeleting: false })}
+                            className="flex items-center gap-1.5 bg-red-600 hover:bg-red-500 text-white text-xs font-bold px-4 py-2 rounded-full shadow-[0_0_15px_rgba(220,38,38,0.5)] transition-all cursor-pointer active:scale-95 border-none"
+                          >
+                            <span className="material-symbols-outlined text-[16px]">delete</span>
+                            Delete Selected ({selectedWatched.size})
+                          </button>
+                        )}
+                      </div>
+                    )}
 
                     {/* Media Grid */}
                     <div key={`${mediaType}_${watchedSort}`} className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-stack-md animate-fade-in">
@@ -1347,40 +1643,89 @@ export default function ProfilePage() {
                         const displayTitle = detail?.title || detail?.name || detail?.movie_title || item.movie_title || "Untitled";
                         const customPoster = posterPrefs[`${itemType}_${item.movie_id}`] || posterPrefs[item.movie_id];
                         const poster = customPoster || detail.poster_path || item.poster_path;
+                        const itemKey = `${itemType}_${item.movie_id}`;
+                        const isSelected = selectedWatched.has(itemKey);
 
                         return (
-                          <div key={item.id ? `${itemType}_${item.id}` : `${itemType}_${item.movie_id}_${item.watched_at || ""}`} className="group relative block">
-                            <Link href={linkHref} className="cursor-pointer block relative">
-                              <div className="aspect-[2/3] rounded-xl overflow-hidden border border-white/10 relative mb-2 bg-white/5">
-                                <img
-                                  className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
-                                  alt={displayTitle}
-                                  src={poster ? `https://image.tmdb.org/t/p/w500${poster}` : "https://images.unsplash.com/photo-1594909122845-11baa439b7bf?w=500"}
-                                />
-                                <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/20 to-transparent"></div>
+                          <div
+                            key={item.id ? `${itemType}_${item.id}` : `${itemKey}_${item.watched_at || ""}`}
+                            className={`group relative block transition-all ${isWatchedSelectMode ? "cursor-pointer" : ""}`}
+                            onClick={isWatchedSelectMode ? () => toggleWatchedItemSelection(itemKey) : undefined}
+                          >
+                            {isWatchedSelectMode ? (
+                              <div className="block relative">
+                                <div className={`aspect-[2/3] rounded-xl overflow-hidden relative mb-2 bg-white/5 transition-all duration-200 ${
+                                  isSelected
+                                    ? "border-2 border-primary shadow-[0_0_15px_rgba(255,180,170,0.5)] scale-[0.98]"
+                                    : "border border-white/10 group-hover:border-white/30"
+                                }`}>
+                                  <img
+                                    className={`w-full h-full object-cover transition-transform duration-500 ${
+                                      isSelected ? "brightness-90 scale-105" : "group-hover:scale-105"
+                                    }`}
+                                    alt={displayTitle}
+                                    src={poster ? `https://image.tmdb.org/t/p/w500${poster}` : "https://images.unsplash.com/photo-1594909122845-11baa439b7bf?w=500"}
+                                  />
+                                  <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/20 to-transparent"></div>
 
-                                {/* User Rating Overlay */}
-                                {userRating !== undefined && (
-                                  <div className="absolute top-2 right-2 flex items-center gap-0.5 bg-black/70 backdrop-blur-md px-1.5 py-0.5 rounded-md border border-[#e9c349]/30 shadow-lg">
-                                    <span className="text-[#e9c349] text-[11px] leading-none">★</span>
-                                    <span className="text-[#e9c349] text-[11px] font-bold leading-none">{userRating % 1 === 0 ? userRating : userRating.toFixed(1)}</span>
-                                  </div>
-                                )}
-
-                                {/* Media Badge */}
-                                <div className="absolute top-2 left-2">
-                                  <span className={`text-[9px] uppercase tracking-wider font-bold px-1.5 py-0.5 rounded backdrop-blur-md ${itemType === "tv" ? "bg-purple-900/70 text-purple-200 border border-purple-500/30" : "bg-red-950/70 text-red-200 border border-red-500/30"
+                                  {/* Selection Checkbox Overlay */}
+                                  <div className="absolute top-2 right-2 z-10">
+                                    <div className={`w-6 h-6 rounded-full flex items-center justify-center transition-all ${
+                                      isSelected
+                                        ? "bg-primary text-black font-bold shadow-lg scale-110"
+                                        : "bg-black/60 backdrop-blur-md border border-white/40 text-transparent hover:border-white"
                                     }`}>
-                                    {itemType === "tv" ? "TV" : "Movie"}
-                                  </span>
-                                </div>
+                                      <span className="material-symbols-outlined text-[16px] font-bold">check</span>
+                                    </div>
+                                  </div>
 
-                                <div className="absolute bottom-2 left-0 right-0 flex justify-center text-[10px] text-white bg-black/60 backdrop-blur-md px-2 py-1 rounded mx-2 shadow border border-white/10" suppressHydrationWarning>
-                                  {new Date(item.watched_at).toLocaleDateString()}
+                                  {/* User Rating Overlay */}
+                                  {userRating !== undefined && (
+                                    <div className="absolute top-2 left-2 flex items-center gap-0.5 bg-black/70 backdrop-blur-md px-1.5 py-0.5 rounded-md border border-[#e9c349]/30 shadow-lg">
+                                      <span className="text-[#e9c349] text-[11px] leading-none">★</span>
+                                      <span className="text-[#e9c349] text-[11px] font-bold leading-none">{userRating % 1 === 0 ? userRating : userRating.toFixed(1)}</span>
+                                    </div>
+                                  )}
+
+                                  <div className="absolute bottom-2 left-0 right-0 flex justify-center text-[10px] text-white bg-black/60 backdrop-blur-md px-2 py-1 rounded mx-2 shadow border border-white/10" suppressHydrationWarning>
+                                    {new Date(item.watched_at).toLocaleDateString()}
+                                  </div>
                                 </div>
+                                <h4 className="text-body-md font-bold truncate group-hover:text-primary transition-colors">{displayTitle}</h4>
                               </div>
-                              <h4 className="text-body-md font-bold truncate group-hover:text-primary transition-colors">{displayTitle}</h4>
-                            </Link>
+                            ) : (
+                              <Link href={linkHref} className="cursor-pointer block relative">
+                                <div className="aspect-[2/3] rounded-xl overflow-hidden border border-white/10 relative mb-2 bg-white/5">
+                                  <img
+                                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                                    alt={displayTitle}
+                                    src={poster ? `https://image.tmdb.org/t/p/w500${poster}` : "https://images.unsplash.com/photo-1594909122845-11baa439b7bf?w=500"}
+                                  />
+                                  <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/20 to-transparent"></div>
+
+                                  {/* User Rating Overlay */}
+                                  {userRating !== undefined && (
+                                    <div className="absolute top-2 right-2 flex items-center gap-0.5 bg-black/70 backdrop-blur-md px-1.5 py-0.5 rounded-md border border-[#e9c349]/30 shadow-lg">
+                                      <span className="text-[#e9c349] text-[11px] leading-none">★</span>
+                                      <span className="text-[#e9c349] text-[11px] font-bold leading-none">{userRating % 1 === 0 ? userRating : userRating.toFixed(1)}</span>
+                                    </div>
+                                  )}
+
+                                  {/* Media Badge */}
+                                  <div className="absolute top-2 left-2">
+                                    <span className={`text-[9px] uppercase tracking-wider font-bold px-1.5 py-0.5 rounded backdrop-blur-md ${itemType === "tv" ? "bg-purple-900/70 text-purple-200 border border-purple-500/30" : "bg-red-950/70 text-red-200 border border-red-500/30"
+                                      }`}>
+                                      {itemType === "tv" ? "TV" : "Movie"}
+                                    </span>
+                                  </div>
+
+                                  <div className="absolute bottom-2 left-0 right-0 flex justify-center text-[10px] text-white bg-black/60 backdrop-blur-md px-2 py-1 rounded mx-2 shadow border border-white/10" suppressHydrationWarning>
+                                    {new Date(item.watched_at).toLocaleDateString()}
+                                  </div>
+                                </div>
+                                <h4 className="text-body-md font-bold truncate group-hover:text-primary transition-colors">{displayTitle}</h4>
+                              </Link>
+                            )}
                           </div>
                         );
                       })}
@@ -1400,45 +1745,176 @@ export default function ProfilePage() {
                     </p>
                   </div>
                 ) : (
-                  <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-stack-md">
-                    {currentWatchlist.map(item => {
-                      const itemType = item.content_type === "tv" ? "tv" : "movie";
-                      const detail = getItemDetails(item);
-                      const displayTitle = detail?.title || detail?.name || detail?.movie_title || item.movie_title || "Untitled";
-                      const linkHref = itemType === "tv" ? `/tv?id=${item.movie_id}` : `/movies?id=${item.movie_id}`;
-                      const customPoster = posterPrefs[`${itemType}_${item.movie_id}`] || posterPrefs[item.movie_id];
-                      const poster = customPoster || detail.poster_path || item.poster_path;
+                  <>
+                    {/* Sort/Filter & Select Bar */}
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4 pb-1">
+                      {/* Sort/Filter Bar */}
+                      <div className="flex items-center gap-2 overflow-x-auto no-scrollbar scroll-smooth flex-grow py-1">
+                        <span className="text-xs text-on-surface-variant uppercase tracking-widest font-semibold flex items-center gap-1 shrink-0 mr-1 opacity-70">
+                          <span className="material-symbols-outlined text-[15px]">sort</span>
+                          Sort:
+                        </span>
+                        {WATCHLIST_SORT_OPTIONS.map(option => {
+                          const isActive = watchlistSort === option.id;
+                          return (
+                            <button
+                              key={option.id}
+                              onClick={() => setWatchlistSort(option.id)}
+                              className={`px-3.5 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap transition-all duration-200 cursor-pointer border flex items-center gap-1.5 select-none shrink-0 ${isActive
+                                ? (mediaType === "tv" ? "bg-[#a855f7] text-white border-[#a855f7] shadow-[0_0_12px_rgba(168,85,247,0.4)] font-bold scale-[1.02]" : "bg-[#e50914] text-white border-[#e50914] shadow-[0_0_12px_rgba(229,9,20,0.4)] font-bold scale-[1.02]")
+                                : "bg-white/5 text-on-surface-variant border-white/10 hover:bg-white/10 hover:text-white hover:border-white/20"
+                                }`}
+                            >
+                              {isActive && <span className="material-symbols-outlined text-[13px] font-bold">check</span>}
+                              {option.label}
+                            </button>
+                          );
+                        })}
+                      </div>
 
-                      return (
-                        <div key={item.id ? `${itemType}_${item.id}` : `${itemType}_${item.movie_id}_${item.created_at || ""}`} className="group relative block">
-                          <Link href={linkHref} className="cursor-pointer block relative">
-                            <div className="aspect-[2/3] rounded-xl overflow-hidden border border-white/10 relative mb-2 bg-white/5">
-                              <img
-                                className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
-                                alt={displayTitle}
-                                src={poster ? `https://image.tmdb.org/t/p/w500${poster}` : "https://images.unsplash.com/photo-1594909122845-11baa439b7bf?w=500"}
-                              />
-                              <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/20 to-transparent"></div>
-                              <div className="absolute top-2 left-2">
-                                <span className={`text-[9px] uppercase tracking-wider font-bold px-1.5 py-0.5 rounded backdrop-blur-md ${itemType === "tv" ? "bg-purple-900/70 text-purple-200 border border-purple-500/30" : "bg-red-950/70 text-red-200 border border-red-500/30"
-                                  }`}>
-                                  {itemType === "tv" ? "TV" : "Movie"}
-                                </span>
-                              </div>
-                            </div>
-                            <h4 className="text-body-md font-bold truncate group-hover:text-primary transition-colors">{displayTitle}</h4>
-                          </Link>
+                      {/* Select Mode Toggle */}
+                      <div className="flex items-center gap-2 shrink-0">
+                        <button
+                          onClick={() => {
+                            setIsWatchlistSelectMode(!isWatchlistSelectMode);
+                            if (isWatchlistSelectMode) setSelectedWatchlist(new Set());
+                          }}
+                          className={`px-3.5 py-1.5 rounded-full text-xs font-bold transition-all duration-200 cursor-pointer border flex items-center gap-1.5 select-none ${
+                            isWatchlistSelectMode
+                              ? "bg-white/20 text-white border-white/40 shadow-md"
+                              : "bg-white/5 text-on-surface-variant border-white/10 hover:bg-white/10 hover:text-white"
+                          }`}
+                        >
+                          <span className="material-symbols-outlined text-[15px]">
+                            {isWatchlistSelectMode ? "close" : "checklist"}
+                          </span>
+                          {isWatchlistSelectMode ? "Cancel" : "Select"}
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Bulk Selection Bar */}
+                    {isWatchlistSelectMode && (
+                      <div className="flex flex-wrap items-center justify-between gap-3 p-3 mb-4 rounded-xl bg-white/5 border border-white/10 animate-fade-in">
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs font-bold bg-primary/20 text-primary px-2.5 py-1 rounded-full border border-primary/30">
+                            {selectedWatchlist.size} selected
+                          </span>
                           <button
-                            onClick={() => handleRemoveFromWatchlist(item.movie_id, item.content_type || "movie")}
-                            className="mt-1 w-full bg-red-500/10 hover:bg-red-500/20 text-red-400 py-1.5 rounded-lg text-label-sm font-bold transition-all border border-red-500/20 active:scale-95 cursor-pointer flex items-center justify-center gap-1"
+                            onClick={handleSelectAllWatchlist}
+                            className="text-xs text-on-surface-variant hover:text-white transition-colors underline cursor-pointer bg-transparent border-none px-2 py-1"
                           >
-                            <span className="material-symbols-outlined text-[14px]">delete</span>
-                            Remove
+                            Select All ({sortedWatchlist.length})
                           </button>
+                          {selectedWatchlist.size > 0 && (
+                            <button
+                              onClick={handleDeselectAllWatchlist}
+                              className="text-xs text-on-surface-variant hover:text-white transition-colors underline cursor-pointer bg-transparent border-none px-2 py-1"
+                            >
+                              Clear
+                            </button>
+                          )}
                         </div>
-                      );
-                    })}
-                  </div>
+
+                        {selectedWatchlist.size > 0 && (
+                          <button
+                            onClick={() => setBulkDeleteModal({ isOpen: true, type: "watchlist", count: selectedWatchlist.size, isDeleting: false })}
+                            className="flex items-center gap-1.5 bg-red-600 hover:bg-red-500 text-white text-xs font-bold px-4 py-2 rounded-full shadow-[0_0_15px_rgba(220,38,38,0.5)] transition-all cursor-pointer active:scale-95 border-none"
+                          >
+                            <span className="material-symbols-outlined text-[16px]">delete</span>
+                            Remove Selected ({selectedWatchlist.size})
+                          </button>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Watchlist Grid */}
+                    <div key={`${mediaType}_${watchlistSort}`} className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-stack-md animate-fade-in">
+                      {sortedWatchlist.map(item => {
+                        const itemType = item.content_type === "tv" ? "tv" : "movie";
+                        const detail = getItemDetails(item);
+                        const displayTitle = detail?.title || detail?.name || detail?.movie_title || item.movie_title || "Untitled";
+                        const linkHref = itemType === "tv" ? `/tv?id=${item.movie_id}` : `/movies?id=${item.movie_id}`;
+                        const customPoster = posterPrefs[`${itemType}_${item.movie_id}`] || posterPrefs[item.movie_id];
+                        const poster = customPoster || detail.poster_path || item.poster_path;
+                        const itemKey = `${itemType}_${item.movie_id}`;
+                        const isSelected = selectedWatchlist.has(itemKey);
+
+                        return (
+                          <div
+                            key={item.id ? `${itemType}_${item.id}` : `${itemKey}_${item.created_at || ""}`}
+                            className={`group relative block transition-all ${isWatchlistSelectMode ? "cursor-pointer" : ""}`}
+                            onClick={isWatchlistSelectMode ? () => toggleWatchlistItemSelection(itemKey) : undefined}
+                          >
+                            {isWatchlistSelectMode ? (
+                              <div className="block relative">
+                                <div className={`aspect-[2/3] rounded-xl overflow-hidden relative mb-2 bg-white/5 transition-all duration-200 ${
+                                  isSelected
+                                    ? "border-2 border-primary shadow-[0_0_15px_rgba(255,180,170,0.5)] scale-[0.98]"
+                                    : "border border-white/10 group-hover:border-white/30"
+                                }`}>
+                                  <img
+                                    className={`w-full h-full object-cover transition-transform duration-500 ${
+                                      isSelected ? "brightness-90 scale-105" : "group-hover:scale-105"
+                                    }`}
+                                    alt={displayTitle}
+                                    src={poster ? `https://image.tmdb.org/t/p/w500${poster}` : "https://images.unsplash.com/photo-1594909122845-11baa439b7bf?w=500"}
+                                  />
+                                  <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/20 to-transparent"></div>
+
+                                  {/* Selection Checkbox Overlay */}
+                                  <div className="absolute top-2 right-2 z-10">
+                                    <div className={`w-6 h-6 rounded-full flex items-center justify-center transition-all ${
+                                      isSelected
+                                        ? "bg-primary text-black font-bold shadow-lg scale-110"
+                                        : "bg-black/60 backdrop-blur-md border border-white/40 text-transparent hover:border-white"
+                                    }`}>
+                                      <span className="material-symbols-outlined text-[16px] font-bold">check</span>
+                                    </div>
+                                  </div>
+
+                                  <div className="absolute top-2 left-2">
+                                    <span className={`text-[9px] uppercase tracking-wider font-bold px-1.5 py-0.5 rounded backdrop-blur-md ${itemType === "tv" ? "bg-purple-900/70 text-purple-200 border border-purple-500/30" : "bg-red-950/70 text-red-200 border border-red-500/30"
+                                      }`}>
+                                      {itemType === "tv" ? "TV" : "Movie"}
+                                    </span>
+                                  </div>
+                                </div>
+                                <h4 className="text-body-md font-bold truncate group-hover:text-primary transition-colors">{displayTitle}</h4>
+                              </div>
+                            ) : (
+                              <>
+                                <Link href={linkHref} className="cursor-pointer block relative">
+                                  <div className="aspect-[2/3] rounded-xl overflow-hidden border border-white/10 relative mb-2 bg-white/5">
+                                    <img
+                                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                                      alt={displayTitle}
+                                      src={poster ? `https://image.tmdb.org/t/p/w500${poster}` : "https://images.unsplash.com/photo-1594909122845-11baa439b7bf?w=500"}
+                                    />
+                                    <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/20 to-transparent"></div>
+                                    <div className="absolute top-2 left-2">
+                                      <span className={`text-[9px] uppercase tracking-wider font-bold px-1.5 py-0.5 rounded backdrop-blur-md ${itemType === "tv" ? "bg-purple-900/70 text-purple-200 border border-purple-500/30" : "bg-red-950/70 text-red-200 border border-red-500/30"
+                                        }`}>
+                                        {itemType === "tv" ? "TV" : "Movie"}
+                                      </span>
+                                    </div>
+                                  </div>
+                                  <h4 className="text-body-md font-bold truncate group-hover:text-primary transition-colors">{displayTitle}</h4>
+                                </Link>
+                                <button
+                                  onClick={() => handleRemoveFromWatchlist(item.movie_id, item.content_type || "movie")}
+                                  className="mt-1 w-full bg-red-500/10 hover:bg-red-500/20 text-red-400 py-1.5 rounded-lg text-label-sm font-bold transition-all border border-red-500/20 active:scale-95 cursor-pointer flex items-center justify-center gap-1"
+                                >
+                                  <span className="material-symbols-outlined text-[14px]">delete</span>
+                                  Remove
+                                </button>
+                              </>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </>
                 )}
               </section>
             )}
@@ -1486,6 +1962,116 @@ export default function ProfilePage() {
                       />
                     );
                   })
+                )}
+              </section>
+            )}
+
+            {activeTab === "lists" && (
+              <section className="animate-fade-in">
+                {/* Import / Export row */}
+                <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      onClick={async () => {
+                        setExporting(true);
+                        try {
+                          const res = await fetch(`/api/watchlist-export?userId=${encodeURIComponent(profileUserId || user?.id)}`);
+                          if (!res.ok) throw new Error("Export failed");
+                          const blob = await res.blob();
+                          const url = URL.createObjectURL(blob);
+                          const a = document.createElement("a");
+                          a.href = url;
+                          a.download = "cinesocial_watchlist.csv";
+                          a.click();
+                          URL.revokeObjectURL(url);
+                        } catch (e) {
+                          console.error(e);
+                        } finally {
+                          setExporting(false);
+                        }
+                      }}
+                      disabled={exporting}
+                      className="flex items-center gap-2 px-4 py-2 rounded-full text-xs font-bold bg-white/5 border border-white/10 text-on-surface-variant hover:bg-white/10 hover:text-white transition-all cursor-pointer disabled:opacity-50"
+                    >
+                      <span className="material-symbols-outlined text-[15px]">download</span>
+                      {exporting ? "Exporting..." : "Export Watchlist CSV"}
+                    </button>
+                    <button
+                      onClick={() => { setImportModalOpen(true); setImportResult(null); }}
+                      className="flex items-center gap-2 px-4 py-2 rounded-full text-xs font-bold bg-white/5 border border-white/10 text-on-surface-variant hover:bg-white/10 hover:text-white transition-all cursor-pointer"
+                    >
+                      <span className="material-symbols-outlined text-[15px]">upload</span>
+                      Import from Letterboxd
+                    </button>
+                  </div>
+                  <Link
+                    href="/lists"
+                    className="flex items-center gap-2 px-4 py-2 rounded-full text-xs font-bold bg-primary/10 border border-primary/30 text-primary hover:bg-primary/20 transition-all"
+                  >
+                    <span className="material-symbols-outlined text-[15px]">add</span>
+                    Create New List
+                  </Link>
+                </div>
+
+                {/* Lists Grid */}
+                {listsLoading ? (
+                  <div className="flex justify-center py-12">
+                    <div className="h-8 w-8 border-4 border-primary border-t-transparent rounded-full animate-spin" />
+                  </div>
+                ) : userLists.length === 0 ? (
+                  <div className="text-center py-12 glass-card rounded-2xl border border-white/5 p-8 max-w-md mx-auto">
+                    <span className="material-symbols-outlined text-[40px] text-on-surface-variant/40 mb-2">playlist_add</span>
+                    <p className="text-on-surface-variant text-body-md mb-4">You haven't created any lists yet.</p>
+                    <Link href="/lists" className="inline-flex items-center gap-2 bg-primary text-black px-5 py-2.5 rounded-full font-bold text-sm hover:opacity-90 transition-opacity">
+                      <span className="material-symbols-outlined text-[16px]">add</span>
+                      Create Your First List
+                    </Link>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                    {userLists.map((list) => {
+                      const items = list.items || [];
+                      const previewPosters = items.slice(0, 4);
+                      return (
+                        <Link
+                          key={list.id}
+                          href={`/lists/${list.id}`}
+                          className="group glass-card rounded-2xl border border-white/10 overflow-hidden hover:border-primary/30 transition-all duration-300 hover:shadow-[0_0_24px_rgba(255,180,170,0.1)]"
+                        >
+                          {/* Poster collage */}
+                          <div className="grid grid-cols-2 h-32 overflow-hidden">
+                            {previewPosters.length > 0 ? previewPosters.map((item: any, i: number) => (
+                              <div key={i} className="overflow-hidden bg-white/5">
+                                <img
+                                  src={item.poster_path ? `https://image.tmdb.org/t/p/w185${item.poster_path}` : "https://images.unsplash.com/photo-1594909122845-11baa439b7bf?w=185"}
+                                  alt={item.movie_title}
+                                  className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                                />
+                              </div>
+                            )) : (
+                              <div className="col-span-2 flex items-center justify-center bg-white/5">
+                                <span className="material-symbols-outlined text-[48px] text-white/20">playlist_play</span>
+                              </div>
+                            )}
+                          </div>
+                          {/* Info */}
+                          <div className="p-4">
+                            <div className="flex items-center gap-2 mb-1">
+                              {list.is_ranked && (
+                                <span className="text-[9px] uppercase tracking-wider font-bold px-1.5 py-0.5 rounded bg-[#e9c349]/20 text-[#e9c349] border border-[#e9c349]/30">Ranked</span>
+                              )}
+                              {!list.is_public && (
+                                <span className="text-[9px] uppercase tracking-wider font-bold px-1.5 py-0.5 rounded bg-white/10 text-white/50 border border-white/10">Private</span>
+                              )}
+                            </div>
+                            <h3 className="font-serif font-bold text-on-surface group-hover:text-primary transition-colors truncate">{list.title}</h3>
+                            {list.description && <p className="text-xs text-on-surface-variant truncate mt-0.5">{list.description}</p>}
+                            <p className="text-[11px] text-on-surface-variant/60 mt-1">{list.item_count ?? items.length} item{(list.item_count ?? items.length) !== 1 ? "s" : ""}</p>
+                          </div>
+                        </Link>
+                      );
+                    })}
+                  </div>
                 )}
               </section>
             )}
@@ -1754,6 +2340,130 @@ export default function ProfilePage() {
         </div>
       )}
 
+      {/* Import from Letterboxd Modal */}
+      {importModalOpen && (
+        <div
+          className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/85 backdrop-blur-[5px] animate-fade-in"
+          onClick={() => setImportModalOpen(false)}
+        >
+          <div
+            className="bg-[#0a0a0a] border border-white/10 rounded-2xl w-full max-w-md p-6 shadow-[0_10px_50px_rgba(0,0,0,0.5)]"
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between mb-5">
+              <h3 className="font-serif text-headline-sm text-white">Import from Letterboxd</h3>
+              <button onClick={() => setImportModalOpen(false)} className="text-on-surface-variant hover:text-white transition-colors cursor-pointer">
+                <span className="material-symbols-outlined">close</span>
+              </button>
+            </div>
+
+            {importResult ? (
+              <div className="space-y-4">
+                <div className="glass-card rounded-xl p-4 border border-white/10 space-y-2">
+                  <div className="flex items-center gap-2 text-green-400">
+                    <span className="material-symbols-outlined text-xl">check_circle</span>
+                    <span className="font-bold">{importResult?.imported ?? 0} imported successfully</span>
+                  </div>
+                  {(importResult?.skipped ?? 0) > 0 && (
+                    <div className="flex items-center gap-2 text-yellow-400">
+                      <span className="material-symbols-outlined text-xl">info</span>
+                      <span className="text-sm">{importResult?.skipped ?? 0} skipped (already exist)</span>
+                    </div>
+                  )}
+                  {(importResult?.errors?.length ?? 0) > 0 && (
+                    <div className="mt-2">
+                      <p className="text-xs text-red-400 font-bold mb-1">{importResult?.errors?.length ?? 0} error(s):</p>
+                      <ul className="max-h-24 overflow-y-auto text-xs text-red-300/80 space-y-0.5 no-scrollbar">
+                        {(importResult?.errors || []).slice(0, 10).map((e, i) => <li key={i}>{e}</li>)}
+                      </ul>
+                    </div>
+                  )}
+                </div>
+                <button
+                  onClick={() => { setImportModalOpen(false); setImportResult(null); setImportFile(null); }}
+                  className="w-full bg-primary text-black font-bold py-3 rounded-full hover:opacity-90 transition-all cursor-pointer"
+                >
+                  Done
+                </button>
+              </div>
+            ) : (
+              <form
+                onSubmit={async (e) => {
+                  e.preventDefault();
+                  if (!importFile || !user?.id) return;
+                  setImporting(true);
+                  try {
+                    const formData = new FormData();
+                    formData.append("file", importFile);
+                    formData.append("userId", profileUserId || user.id);
+                    formData.append("mode", importMode);
+                    const res = await fetch("/api/watchlist-import", { method: "POST", body: formData });
+                    const data = await res.json();
+                    if (!res.ok) throw new Error(data.error || "Import failed");
+                    setImportResult({
+                      imported: typeof data.imported === "number" ? data.imported : (data.matched ?? 0),
+                      skipped: typeof data.skipped === "number" ? data.skipped : 0,
+                      errors: Array.isArray(data.errors) ? data.errors : (Array.isArray(data.unmatchedTitles) ? data.unmatchedTitles : []),
+                    });
+                  } catch (err: any) {
+                    setImportResult({ imported: 0, skipped: 0, errors: [err.message || "Import failed"] });
+                  } finally {
+                    setImporting(false);
+                  }
+                }}
+                className="space-y-4"
+              >
+                <p className="text-sm text-on-surface-variant leading-relaxed">
+                  Export your Letterboxd watchlist or diary as a CSV and upload it here. Ratings (0.5–5★) will be converted to CineSocial's 1–10 scale automatically.
+                </p>
+
+                <div>
+                  <label className="block text-xs text-on-surface-variant uppercase tracking-wider font-bold mb-2">Import as</label>
+                  <div className="flex gap-3">
+                    {(["watchlist", "watched"] as const).map(mode => (
+                      <button
+                        key={mode}
+                        type="button"
+                        onClick={() => setImportMode(mode)}
+                        className={`flex-1 py-2.5 rounded-full text-xs font-bold transition-all border cursor-pointer ${
+                          importMode === mode
+                            ? "bg-primary text-black border-primary"
+                            : "bg-white/5 text-on-surface-variant border-white/10 hover:bg-white/10"
+                        }`}
+                      >
+                        {mode === "watchlist" ? "Watchlist" : "Watched"}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs text-on-surface-variant uppercase tracking-wider font-bold mb-2">CSV File</label>
+                  <label className="flex items-center gap-3 w-full bg-white/5 border border-dashed border-white/20 rounded-xl px-4 py-4 cursor-pointer hover:border-primary/40 transition-all">
+                    <span className="material-symbols-outlined text-on-surface-variant text-2xl">upload_file</span>
+                    <span className="text-sm text-on-surface-variant">{importFile ? importFile.name : "Choose CSV file..."}</span>
+                    <input
+                      type="file"
+                      accept=".csv,text/csv"
+                      className="hidden"
+                      onChange={e => setImportFile(e.target.files?.[0] || null)}
+                    />
+                  </label>
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={!importFile || importing}
+                  className="w-full bg-primary text-black font-bold py-3 rounded-full hover:opacity-90 transition-all cursor-pointer disabled:opacity-50"
+                >
+                  {importing ? "Importing..." : "Import"}
+                </button>
+              </form>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* Options Modal */}
       {optionsModal?.isOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-[5px] animate-fade-in">
@@ -1919,14 +2629,82 @@ export default function ProfilePage() {
         </div>
       )}
 
-      {/* Avatar Cropper / Adjuster Modal */}
-      {selectedCropImage && (
-        <AvatarCropperModal
-          imageSrc={selectedCropImage}
-          onCancel={handleCropCancel}
-          onConfirm={handleCroppedAvatarSave}
-          isSaving={uploading}
-        />
+      {/* Bulk Delete Confirmation Modal (Portal to body for top-level stacking & backdrop) */}
+      {mounted && bulkDeleteModal?.isOpen && typeof document !== "undefined" && createPortal(
+        <div
+          className="fixed inset-0 z-[99999] flex items-center justify-center p-4 bg-black/85 backdrop-blur-[8px] animate-fade-in pointer-events-auto select-none"
+          onClick={() => !bulkDeleteModal.isDeleting && setBulkDeleteModal(null)}
+        >
+          <div
+            className="bg-[#0f0f0f] border border-white/20 rounded-2xl w-full max-w-md p-6 text-left shadow-[0_20px_60px_rgba(0,0,0,0.95)] space-y-4 pointer-events-auto relative z-[100000]"
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="flex items-center gap-3 text-red-500">
+              <div className="w-10 h-10 rounded-full bg-red-500/10 flex items-center justify-center border border-red-500/20 flex-shrink-0">
+                <span className="material-symbols-outlined text-2xl">warning</span>
+              </div>
+              <h3 className="font-serif text-headline-sm text-white">
+                {bulkDeleteModal.type === "watched" ? "Delete Watched Activity?" : "Remove from Watchlist?"}
+              </h3>
+            </div>
+
+            {bulkDeleteModal.type === "watched" ? (
+              <div className="space-y-3 text-sm text-on-surface-variant leading-relaxed">
+                <p>
+                  You are about to permanently remove <span className="text-white font-bold">{bulkDeleteModal.count}</span> watched {bulkDeleteModal.count === 1 ? (mediaType === "tv" ? "show" : "movie") : (mediaType === "tv" ? "shows" : "movies")} and all associated activity from your profile.
+                </p>
+
+                <div className="p-3.5 rounded-xl bg-red-950/30 border border-red-500/20 space-y-2">
+                  <p className="text-xs text-red-300 font-bold uppercase tracking-wider flex items-center gap-1.5">
+                    <span className="material-symbols-outlined text-sm">info</span>
+                    This permanently removes:
+                  </p>
+                  <ul className="text-xs text-red-200/90 space-y-1 list-disc pl-4">
+                    <li>Watched log entry and date watched</li>
+                    <li>Your personal star rating (1–10★)</li>
+                    <li>Any written review text and notes</li>
+                    <li>Liked status and watch time calculations</li>
+                  </ul>
+                </div>
+
+                <p className="text-xs text-on-surface-variant/70 italic">
+                  This is not just removing from a list — it completely erases all your watch history and logged activity for these titles.
+                </p>
+              </div>
+            ) : (
+              <p className="text-sm text-on-surface-variant leading-relaxed">
+                Are you sure you want to remove <span className="text-white font-bold">{bulkDeleteModal.count}</span> item{bulkDeleteModal.count > 1 ? "s" : ""} from your watchlist?
+              </p>
+            )}
+
+            <div className="flex gap-3 pt-2">
+              <button
+                type="button"
+                disabled={bulkDeleteModal.isDeleting}
+                onClick={() => setBulkDeleteModal(null)}
+                className="flex-1 py-2.5 rounded-full text-xs font-bold bg-white/10 hover:bg-white/15 text-white transition-all cursor-pointer disabled:opacity-50 border-none"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={bulkDeleteModal.isDeleting}
+                onClick={bulkDeleteModal.type === "watched" ? handleConfirmBulkDeleteWatched : handleConfirmBulkDeleteWatchlist}
+                className="flex-1 py-2.5 rounded-full text-xs font-bold bg-red-600 hover:bg-red-500 text-white transition-all cursor-pointer shadow-[0_0_15px_rgba(220,38,38,0.5)] disabled:opacity-50 flex items-center justify-center gap-1.5 border-none"
+              >
+                {bulkDeleteModal.isDeleting ? (
+                  <span>Deleting...</span>
+                ) : (
+                  <>
+                    <span className="material-symbols-outlined text-[15px]">delete_forever</span>
+                    <span>{bulkDeleteModal.type === "watched" ? "Permanently Delete" : "Remove"}</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body
       )}
     </div>
   );

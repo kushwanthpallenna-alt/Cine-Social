@@ -306,11 +306,15 @@ export default function PersonDetailClient({ personId }: PersonDetailClientProps
               onClick={() => setShowProfileMenu(!showProfileMenu)}
               className="w-8 h-8 rounded-full overflow-hidden border border-white/10 hover:opacity-80 transition-all focus:outline-none cursor-pointer flex items-center justify-center bg-white/5"
             >
-              <img
-                alt={user?.name || "User"}
-                className="w-full h-full object-cover"
-                src={getAvatarUrlOrDefault(user?.image)}
-              />
+              {user?.image ? (
+                <img
+                  alt={user?.name || "User"}
+                  className="w-full h-full object-cover"
+                  src={getAvatarUrlOrDefault(user.image)}
+                />
+              ) : (
+                <span className="material-symbols-outlined text-on-surface-variant text-base">person</span>
+              )}
             </button>
 
             {showProfileMenu && (

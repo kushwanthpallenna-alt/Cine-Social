@@ -16,17 +16,25 @@ type SortOption =
   | "default"
   | "rating_desc"
   | "rating_asc"
+  | "tmdb_desc"
+  | "tmdb_asc"
   | "year_desc"
   | "year_asc"
-  | "title_asc";
+  | "title_asc"
+  | "date_added_desc"
+  | "date_added_asc";
 
 const SORT_OPTIONS: { id: SortOption; label: string }[] = [
   { id: "default", label: "Default (Date Watched)" },
   { id: "rating_desc", label: "Rating (Highest)" },
   { id: "rating_asc", label: "Rating (Lowest)" },
+  { id: "tmdb_desc", label: "TMDB Rating (Highest)" },
+  { id: "tmdb_asc", label: "TMDB Rating (Lowest)" },
   { id: "year_desc", label: "Release Year (Newest)" },
   { id: "year_asc", label: "Release Year (Oldest)" },
   { id: "title_asc", label: "Title (A-Z)" },
+  { id: "date_added_desc", label: "Date Added (Newest)" },
+  { id: "date_added_asc", label: "Date Added (Oldest)" },
 ];
 
 function TasteMatchWidget({ userA, userB }: { userA: string; userB: string }) {
@@ -198,6 +206,7 @@ export default function PublicProfilePage() {
   const [avatarModalOpen, setAvatarModalOpen] = useState(false);
   const [bannerBackdropUrl, setBannerBackdropUrl] = useState<string | null>(null);
   const [bannerMovieTitle, setBannerMovieTitle] = useState<string | null>(null);
+  const [publicLists, setPublicLists] = useState<any[]>([]);
 
   const realUserId = profile?.user_id || targetUserId;
   const isOwnProfile = currentUser?.id === realUserId;
@@ -283,7 +292,7 @@ export default function PublicProfilePage() {
 
         const activeId = profileData.user_id;
 
-        const [followStatusRes, followCountsRes, reviewsRes, ratingsRes, watchedRes, watchlistRes, favoritesRes] = await Promise.all([
+        const [followStatusRes, followCountsRes, reviewsRes, ratingsRes, watchedRes, watchlistRes, favoritesRes, publicListsRes] = await Promise.all([
           currentUser?.id && currentUser?.id !== activeId
             ? fetch(`/api/follows?followerId=${currentUser.id}&followingId=${activeId}`).then((r) => r.json())
             : Promise.resolve(null),
@@ -293,6 +302,7 @@ export default function PublicProfilePage() {
           supabase.from("watched").select("*").eq("user_id", activeId).order("watched_at", { ascending: false }),
           supabase.from("watchlist").select("*").eq("user_id", activeId),
           fetch(`/api/favorites?userId=${activeId}`).then(r => r.ok ? r.json() : []),
+          fetch(`/api/lists?userId=${encodeURIComponent(activeId)}`).then(r => r.ok ? r.json() : []).catch(() => []),
         ]);
 
         if (followStatusRes) setFollowing(followStatusRes.isFollowing);
@@ -310,6 +320,9 @@ export default function PublicProfilePage() {
 
         const favsArray = Array.isArray(favoritesRes) ? favoritesRes : [];
         setFavorites(favsArray);
+        // publicListsRes is 7th element
+        const listsData = Array.isArray(publicListsRes) ? publicListsRes.filter((l: any) => l.is_public !== false) : [];
+        setPublicLists(listsData);
 
         // Fetch TMDB details for movies and TV shows
         const uniqueMedia = new Map<string, { id: string; type: "movie" | "tv" }>();
@@ -382,16 +395,24 @@ export default function PublicProfilePage() {
       const itemB = mediaDetails[`${typeB}_${b.movie_id}`] || mediaDetails[b.movie_id] || b;
 
       if (watchedSort === "rating_desc" || watchedSort === "rating_asc") {
-        const ratingA = ratingsMap[`${typeA}_${a.movie_id}`] ?? itemA?.vote_average ?? 0;
-        const ratingB = ratingsMap[`${typeB}_${b.movie_id}`] ?? itemB?.vote_average ?? 0;
+        const ratingA = ratingsMap[`${typeA}_${a.movie_id}`] ?? ratingsMap[a.movie_id] ?? 0;
+        const ratingB = ratingsMap[`${typeB}_${b.movie_id}`] ?? ratingsMap[b.movie_id] ?? 0;
         if (ratingA !== ratingB) {
           return watchedSort === "rating_desc" ? ratingB - ratingA : ratingA - ratingB;
         }
       }
 
+      if (watchedSort === "tmdb_desc" || watchedSort === "tmdb_asc") {
+        const voteA = itemA?.vote_average ?? 0;
+        const voteB = itemB?.vote_average ?? 0;
+        if (voteA !== voteB) {
+          return watchedSort === "tmdb_desc" ? voteB - voteA : voteA - voteB;
+        }
+      }
+
       if (watchedSort === "year_desc" || watchedSort === "year_asc") {
-        const dateA = itemA.release_date || itemA.first_air_date || itemA.year || "";
-        const dateB = itemB.release_date || itemB.first_air_date || itemB.year || "";
+        const dateA = itemA?.release_date || itemA?.first_air_date || itemA?.year || "";
+        const dateB = itemB?.release_date || itemB?.first_air_date || itemB?.year || "";
         const yearA = dateA ? parseInt(String(dateA).substring(0, 4), 10) || 0 : 0;
         const yearB = dateB ? parseInt(String(dateB).substring(0, 4), 10) || 0 : 0;
         if (yearA !== yearB) {
@@ -400,10 +421,22 @@ export default function PublicProfilePage() {
       }
 
       if (watchedSort === "title_asc") {
-        const titleA = String(itemA.title || itemA.name || itemA.movie_title || "").toLowerCase();
-        const titleB = String(itemB.title || itemB.name || itemB.movie_title || "").toLowerCase();
+        const titleA = String(itemA?.title || itemA?.name || itemA?.movie_title || "").toLowerCase();
+        const titleB = String(itemB?.title || itemB?.name || itemB?.movie_title || "").toLowerCase();
         const comp = titleA.localeCompare(titleB);
         if (comp !== 0) return comp;
+      }
+
+      if (watchedSort === "date_added_desc") {
+        const timeA = a.created_at ? new Date(a.created_at).getTime() : (a.watched_at ? new Date(a.watched_at).getTime() : 0);
+        const timeB = b.created_at ? new Date(b.created_at).getTime() : (b.watched_at ? new Date(b.watched_at).getTime() : 0);
+        return timeB - timeA;
+      }
+
+      if (watchedSort === "date_added_asc") {
+        const timeA = a.created_at ? new Date(a.created_at).getTime() : (a.watched_at ? new Date(a.watched_at).getTime() : 0);
+        const timeB = b.created_at ? new Date(b.created_at).getTime() : (b.watched_at ? new Date(b.watched_at).getTime() : 0);
+        return timeA - timeB;
       }
 
       const timeA = a.watched_at ? new Date(a.watched_at).getTime() : 0;
@@ -825,6 +858,56 @@ export default function PublicProfilePage() {
                 </div>
               </div>
             )}
+          </section>
+        )}
+
+        {/* Public Lists */}
+        {publicLists.length > 0 && (
+          <section className="mb-8">
+            <h3 className="text-xs text-on-surface-variant uppercase tracking-widest mb-4 border-l-2 border-primary/60 pl-2">
+              Lists ({publicLists.length})
+            </h3>
+            <div className="grid grid-cols-1 gap-3">
+              {publicLists.map((list) => {
+                const items = list.items || [];
+                const previewPosters = items.slice(0, 4);
+                return (
+                  <Link
+                    key={list.id}
+                    href={`/lists/${list.id}`}
+                    className="group flex items-center gap-4 glass-card rounded-xl border border-white/10 overflow-hidden hover:border-primary/30 transition-all duration-200 p-3"
+                  >
+                    {/* Mini poster collage */}
+                    <div className="flex-shrink-0 grid grid-cols-2 w-20 h-14 rounded-lg overflow-hidden gap-0.5">
+                      {previewPosters.length > 0 ? previewPosters.map((item: any, i: number) => (
+                        <div key={i} className="overflow-hidden bg-white/5">
+                          <img
+                            src={item.poster_path ? `https://image.tmdb.org/t/p/w92${item.poster_path}` : "https://images.unsplash.com/photo-1594909122845-11baa439b7bf?w=92"}
+                            alt={item.movie_title}
+                            className="w-full h-full object-cover"
+                          />
+                        </div>
+                      )) : (
+                        <div className="col-span-2 flex items-center justify-center bg-white/5">
+                          <span className="material-symbols-outlined text-white/20 text-xl">playlist_play</span>
+                        </div>
+                      )}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-1.5 mb-0.5">
+                        {list.is_ranked && (
+                          <span className="text-[8px] uppercase tracking-wider font-bold px-1 py-0.5 rounded bg-[#e9c349]/20 text-[#e9c349] border border-[#e9c349]/30">Ranked</span>
+                        )}
+                        <h4 className="font-serif font-bold text-sm text-on-surface group-hover:text-primary transition-colors truncate">{list.title}</h4>
+                      </div>
+                      {list.description && <p className="text-[11px] text-on-surface-variant truncate">{list.description}</p>}
+                      <p className="text-[10px] text-on-surface-variant/50 mt-0.5">{list.item_count ?? items.length} item{(list.item_count ?? items.length) !== 1 ? "s" : ""}</p>
+                    </div>
+                    <span className="material-symbols-outlined text-on-surface-variant/40 text-sm flex-shrink-0">chevron_right</span>
+                  </Link>
+                );
+              })}
+            </div>
           </section>
         )}
 

@@ -9,6 +9,7 @@ import NotificationBell from "@/components/NotificationBell";
 import ReviewCard from "@/components/ReviewCard";
 import Carousel from "@/components/Carousel";
 import PosterPickerModal from "@/components/PosterPickerModal";
+import AddToListModal from "@/components/AddToListModal";
 import { getAvatarUrlOrDefault } from "@/lib/avatar";
 
 const CONTENT_TYPE = "tv";
@@ -115,6 +116,12 @@ function TvShowDetailsContent() {
   const [preferredPoster, setPreferredPoster] = useState<string | null>(null);
   const [showPosterPicker, setShowPosterPicker] = useState(false);
   const [showPosterConfirm, setShowPosterConfirm] = useState(false);
+
+  // Custom List & Watched Date states
+  const [showAddToListModal, setShowAddToListModal] = useState(false);
+  const [showWatchedDatePicker, setShowWatchedDatePicker] = useState(false);
+  const [watchedDate, setWatchedDate] = useState<string>(new Date().toISOString().split("T")[0]);
+  const [watchedAtTimestamp, setWatchedAtTimestamp] = useState<string | null>(null);
 
   const showToast = useCallback((message: string) => {
     setToast({ message, visible: true });
@@ -264,10 +271,16 @@ function TvShowDetailsContent() {
     if (!user?.id || !tvId) return;
     fetch(`/api/watched?userId=${user.id}&movieId=${tvId}&contentType=${CONTENT_TYPE}`)
       .then(r => r.ok ? r.json() : null)
-      .then(data => setIsWatched(!!data));
+      .then(data => {
+        setIsWatched(!!data);
+        if (data?.watched_at) {
+          setWatchedAtTimestamp(data.watched_at);
+          setWatchedDate(new Date(data.watched_at).toISOString().split("T")[0]);
+        }
+      });
   }, [user, tvId]);
 
-  const handleWatchedToggle = async () => {
+  const handleWatchedToggle = async (customDate?: string) => {
     if (!user?.id || !tvShow) {
       if (!user?.id && typeof window !== "undefined") {
         window.location.href = `/auth/signin?callbackUrl=${encodeURIComponent(window.location.pathname + window.location.search)}`;
@@ -276,10 +289,15 @@ function TvShowDetailsContent() {
     }
     setWatchedLoading(true);
     try {
-      if (isWatched) {
+      if (isWatched && !customDate) {
         const res = await fetch(`/api/watched?userId=${user.id}&movieId=${tvId}&contentType=${CONTENT_TYPE}`, { method: "DELETE" });
-        if (res.ok) { setIsWatched(false); showToast("Removed from watched!"); }
+        if (res.ok) {
+          setIsWatched(false);
+          setWatchedAtTimestamp(null);
+          showToast("Removed from watched!");
+        }
       } else {
+        const targetDate = customDate || watchedDate;
         const res = await fetch("/api/watched", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -287,12 +305,16 @@ function TvShowDetailsContent() {
             user_id: user.id,
             movie_id: tvId,
             movie_title: tvShow.name || "Unknown Show",
-            poster_path: tvShow.poster_path || "",
+            poster_path: preferredPoster || tvShow.poster_path || "",
             content_type: CONTENT_TYPE,
+            watched_at: targetDate ? new Date(targetDate).toISOString() : undefined,
           }),
         });
         if (res.ok) {
           setIsWatched(true);
+          const savedTimestamp = targetDate ? new Date(targetDate).toISOString() : new Date().toISOString();
+          setWatchedAtTimestamp(savedTimestamp);
+          setWatchedDate(savedTimestamp.split("T")[0]);
           // If in watchlist, remove from watchlist
           if (isInWatchlist) {
             await supabase
@@ -303,7 +325,8 @@ function TvShowDetailsContent() {
               .eq("content_type", CONTENT_TYPE);
             setIsInWatchlist(false);
           }
-          showToast("Marked as watched!");
+          showToast(isWatched ? "Updated watched date!" : "Marked as watched!");
+          setShowWatchedDatePicker(false);
         }
       }
     } catch (err) {
@@ -577,7 +600,11 @@ function TvShowDetailsContent() {
               onClick={() => setShowProfileMenu(!showProfileMenu)}
               className="w-8 h-8 rounded-full overflow-hidden border border-white/10 hover:opacity-80 transition-all focus:outline-none cursor-pointer flex items-center justify-center bg-white/5"
             >
-              <img alt={user?.name || "User"} className="w-full h-full object-cover" src={getAvatarUrlOrDefault(user?.image)} />
+              {user?.image ? (
+                <img alt={user?.name || "User"} className="w-full h-full object-cover" src={getAvatarUrlOrDefault(user.image)} />
+              ) : (
+                <span className="material-symbols-outlined text-on-surface-variant text-base">person</span>
+              )}
             </button>
             {showProfileMenu && (
               <div className="absolute right-0 mt-2 w-56 rounded-xl bg-[#131313]/90 border border-white/10 backdrop-blur-md p-2 shadow-2xl z-50 animate-fade-in">
@@ -759,20 +786,53 @@ function TvShowDetailsContent() {
                 </button>
 
                 {/* Watched */}
+                <div className="flex items-center gap-1.5">
+                  <button
+                    onClick={() => handleWatchedToggle()}
+                    disabled={watchedLoading}
+                    className={`px-6 py-3 rounded-full font-title-lg flex items-center gap-2 active:scale-95 transition-all duration-200 cursor-pointer border-none ${
+                      isWatched
+                        ? "bg-secondary text-black shadow-[0_0_20px_rgba(233,195,73,0.35)]"
+                        : "bg-primary-container text-on-primary-container"
+                    }`}
+                  >
+                    {watchedLoading
+                      ? <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin"></div>
+                      : <span className="material-symbols-outlined" style={{ fontVariationSettings: isWatched ? "'FILL' 1" : "" }}>{isWatched ? "visibility" : "visibility_off"}</span>
+                    }
+                    {isWatched ? "Watched" : "Mark as Watched"}
+                  </button>
+
+                  {user?.id && (
+                    <button
+                      onClick={() => setShowWatchedDatePicker(true)}
+                      title={isWatched ? "Change watched date" : "Set custom watched date"}
+                      className={`p-3 rounded-full flex items-center justify-center transition-all cursor-pointer border ${
+                        isWatched
+                          ? "bg-secondary/20 text-secondary border-secondary/30 hover:bg-secondary/30"
+                          : "glass-card text-on-surface-variant hover:text-white border-white/10"
+                      }`}
+                    >
+                      <span className="material-symbols-outlined text-sm">calendar_month</span>
+                    </button>
+                  )}
+                </div>
+
+                {/* Add to List */}
                 <button
-                  onClick={handleWatchedToggle}
-                  disabled={watchedLoading}
-                  className={`px-6 py-3 rounded-full font-title-lg flex items-center gap-2 active:scale-95 transition-all duration-200 cursor-pointer border-none ${
-                    isWatched
-                      ? "bg-secondary text-black shadow-[0_0_20px_rgba(233,195,73,0.35)]"
-                      : "bg-primary-container text-on-primary-container"
-                  }`}
+                  onClick={() => {
+                    if (!user?.id) {
+                      if (typeof window !== "undefined") {
+                        window.location.href = `/auth/signin?callbackUrl=${encodeURIComponent(window.location.pathname + window.location.search)}`;
+                      }
+                      return;
+                    }
+                    setShowAddToListModal(true);
+                  }}
+                  className="px-6 py-3 rounded-full font-title-lg flex items-center gap-2 active:scale-95 transition-all duration-200 glass-card cursor-pointer border border-white/10 text-on-surface hover:border-purple-400/50 hover:text-purple-300"
                 >
-                  {watchedLoading
-                    ? <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin"></div>
-                    : <span className="material-symbols-outlined" style={{ fontVariationSettings: isWatched ? "'FILL' 1" : "" }}>{isWatched ? "visibility" : "visibility_off"}</span>
-                  }
-                  {isWatched ? "Watched" : "Mark as Watched"}
+                  <span className="material-symbols-outlined">playlist_add</span>
+                  Add to List
                 </button>
 
                 {/* Trailer */}
@@ -818,6 +878,22 @@ function TvShowDetailsContent() {
                   )}
                 </button>
               </div>
+
+              {/* Watched Date indicator */}
+              {isWatched && watchedAtTimestamp && (
+                <div className="flex items-center gap-2 mt-3 text-xs text-on-surface-variant/80">
+                  <span className="material-symbols-outlined text-sm text-secondary">event_available</span>
+                  <span>
+                    Watched on <strong className="text-on-surface">{new Date(watchedAtTimestamp).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })}</strong>
+                  </span>
+                  <button
+                    onClick={() => setShowWatchedDatePicker(true)}
+                    className="text-purple-300 hover:underline ml-1 cursor-pointer bg-transparent border-none p-0 text-xs font-semibold"
+                  >
+                    Edit date
+                  </button>
+                </div>
+              )}
             </div>
           </div>
 
@@ -1186,6 +1262,80 @@ function TvShowDetailsContent() {
           onClose={() => setShowPosterPicker(false)}
           onSelect={handlePosterSelect}
         />
+      )}
+
+      {/* Add To List Modal */}
+      {showAddToListModal && user?.id && (
+        <AddToListModal
+          isOpen={showAddToListModal}
+          onClose={() => setShowAddToListModal(false)}
+          movieId={tvId}
+          movieTitle={tvShow.name || "Unknown Show"}
+          posterPath={preferredPoster || tvShow.poster_path || ""}
+          contentType="tv"
+          userId={user.id}
+        />
+      )}
+
+      {/* Watched Date Picker Modal */}
+      {showWatchedDatePicker && (
+        <div
+          className="fixed inset-0 z-[300] bg-black/80 backdrop-blur-md flex items-center justify-center p-4 animate-fade-in"
+          onClick={() => setShowWatchedDatePicker(false)}
+        >
+          <div
+            className="glass-panel w-full max-w-sm rounded-2xl border border-white/10 p-6 space-y-4 shadow-2xl animate-scale-up"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between border-b border-white/10 pb-3">
+              <div className="flex items-center gap-2">
+                <span className="material-symbols-outlined text-purple-400 text-lg">calendar_month</span>
+                <h3 className="font-serif text-base font-bold text-on-surface">Set Watched Date</h3>
+              </div>
+              <button
+                onClick={() => setShowWatchedDatePicker(false)}
+                className="text-on-surface-variant hover:text-white transition-colors cursor-pointer bg-transparent border-none"
+              >
+                <span className="material-symbols-outlined">close</span>
+              </button>
+            </div>
+
+            <div>
+              <label className="text-xs text-on-surface-variant uppercase tracking-widest font-semibold block mb-2">
+                When did you watch this?
+              </label>
+              <input
+                type="date"
+                value={watchedDate}
+                onChange={(e) => setWatchedDate(e.target.value)}
+                className="w-full bg-white/5 border border-white/10 rounded-xl p-3 text-on-surface text-sm focus:outline-none focus:border-purple-400/50 transition-all [color-scheme:dark]"
+              />
+            </div>
+
+            <div className="flex gap-2 pt-2">
+              <button
+                onClick={() => handleWatchedToggle(watchedDate)}
+                disabled={watchedLoading}
+                className="flex-1 py-2.5 rounded-full bg-secondary text-black font-bold text-xs hover:brightness-110 active:scale-95 transition-all shadow-md cursor-pointer border-none flex items-center justify-center gap-1.5"
+              >
+                {watchedLoading ? (
+                  <div className="w-3.5 h-3.5 border-2 border-black border-t-transparent rounded-full animate-spin"></div>
+                ) : (
+                  <>
+                    <span className="material-symbols-outlined text-sm">save</span>
+                    Save Date
+                  </>
+                )}
+              </button>
+              <button
+                onClick={() => setShowWatchedDatePicker(false)}
+                className="px-4 py-2.5 rounded-full border border-white/10 text-on-surface-variant text-xs hover:text-white transition-colors cursor-pointer bg-transparent"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Trailer Modal */}

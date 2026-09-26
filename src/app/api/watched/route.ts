@@ -32,13 +32,15 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const { user_id, movie_id, movie_title, poster_path, content_type = "movie" } = body;
+    const { user_id, movie_id, movie_title, poster_path, content_type = "movie", watched_at } = body;
 
     if (!user_id || !movie_id) {
       return NextResponse.json({ error: "Missing user_id or movie_id" }, { status: 400 });
     }
 
     const movieIdStr = String(movie_id);
+    // Use provided date or fall back to now
+    const watchedAtTs = watched_at ? new Date(watched_at).toISOString() : new Date().toISOString();
 
     // Check if an entry already exists for this user, content, and item
     const { data: existing } = await supabaseAdmin
@@ -50,13 +52,13 @@ export async function POST(request: Request) {
       .maybeSingle();
 
     if (existing) {
-      // Update existing entry
+      // Update existing entry (preserve watched_at if no new date supplied)
       const { data, error } = await supabaseAdmin
         .from("watched")
         .update({
           movie_title: movie_title || existing.movie_title,
           poster_path: poster_path || existing.poster_path,
-          watched_at: new Date().toISOString(),
+          watched_at: watched_at ? watchedAtTs : existing.watched_at,
         })
         .eq("id", existing.id)
         .select();
@@ -72,7 +74,7 @@ export async function POST(request: Request) {
       movie_title,
       poster_path,
       content_type,
-      watched_at: new Date().toISOString()
+      watched_at: watchedAtTs,
     }).select();
 
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });

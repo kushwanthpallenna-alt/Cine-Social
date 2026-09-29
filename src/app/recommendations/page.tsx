@@ -190,11 +190,26 @@ export default function Recommendations() {
     setChatHistory(prev => [...prev, { role: 'user', text: userMessage }]);
     setIsChatLoading(true);
 
+    // Build Cinema DNA context preamble so CineAI knows the user's current taste profile
+    const moodList = [...activeMoods, ...(customMood ? [customMood] : [])];
+    const dnaEntries = Object.entries(genreWeights)
+      .sort((a, b) => b[1] - a[1])
+      .map(([genre, weight]) => `${genre} (${weight}%)`)
+      .join(", ");
+    const cinemaDnaContext = [
+      moodList.length > 0 ? `Current mood preferences: ${moodList.join(", ")}.` : null,
+      dnaEntries ? `Cinema DNA genre weights: ${dnaEntries}.` : null,
+    ].filter(Boolean).join(" ");
+
+    const enrichedMessage = cinemaDnaContext
+      ? `[User context — ${cinemaDnaContext}]\n\n${userMessage}`
+      : userMessage;
+
     try {
       const res = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: userMessage, history: chatHistory })
+        body: JSON.stringify({ message: enrichedMessage, history: chatHistory })
       });
       const data = await res.json();
       if (res.ok) {

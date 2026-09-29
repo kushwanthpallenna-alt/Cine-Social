@@ -121,20 +121,37 @@ export default function CommunityFeed() {
   const [communityMovies, setCommunityMovies] = useState<Record<string, any>>({});
 
   const fetchMovieDetails = useCallback(async (ids: string[]) => {
-    const missing = ids.filter((id) => !movieDetails[id]);
-    if (missing.length === 0) return;
-    const details: Record<string, any> = {};
-    await Promise.all(
-      missing.map(async (id) => {
-        try {
-          const r = await fetch(`/api/tmdb?endpoint=movie/${id}`);
-          if (r.ok) details[id] = await r.json();
-        } catch {}
-      })
-    );
-    setMovieDetails((prev) => ({ ...prev, ...details }));
-  }, [movieDetails]);
+    if (!ids || ids.length === 0) return;
+    // Use functional update to avoid capturing movieDetails in closure
+    // (which would create a new fetchMovieDetails on every state change, re-triggering fetchFeed)
+    setMovieDetails((prev) => {
+      const missing = ids.filter((id) => id && !prev[id]);
+      if (missing.length === 0) return prev; // no-op
 
+      // Fire-and-forget: fetch missing details and merge into state
+      Promise.all(
+        missing.map(async (id) => {
+          try {
+            const r = await fetch(`/api/tmdb?endpoint=movie/${id}`);
+            if (r.ok) return [id, await r.json()] as [string, any];
+          } catch {}
+          return null;
+        })
+      ).then((results) => {
+        const newDetails: Record<string, any> = {};
+        results.forEach((entry) => {
+          if (entry) newDetails[entry[0]] = entry[1];
+        });
+        if (Object.keys(newDetails).length > 0) {
+          setMovieDetails((p) => ({ ...p, ...newDetails }));
+        }
+      });
+
+      return prev; // return unchanged for now; the async fetch will update
+    });
+  }, []); // Empty deps — no stale closure risk because we use functional setState
+
+  // Stable fetchFeed that doesn't depend on fetchMovieDetails (since fetchMovieDetails is now stable)
   const fetchFeed = useCallback(async (pageNum: number) => {
     if (pageNum === 0) setLoading(true); else setLoadingMore(true);
     try {
@@ -193,7 +210,8 @@ export default function CommunityFeed() {
           setItems((prev) => [...prev, ...(data.items || [])]);
         }
         setHasMore(data.hasMore);
-        await fetchMovieDetails((data.items || []).map((i: any) => i.movie_id));
+        // Kick off movie detail fetches (stable callback — no re-render loop)
+        fetchMovieDetails((data.items || []).map((i: any) => i.movie_id));
       }
     } catch (err) {
       console.error("Feed error:", err);

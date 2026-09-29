@@ -11,6 +11,7 @@ import ProfileBadges from "@/components/ProfileBadges";
 import ReviewCard from "@/components/ReviewCard";
 import NotificationBell from "@/components/NotificationBell";
 import RatingDistributionChart from "@/components/RatingDistributionChart";
+import { getPosterUrl } from "@/lib/poster";
 
 type SortOption =
   | "default"
@@ -207,6 +208,7 @@ export default function PublicProfilePage() {
   const [bannerBackdropUrl, setBannerBackdropUrl] = useState<string | null>(null);
   const [bannerMovieTitle, setBannerMovieTitle] = useState<string | null>(null);
   const [publicLists, setPublicLists] = useState<any[]>([]);
+  const [posterPrefs, setPosterPrefs] = useState<Record<string, string>>({});
 
   const realUserId = profile?.user_id || targetUserId;
   const isOwnProfile = currentUser?.id === realUserId;
@@ -337,6 +339,14 @@ export default function PublicProfilePage() {
         revs.forEach(registerMedia);
         watchedList.forEach(registerMedia);
         watchlistList.forEach(registerMedia);
+        // Also register favorites so their TMDB details are fetched (for poster fallback)
+        favsArray.forEach((fav: any) => {
+          if (fav?.tmdb_id) {
+            const isTv = fav.slot_type?.startsWith("tv_");
+            const type = isTv ? "tv" : "movie";
+            uniqueMedia.set(`${type}_${fav.tmdb_id}`, { id: String(fav.tmdb_id), type });
+          }
+        });
 
         const det: Record<string, any> = {};
         await Promise.all(Array.from(uniqueMedia.values()).map(async ({ id, type }) => {
@@ -350,6 +360,32 @@ export default function PublicProfilePage() {
           } catch { }
         }));
         setMediaDetails(det);
+
+        // Batch-fetch poster preferences for this user's media
+        const mediaItems = Array.from(uniqueMedia.values()).map(m => ({
+          movie_id: m.id,
+          content_type: m.type,
+        }));
+        if (mediaItems.length > 0) {
+          fetch("/api/poster-preference/batch", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ user_id: activeId, items: mediaItems }),
+          })
+            .then(r => r.json())
+            .then((prefs: { movie_id: string; content_type?: string; poster_path: string }[]) => {
+              if (Array.isArray(prefs)) {
+                const map: Record<string, string> = {};
+                prefs.forEach(p => {
+                  const t = p.content_type || "movie";
+                  map[`${t}_${p.movie_id}`] = p.poster_path;
+                  map[p.movie_id] = p.poster_path;
+                });
+                setPosterPrefs(map);
+              }
+            })
+            .catch(() => {});
+        }
       } catch (err) {
         console.error(err);
       } finally {
@@ -681,7 +717,7 @@ export default function PublicProfilePage() {
 
         {/* Letterboxd-Style Rating Distribution Chart */}
         <section className="mb-8">
-          <RatingDistributionChart ratings={ratings} mediaDetails={mediaDetails} />
+          <RatingDistributionChart ratings={ratings} mediaDetails={mediaDetails} posterPrefs={posterPrefs} />
         </section>
 
         {/* Top 5 Favourite Films */}
@@ -698,10 +734,11 @@ export default function PublicProfilePage() {
                     <span className="material-symbols-outlined text-on-surface-variant/20 text-[20px]">movie</span>
                   </div>
                 );
+                const posterUrl = getPosterUrl({ movieId: fav.tmdb_id, contentType: "movie", defaultPosterPath: fav.image_url, posterPrefs, size: "w342" });
                 return (
                   <Link href={`/movies?id=${fav.tmdb_id}`} key={slot} className="aspect-[2/3] rounded-xl overflow-hidden border border-white/10 group relative block" title={fav.name}>
                     <img
-                      src={fav.image_url ? `https://image.tmdb.org/t/p/w342${fav.image_url}` : "https://images.unsplash.com/photo-1594909122845-11baa439b7bf?w=342"}
+                      src={posterUrl}
                       alt={fav.name}
                       className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
                     />
@@ -729,10 +766,11 @@ export default function PublicProfilePage() {
                     <span className="material-symbols-outlined text-on-surface-variant/20 text-[20px]">tv</span>
                   </div>
                 );
+                const posterUrl = getPosterUrl({ movieId: fav.tmdb_id, contentType: "tv", defaultPosterPath: fav.image_url, posterPrefs, size: "w342" });
                 return (
                   <Link href={`/tv?id=${fav.tmdb_id}`} key={slot} className="aspect-[2/3] rounded-xl overflow-hidden border border-white/10 group relative block" title={fav.name}>
                     <img
-                      src={fav.image_url ? `https://image.tmdb.org/t/p/w342${fav.image_url}` : "https://images.unsplash.com/photo-1594909122845-11baa439b7bf?w=342"}
+                      src={posterUrl}
                       alt={fav.name}
                       className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
                     />

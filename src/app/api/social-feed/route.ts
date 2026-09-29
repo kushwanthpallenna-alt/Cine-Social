@@ -43,6 +43,8 @@ export async function GET(request: Request) {
   const profileMap = new Map<string, any>(profiles?.map((p) => [p.user_id, p]) || []);
 
   // Fetch recent activity from ratings, watchlist, reviews, and watched in parallel
+  // Scale limit with page so we always have enough items to slice from for the requested page
+  const queryLimit = Math.max((page + 1) * PAGE_SIZE + 20, PAGE_SIZE * 4);
   const from = page * PAGE_SIZE;
   const to = from + PAGE_SIZE - 1;
 
@@ -52,25 +54,25 @@ export async function GET(request: Request) {
       .select("user_id, movie_id, rating, content_type, created_at")
       .in("user_id", followingIds)
       .order("created_at", { ascending: false })
-      .limit(PAGE_SIZE * 3),
+      .limit(queryLimit),
     supabaseAdmin
       .from("watchlist")
       .select("user_id, movie_id, movie_title, poster_path, content_type, created_at")
       .in("user_id", followingIds)
       .order("created_at", { ascending: false })
-      .limit(PAGE_SIZE * 3),
+      .limit(queryLimit),
     supabaseAdmin
       .from("reviews")
       .select("id, user_id, user_name, movie_id, review_text, content_type, created_at")
       .in("user_id", followingIds)
       .order("created_at", { ascending: false })
-      .limit(PAGE_SIZE * 3),
+      .limit(queryLimit),
     supabaseAdmin
       .from("watched")
       .select("user_id, movie_id, movie_title, poster_path, content_type, watched_at")
       .in("user_id", followingIds)
       .order("watched_at", { ascending: false })
-      .limit(PAGE_SIZE * 3),
+      .limit(queryLimit),
   ]);
 
   const items: any[] = [];

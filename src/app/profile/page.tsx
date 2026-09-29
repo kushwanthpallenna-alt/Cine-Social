@@ -11,6 +11,7 @@ import AvatarCropperModal from "@/components/AvatarCropperModal";
 import ProfileBadges from "@/components/ProfileBadges";
 import NotificationBell from "@/components/NotificationBell";
 import RatingDistributionChart from "@/components/RatingDistributionChart";
+import { getPosterUrl } from "@/lib/poster";
 
 type SortOption =
   | "default"
@@ -369,6 +370,13 @@ export default function ProfilePage() {
         reviewsData.forEach(registerMedia);
         (watchedData || []).forEach(registerMedia);
         watchlistData.forEach(registerMedia);
+        (favoritesData || []).forEach((fav: any) => {
+          if (fav?.tmdb_id) {
+            const isTv = fav.slot_type?.startsWith("tv_");
+            const type = isTv ? "tv" : "movie";
+            uniqueMedia.set(`${type}_${fav.tmdb_id}`, { id: String(fav.tmdb_id), type });
+          }
+        });
 
         const details: Record<string, any> = {};
         await Promise.all(
@@ -1327,7 +1335,7 @@ export default function ProfilePage() {
 
             {/* Letterboxd-Style Rating Distribution Chart */}
             <section className="mb-12">
-              <RatingDistributionChart ratings={ratings} mediaDetails={mediaDetails} />
+              <RatingDistributionChart ratings={ratings} mediaDetails={mediaDetails} posterPrefs={posterPrefs} />
             </section>
 
             {/* Favorites Sections */}
@@ -1339,6 +1347,14 @@ export default function ProfilePage() {
               <div className="grid grid-cols-5 gap-3 md:gap-4 mb-10">
                 {['movie_1', 'movie_2', 'movie_3', 'movie_4', 'movie_5'].map((slot, index) => {
                   const fav = favorites[slot];
+                  const posterUrl = fav ? getPosterUrl({
+                    movieId: fav.tmdb_id,
+                    contentType: "movie",
+                    defaultPosterPath: fav.image_url,
+                    posterPrefs,
+                    size: "w500",
+                  }) : null;
+
                   return (
                     <div
                       key={slot}
@@ -1351,10 +1367,10 @@ export default function ProfilePage() {
                       }}
                       className="group aspect-[2/3] rounded-xl overflow-hidden border border-white/10 relative bg-white/5 cursor-pointer hover:border-[#e50914] transition-all duration-300 flex flex-col items-center justify-center"
                     >
-                      {fav ? (
+                      {fav && posterUrl ? (
                         <>
                           <img
-                            src={fav.image_url ? `https://image.tmdb.org/t/p/w500${fav.image_url}` : "https://images.unsplash.com/photo-1594909122845-11baa439b7bf?w=500"}
+                            src={posterUrl}
                             alt={fav.name}
                             className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
                           />
@@ -1380,6 +1396,14 @@ export default function ProfilePage() {
               <div className="grid grid-cols-5 gap-3 md:gap-4 mb-10">
                 {['tv_1', 'tv_2', 'tv_3', 'tv_4', 'tv_5'].map((slot, index) => {
                   const fav = favorites[slot];
+                  const posterUrl = fav ? getPosterUrl({
+                    movieId: fav.tmdb_id,
+                    contentType: "tv",
+                    defaultPosterPath: fav.image_url,
+                    posterPrefs,
+                    size: "w500",
+                  }) : null;
+
                   return (
                     <div
                       key={slot}
@@ -1392,10 +1416,10 @@ export default function ProfilePage() {
                       }}
                       className="group aspect-[2/3] rounded-xl overflow-hidden border border-white/10 relative bg-white/5 cursor-pointer hover:border-[#a855f7] transition-all duration-300 flex flex-col items-center justify-center"
                     >
-                      {fav ? (
+                      {fav && posterUrl ? (
                         <>
                           <img
-                            src={fav.image_url ? `https://image.tmdb.org/t/p/w500${fav.image_url}` : "https://images.unsplash.com/photo-1594909122845-11baa439b7bf?w=500"}
+                            src={posterUrl}
                             alt={fav.name}
                             className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
                           />

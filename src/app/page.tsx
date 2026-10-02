@@ -8,6 +8,7 @@ import { useSession, signOut } from "next-auth/react";
 import { supabase } from "@/lib/supabase";
 import { useToast } from "@/components/ToastProvider";
 import { getSafeAvatarUrl } from "@/lib/avatar";
+import { getMovieUrl, getTvUrl } from "@/lib/slug";
 
 const NotificationBell = dynamic(() => import("@/components/NotificationBell"), { ssr: false });
 const Carousel = dynamic(() => import("@/components/Carousel"));
@@ -664,10 +665,12 @@ export default function Home() {
                   const isTv = item.media_type === "tv" || (item.name && !item.title);
                   const isSaved = watchlistIds.has(String(item.id));
                   const isLoading = watchlistLoadingId === String(item.id);
+                  const itemTitle = item.title || item.name;
+                  const linkHref = isTv ? getTvUrl(item.id, itemTitle) : getMovieUrl(item.id, itemTitle);
 
                   return (
                     <div key={item.id} className="group/card relative block animate-fade-in">
-                      <Link href={isTv ? `/tv?id=${item.id}` : `/movies?id=${item.id}`} className="cursor-pointer block">
+                      <Link href={linkHref} className="cursor-pointer block">
                         <div className="relative aspect-[2/3] rounded-xl overflow-hidden glass-panel mb-stack-sm bg-white/5">
                           <img
                             alt={item.title || item.name || "Poster"}
@@ -792,7 +795,7 @@ export default function Home() {
                     const type = item.content_type === "tv" ? "tv" : "movie";
                     const detail = friendsDetails[`${type}_${item.movie_id}`];
                     const title = item.movie_title || detail?.title || detail?.name || "Untitled";
-                    const linkHref = type === "tv" ? `/tv?id=${item.movie_id}` : `/movies?id=${item.movie_id}`;
+                    const linkHref = type === "tv" ? getTvUrl(item.movie_id, title) : getMovieUrl(item.movie_id, title);
                     const avatarUrl = getSafeAvatarUrl(item.avatar_url);
                     const initials = (item.display_name || "U").slice(0, 2).toUpperCase();
 
@@ -860,7 +863,7 @@ export default function Home() {
                   {trendingMovies.slice(0, 3).map((item: any) => {
                     const isTv = item.media_type === "tv" || (item.name && !item.title);
                     const title = item.title || item.name || "Untitled";
-                    const linkHref = isTv ? `/tv?id=${item.id}` : `/movies?id=${item.id}`;
+                    const linkHref = isTv ? getTvUrl(item.id, title) : getMovieUrl(item.id, title);
                     const poster = item.poster_path ? `https://image.tmdb.org/t/p/w185${item.poster_path}` : null;
 
                     return (
@@ -925,7 +928,7 @@ export default function Home() {
 
                     return (
                       <div key={movie.id} className="w-[160px] md:w-[200px] flex-shrink-0 group/card relative snap-start">
-                        <Link href={`/movies?id=${movie.id}`} className="cursor-pointer block">
+                        <Link href={getMovieUrl(movie.id, movie.title || movie.name)} className="cursor-pointer block">
                           <div className="relative aspect-[2/3] rounded-xl overflow-hidden glass-panel mb-stack-sm bg-white/5">
                             <Image
                               alt={movie.title || "Movie Poster"}
@@ -1002,7 +1005,7 @@ export default function Home() {
 
                   return (
                     <div key={movie.id} className="group/card relative block animate-fade-in">
-                      <Link href={`/movies?id=${movie.id}`} className="cursor-pointer block">
+                      <Link href={getMovieUrl(movie.id, movie.title || movie.name)} className="cursor-pointer block">
                         <div className="relative aspect-[2/3] rounded-xl overflow-hidden glass-panel mb-stack-sm bg-white/5">
                           <img
                             alt={movie.title || "Movie Poster"}
@@ -1083,7 +1086,7 @@ export default function Home() {
 
                     return (
                       <div key={show.id} className="w-[160px] md:w-[200px] flex-shrink-0 group/card relative snap-start">
-                        <Link href={`/tv?id=${show.id}`} className="cursor-pointer block">
+                        <Link href={getTvUrl(show.id, show.name || show.title)} className="cursor-pointer block">
                           <div className="relative aspect-[2/3] rounded-xl overflow-hidden glass-panel mb-stack-sm bg-white/5">
                             <Image
                               alt={show.name || "TV Show Poster"}
@@ -1163,7 +1166,7 @@ export default function Home() {
 
                   return (
                     <div key={show.id} className="group/card relative block animate-fade-in">
-                      <Link href={`/tv?id=${show.id}`} className="cursor-pointer block">
+                      <Link href={getTvUrl(show.id, show.name || show.title)} className="cursor-pointer block">
                         <div className="relative aspect-[2/3] rounded-xl overflow-hidden glass-panel mb-stack-sm bg-white/5">
                           <img
                             alt={show.name || "TV Show Poster"}
@@ -1239,7 +1242,7 @@ export default function Home() {
                       {idx + 1}
                     </span>
                     <div className="relative ml-16 md:ml-24 w-[120px] md:w-[160px] aspect-[2/3] rounded-xl overflow-hidden glass-panel shadow-2xl z-10">
-                      <Link href={`/movies?id=${movie.id}`} className="cursor-pointer block w-full h-full relative">
+                      <Link href={getMovieUrl(movie.id, movie.title || movie.name)} className="cursor-pointer block w-full h-full relative">
                         <Image
                           alt={movie.title || "Top Rated"}
                           className="object-cover transition-transform duration-700 group-hover/card:scale-105"

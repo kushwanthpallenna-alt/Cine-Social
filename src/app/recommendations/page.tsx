@@ -9,6 +9,7 @@ import NotificationBell from "@/components/NotificationBell";
 import { getSafeAvatarUrl } from "@/lib/avatar";
 import EditFilterModal from "@/components/EditFilterModal";
 import SpinWheelModal from "@/components/SpinWheelModal";
+import { getMovieUrl, getTvUrl } from "@/lib/slug";
 
 
 const GENRE_MAP: { [key: number]: string } = {
@@ -440,7 +441,7 @@ export default function Recommendations() {
 
                   return (
                     <div key={item.id} className="group/card relative block animate-fade-in">
-                      <Link href={isTv ? `/tv?id=${item.id}` : `/movies?id=${item.id}`} className="cursor-pointer block">
+                      <Link href={isTv ? getTvUrl(item.id, item.name || item.title) : getMovieUrl(item.id, item.title || item.name)} className="cursor-pointer block">
                         <div className="aspect-[2/3] rounded-lg overflow-hidden border border-white/5 relative mb-2 bg-white/5">
                           <img
                             className="w-full h-full object-cover group-hover/card:scale-105 transition-transform duration-500"
@@ -632,7 +633,7 @@ export default function Recommendations() {
 
                   return (
                     <div key={movie.id} className="relative group/card rounded-xl overflow-hidden">
-                      <Link href={`/movies?id=${movie.id}`} className="glass relative overflow-hidden cursor-pointer transition-all hover:scale-[1.02] block border border-white/10 w-full h-full">
+                      <Link href={getMovieUrl(movie.id, movie.title || movie.name)} className="glass relative overflow-hidden cursor-pointer transition-all hover:scale-[1.02] block border border-white/10 w-full h-full">
                         <div className="aspect-[16/9] w-full overflow-hidden relative">
                           <img
                             className="w-full h-full object-cover transition-transform duration-700 group-hover/card:scale-110"

@@ -12,6 +12,7 @@ import ReviewCard from "@/components/ReviewCard";
 import NotificationBell from "@/components/NotificationBell";
 import RatingDistributionChart from "@/components/RatingDistributionChart";
 import { getPosterUrl } from "@/lib/poster";
+import { getMovieUrl, getTvUrl } from "@/lib/slug";
 
 type SortOption =
   | "default"
@@ -736,7 +737,7 @@ export default function PublicProfilePage() {
                 );
                 const posterUrl = getPosterUrl({ movieId: fav.tmdb_id, contentType: "movie", defaultPosterPath: fav.image_url, posterPrefs, size: "w342" });
                 return (
-                  <Link href={`/movies?id=${fav.tmdb_id}`} key={slot} className="aspect-[2/3] rounded-xl overflow-hidden border border-white/10 group relative block" title={fav.name}>
+                  <Link href={getMovieUrl(fav.tmdb_id, fav.name)} key={slot} className="aspect-[2/3] rounded-xl overflow-hidden border border-white/10 group relative block" title={fav.name}>
                     <img
                       src={posterUrl}
                       alt={fav.name}
@@ -768,7 +769,7 @@ export default function PublicProfilePage() {
                 );
                 const posterUrl = getPosterUrl({ movieId: fav.tmdb_id, contentType: "tv", defaultPosterPath: fav.image_url, posterPrefs, size: "w342" });
                 return (
-                  <Link href={`/tv?id=${fav.tmdb_id}`} key={slot} className="aspect-[2/3] rounded-xl overflow-hidden border border-white/10 group relative block" title={fav.name}>
+                  <Link href={getTvUrl(fav.tmdb_id, fav.name)} key={slot} className="aspect-[2/3] rounded-xl overflow-hidden border border-white/10 group relative block" title={fav.name}>
                     <img
                       src={posterUrl}
                       alt={fav.name}
@@ -845,7 +846,7 @@ export default function PublicProfilePage() {
                     return (
                       <Link
                         key={item.id ? `wl_movie_${item.id}` : `wl_movie_${item.movie_id}_${item.created_at || ""}`}
-                        href={`/movies?id=${item.movie_id}`}
+                        href={getMovieUrl(item.movie_id, title)}
                         className="aspect-[2/3] rounded-xl overflow-hidden border border-white/10 group relative block bg-white/5"
                         title={title}
                       >
@@ -878,7 +879,7 @@ export default function PublicProfilePage() {
                     return (
                       <Link
                         key={item.id ? `wl_tv_${item.id}` : `wl_tv_${item.movie_id}_${item.created_at || ""}`}
-                        href={`/tv?id=${item.movie_id}`}
+                        href={getTvUrl(item.movie_id, title)}
                         className="aspect-[2/3] rounded-xl overflow-hidden border border-white/10 group relative block bg-white/5"
                         title={title}
                       >
@@ -1043,8 +1044,8 @@ export default function PublicProfilePage() {
                 const detail = mediaDetails[`${type}_${item.movie_id}`] || mediaDetails[item.movie_id];
                 const poster = detail?.poster_path || item.poster_path;
                 const userRating = ratingsMap[`${type}_${item.movie_id}`] ?? ratingsMap[item.movie_id];
-                const linkHref = type === "tv" ? `/tv?id=${item.movie_id}` : `/movies?id=${item.movie_id}`;
                 const displayTitle = detail?.title || detail?.name || item.movie_title || "";
+                const linkHref = type === "tv" ? getTvUrl(item.movie_id, displayTitle) : getMovieUrl(item.movie_id, displayTitle);
 
                 return (
                   <Link key={item.id ? `${type}_${item.id}` : `${type}_${item.movie_id}_${item.watched_at || ""}`} href={linkHref} className="group aspect-[2/3] rounded-xl overflow-hidden border border-white/10 relative bg-white/5 block">

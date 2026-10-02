@@ -4,6 +4,7 @@ import React, { useState, useEffect } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { getSafeAvatarUrl } from "@/lib/avatar";
+import { getMovieUrl, getTvUrl } from "@/lib/slug";
 
 export interface ReviewReply {
   id: string;
@@ -21,6 +22,7 @@ export interface ReviewData {
   user_name?: string;
   movie_id?: string;
   movie_title?: string;
+  content_type?: string;
   review_text: string;
   created_at: string;
 }
@@ -290,8 +292,18 @@ export default function ReviewCard({
         </div>
 
         {posterPath && review.movie_id && (
-          <Link href={`/movies?id=${review.movie_id}`} className="w-10 md:w-12 aspect-[2/3] rounded overflow-hidden border border-white/10 flex-shrink-0 hover:opacity-80 transition-opacity relative">
-            <Image src={`https://image.tmdb.org/t/p/w185${posterPath}`} alt={displayTitle || "Movie"} fill sizes="(max-width: 768px) 40px, 48px" loading="lazy" className="object-cover" />
+          <Link
+            href={(review as any).content_type === "tv" ? getTvUrl(review.movie_id, displayTitle) : getMovieUrl(review.movie_id, displayTitle)}
+            className="w-10 md:w-12 aspect-[2/3] rounded overflow-hidden border border-white/10 flex-shrink-0 hover:opacity-80 transition-opacity relative"
+          >
+            <Image
+              src={posterPath.startsWith("http") ? posterPath : `https://image.tmdb.org/t/p/w185${posterPath}`}
+              alt={displayTitle || "Movie"}
+              fill
+              sizes="(max-width: 768px) 40px, 48px"
+              loading="lazy"
+              className="object-cover"
+            />
           </Link>
         )}
       </div>

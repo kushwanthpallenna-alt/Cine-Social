@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { useSession, signOut } from "next-auth/react";
 import NotificationBell from "@/components/NotificationBell";
 import { getAvatarUrlOrDefault } from "@/lib/avatar";
+import { getMovieUrl, getTvUrl } from "@/lib/slug";
 
 interface PersonDetailClientProps {
   personId: string;
@@ -595,7 +596,7 @@ export default function PersonDetailClient({ personId }: PersonDetailClientProps
                 activeTab === "directing"
                   ? "Director"
                   : item.character || item.job || "";
-              const href = isTv ? `/tv?id=${item.id}` : `/movies?id=${item.id}`;
+              const href = isTv ? getTvUrl(item.id, item.title) : getMovieUrl(item.id, item.title);
 
               return (
                 <div key={`${item.media_type}_${item.id}`} className="group/card relative block animate-fade-in">

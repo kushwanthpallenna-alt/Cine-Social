@@ -3,6 +3,7 @@
 import React, { useState, useMemo } from "react";
 import Link from "next/link";
 import { getPosterUrl } from "@/lib/poster";
+import { getMovieUrl, getTvUrl } from "@/lib/slug";
 
 interface RatingItem {
   id?: string;
@@ -353,7 +354,7 @@ export default function RatingDistributionChart({
                 const year = (detail?.release_date || detail?.first_air_date || "").slice(0, 4);
                 const runtime = detail?.runtime || (detail?.episode_run_time && detail.episode_run_time[0]);
                 const tmdbRating = detail?.vote_average ? Number(detail.vote_average).toFixed(1) : null;
-                const linkHref = type === "tv" ? `/tv?id=${item.movie_id}` : `/movies?id=${item.movie_id}`;
+                const linkHref = type === "tv" ? getTvUrl(item.movie_id, title) : getMovieUrl(item.movie_id, title);
 
                 return (
                   <Link

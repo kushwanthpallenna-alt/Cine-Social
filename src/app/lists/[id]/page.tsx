@@ -7,6 +7,7 @@ import { useSession } from "next-auth/react";
 import NotificationBell from "@/components/NotificationBell";
 import { useToast } from "@/components/ToastProvider";
 import { getAvatarUrlOrDefault } from "@/lib/avatar";
+import { getMovieUrl, getTvUrl } from "@/lib/slug";
 
 interface ListItem {
   id: string;
@@ -424,7 +425,7 @@ export default function ListDetailPage() {
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-stack-md animate-fade-in">
             {list.items.map((item, idx) => {
               const isTv = item.content_type === "tv";
-              const linkHref = isTv ? `/tv?id=${item.movie_id}` : `/movies?id=${item.movie_id}`;
+              const linkHref = isTv ? getTvUrl(item.movie_id, item.movie_title) : getMovieUrl(item.movie_id, item.movie_title);
 
               return (
                 <div key={item.id} className="group/item relative flex flex-col space-y-1.5">

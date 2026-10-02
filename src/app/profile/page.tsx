@@ -12,6 +12,7 @@ import ProfileBadges from "@/components/ProfileBadges";
 import NotificationBell from "@/components/NotificationBell";
 import RatingDistributionChart from "@/components/RatingDistributionChart";
 import { getPosterUrl } from "@/lib/poster";
+import { getMovieUrl, getTvUrl } from "@/lib/slug";
 
 type SortOption =
   | "default"
@@ -1663,8 +1664,8 @@ export default function ProfilePage() {
                         const itemType = item.content_type === "tv" ? "tv" : "movie";
                         const detail = getItemDetails(item);
                         const userRating = ratingsMap[`${itemType}_${item.movie_id}`] ?? ratingsMap[item.movie_id];
-                        const linkHref = itemType === "tv" ? `/tv?id=${item.movie_id}` : `/movies?id=${item.movie_id}`;
                         const displayTitle = detail?.title || detail?.name || detail?.movie_title || item.movie_title || "Untitled";
+                        const linkHref = itemType === "tv" ? getTvUrl(item.movie_id, displayTitle) : getMovieUrl(item.movie_id, displayTitle);
                         const customPoster = posterPrefs[`${itemType}_${item.movie_id}`] || posterPrefs[item.movie_id];
                         const poster = customPoster || detail.poster_path || item.poster_path;
                         const itemKey = `${itemType}_${item.movie_id}`;
@@ -1858,7 +1859,7 @@ export default function ProfilePage() {
                         const itemType = item.content_type === "tv" ? "tv" : "movie";
                         const detail = getItemDetails(item);
                         const displayTitle = detail?.title || detail?.name || detail?.movie_title || item.movie_title || "Untitled";
-                        const linkHref = itemType === "tv" ? `/tv?id=${item.movie_id}` : `/movies?id=${item.movie_id}`;
+                        const linkHref = itemType === "tv" ? getTvUrl(item.movie_id, displayTitle) : getMovieUrl(item.movie_id, displayTitle);
                         const customPoster = posterPrefs[`${itemType}_${item.movie_id}`] || posterPrefs[item.movie_id];
                         const poster = customPoster || detail.poster_path || item.poster_path;
                         const itemKey = `${itemType}_${item.movie_id}`;

@@ -1,10 +1,12 @@
 "use client";
 
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useMemo } from "react";
 import Link from "next/link";
 import { useSession } from "next-auth/react";
 import ReviewCard from "@/components/ReviewCard";
 import { getSafeAvatarUrl } from "@/lib/avatar";
+import { getPosterUrl } from "@/lib/poster";
+import { getMovieUrl, getTvUrl } from "@/lib/slug";
 
 function timeAgo(dateStr: string): string {
   const diff = Date.now() - new Date(dateStr).getTime();
@@ -104,11 +106,39 @@ export default function CommunityFeed() {
 
   const [items, setItems] = useState<any[]>([]);
   const [movieDetails, setMovieDetails] = useState<Record<string, any>>({});
+  const [posterPrefs, setPosterPrefs] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
   const [page, setPage] = useState(0);
   const [hasMore, setHasMore] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const [noFollows, setNoFollows] = useState(false);
+
+  // Filter state with URL persistence
+  const [activeFilter, setActiveFilter] = useState<string>("all");
+
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const p = new URLSearchParams(window.location.search);
+      const f = p.get("filter");
+      if (f && ["all", "review", "rating", "watchlist", "watched"].includes(f)) {
+        setActiveFilter(f);
+      }
+    }
+  }, []);
+
+  const handleFilterChange = (filter: string) => {
+    setActiveFilter(filter);
+    if (typeof window !== "undefined") {
+      const p = new URLSearchParams(window.location.search);
+      if (filter === "all") {
+        p.delete("filter");
+      } else {
+        p.set("filter", filter);
+      }
+      const newUrl = `${window.location.pathname}${p.toString() ? `?${p.toString()}` : ""}`;
+      window.history.replaceState(null, "", newUrl);
+    }
+  };
 
   // User search state
   const [searchQuery, setSearchQuery] = useState("");
@@ -211,7 +241,34 @@ export default function CommunityFeed() {
         }
         setHasMore(data.hasMore);
         // Kick off movie detail fetches (stable callback — no re-render loop)
-        fetchMovieDetails((data.items || []).map((i: any) => i.movie_id));
+        const newIds = (data.items || []).map((i: any) => i.movie_id);
+        fetchMovieDetails(newIds);
+
+        // Batch-fetch poster preferences for items
+        if (data.items && data.items.length > 0) {
+          const mediaItems = data.items.map((i: any) => ({
+            movie_id: String(i.movie_id),
+            content_type: i.content_type || "movie",
+          }));
+          fetch("/api/poster-preference/batch", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ user_id: user.id, items: mediaItems }),
+          })
+            .then((r) => r.json())
+            .then((prefs) => {
+              if (Array.isArray(prefs)) {
+                const map: Record<string, string> = {};
+                prefs.forEach((p) => {
+                  const t = p.content_type || "movie";
+                  map[`${t}_${p.movie_id}`] = p.poster_path;
+                  map[p.movie_id] = p.poster_path;
+                });
+                setPosterPrefs((prev) => ({ ...prev, ...map }));
+              }
+            })
+            .catch(() => {});
+        }
       }
     } catch (err) {
       console.error("Feed error:", err);
@@ -251,17 +308,24 @@ export default function CommunityFeed() {
     fetchFeed(next);
   };
 
+  const filteredItems = useMemo(() => {
+    if (activeFilter === "all") return items;
+    return items.filter((item) => item.type === activeFilter);
+  }, [items, activeFilter]);
+
   const getActionText = (item: any) => {
     const movie = movieDetails[item.movie_id];
     const title = movie?.title || item.movie_title || "a movie";
     if (item.type === "rating") return <><span className="text-on-surface-variant">rated </span><span className="text-primary font-medium">{title}</span> <StarRating rating={item.rating} /></>;
     if (item.type === "watchlist") return <><span className="text-on-surface-variant">added </span><span className="text-primary font-medium">{title}</span><span className="text-on-surface-variant"> to watchlist</span></>;
+    if (item.type === "watched") return <><span className="text-on-surface-variant">watched </span><span className="text-primary font-medium">{title}</span></>;
     if (item.type === "review") return <><span className="text-on-surface-variant">reviewed </span><span className="text-primary font-medium">{title}</span></>;
   };
 
   const getTypeIcon = (type: string) => {
     if (type === "rating") return "star";
     if (type === "watchlist") return "bookmark_add";
+    if (type === "watched") return "visibility";
     if (type === "review") return "rate_review";
     return "movie";
   };
@@ -369,6 +433,35 @@ export default function CommunityFeed() {
 
 
 
+        {/* Filter Bar */}
+        {!loading && !noFollows && items.length > 0 && (
+          <div className="max-w-2xl mx-auto mb-6 flex items-center gap-2 overflow-x-auto pb-2 scrollbar-none">
+            {[
+              { id: "all", label: "All Activity", icon: "dynamic_feed" },
+              { id: "review", label: "Reviews", icon: "rate_review" },
+              { id: "rating", label: "Ratings", icon: "star" },
+              { id: "watched", label: "Watched", icon: "visibility" },
+              { id: "watchlist", label: "Watchlist", icon: "bookmark_add" },
+            ].map((f) => {
+              const active = activeFilter === f.id;
+              return (
+                <button
+                  key={f.id}
+                  onClick={() => handleFilterChange(f.id)}
+                  className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-medium transition-all duration-200 cursor-pointer flex-shrink-0 border ${
+                    active
+                      ? "bg-primary text-black border-primary font-bold shadow-[0_0_12px_rgba(255,180,170,0.3)]"
+                      : "bg-white/5 border-white/10 text-on-surface-variant hover:text-white hover:border-white/20"
+                  }`}
+                >
+                  <span className="material-symbols-outlined text-[14px]">{f.icon}</span>
+                  <span>{f.label}</span>
+                </button>
+              );
+            })}
+          </div>
+        )}
+
         {/* Loading Skeleton */}
         {loading && (
           <div className="max-w-2xl mx-auto space-y-4">
@@ -386,25 +479,33 @@ export default function CommunityFeed() {
         )}
 
         {/* Activity Feed */}
-        {!loading && !noFollows && items.length > 0 && (
+        {!loading && !noFollows && filteredItems.length > 0 && (
           <div className="max-w-2xl mx-auto space-y-4">
-            {items.map((item) => {
+            {filteredItems.map((item) => {
               const movie = movieDetails[item.movie_id];
+              const posterUrl = getPosterUrl({
+                movieId: item.movie_id,
+                contentType: item.content_type || "movie",
+                defaultPosterPath: item.poster_path || movie?.poster_path,
+                posterPrefs,
+                size: "w185",
+              });
+              const isTv = item.content_type === "tv";
+              const title = movie?.title || movie?.name || item.movie_title || "Untitled";
+              const linkHref = isTv ? getTvUrl(item.movie_id, title) : getMovieUrl(item.movie_id, title);
               return (
-                <div key={item.id} className="glass-card p-5 rounded-xl border border-white/10 shadow-lg group hover:border-white/20 transition-all duration-200">
+                <div key={`${item.type}_${item.id}_${item.created_at}`} className="glass-card p-5 rounded-xl border border-white/10 shadow-lg group hover:border-white/20 transition-all duration-200">
                   <div className="flex gap-4">
                     {/* Movie poster */}
-                    {movie && (
-                      <Link href={`/movies?id=${movie.id}`} className="w-16 flex-shrink-0">
-                        <div className="aspect-[2/3] rounded-lg overflow-hidden border border-white/5">
-                          <img
-                            className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
-                            alt={movie.title}
-                            src={movie.poster_path ? `https://image.tmdb.org/t/p/w185${movie.poster_path}` : "https://images.unsplash.com/photo-1594909122845-11baa439b7bf?w=185"}
-                          />
-                        </div>
-                      </Link>
-                    )}
+                    <Link href={linkHref} className="w-16 flex-shrink-0">
+                      <div className="aspect-[2/3] rounded-lg overflow-hidden border border-white/5">
+                        <img
+                          className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
+                          alt={title}
+                          src={posterUrl}
+                        />
+                      </div>
+                    </Link>
 
                     <div className="flex-grow min-w-0">
                       {/* User + action */}

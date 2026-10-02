@@ -2,6 +2,7 @@
 
 import React, { useState, useRef, useEffect } from "react";
 import Link from "next/link";
+import { getMovieUrl, getTvUrl } from "@/lib/slug";
 
 type Scope = "movie" | "tv";
 type Step = "filters" | "wheel" | "reveal";
@@ -901,8 +902,8 @@ export default function SpinWheelModal({ onClose }: SpinWheelModalProps) {
                 <Link
                   href={
                     scope === "movie"
-                      ? `/movies?id=${winner.id}`
-                      : `/tv?id=${winner.id}`
+                      ? getMovieUrl(winner.id, winner.title)
+                      : getTvUrl(winner.id, winner.title)
                   }
                   onClick={onClose}
                   className="flex-1 py-3 bg-primary text-black font-bold rounded-full text-center text-sm hover:opacity-90 active:scale-95 transition-all flex items-center justify-center gap-2 no-underline shadow-lg"

@@ -82,20 +82,34 @@ export default function EditFilterModal({
     if (selectedMoods.length === 0) return;
     setSaving(true);
     try {
-      await supabase.from("user_mood_preferences").upsert(
-        {
-          user_id: userId,
-          moods: selectedMoods,
-          custom_mood: customMood.trim() || null,
-          genre_weights: weights,
-          updated_at: new Date().toISOString(),
-        },
-        { onConflict: "user_id" }
-      );
+      if (typeof window !== "undefined") {
+        localStorage.setItem(
+          "cinema_dna_prefs",
+          JSON.stringify({
+            moods: selectedMoods,
+            custom_mood: customMood.trim(),
+            genre_weights: weights,
+          })
+        );
+      }
+      if (userId) {
+        await supabase.from("user_mood_preferences").upsert(
+          {
+            user_id: userId,
+            moods: selectedMoods,
+            custom_mood: customMood.trim() || null,
+            genre_weights: weights,
+            updated_at: new Date().toISOString(),
+          },
+          { onConflict: "user_id" }
+        );
+      }
       onSave(selectedMoods, customMood.trim(), weights);
       onClose();
     } catch (err) {
       console.error("Error saving mood preferences:", err);
+      onSave(selectedMoods, customMood.trim(), weights);
+      onClose();
     } finally {
       setSaving(false);
     }

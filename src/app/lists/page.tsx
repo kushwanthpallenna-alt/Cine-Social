@@ -244,12 +244,17 @@ export default function ListsPage() {
             <p className="text-on-surface-variant text-sm">
               Organize your favorite movies and TV shows into ranked or unranked Letterboxd-style lists.
             </p>
-            <Link
-              href="/auth/signin?callbackUrl=/lists"
-              className="inline-block px-6 py-2.5 rounded-full bg-primary text-black font-bold text-sm hover:brightness-110 active:scale-95 transition-all"
+            <button
+              onClick={() =>
+                showAuthPrompt({
+                  title: "Create Custom Lists",
+                  message: "Sign in to curate, rank, and share custom film lists with fellow cinephiles.",
+                })
+              }
+              className="inline-block px-6 py-2.5 rounded-full bg-primary text-black font-bold text-sm hover:brightness-110 active:scale-95 transition-all border-none cursor-pointer"
             >
               Sign In
-            </Link>
+            </button>
           </div>
         ) : lists.length === 0 ? (
           <div className="glass-panel rounded-2xl border border-white/10 p-12 text-center max-w-lg mx-auto space-y-4">

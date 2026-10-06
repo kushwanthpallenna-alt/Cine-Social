@@ -131,18 +131,30 @@ export default function Home() {
   // Fetch DNA Recommendations
   useEffect(() => {
     async function fetchDnaRecommendations() {
-      if (!user?.id) {
-        setHasDna(false);
-        setDnaMovies([]);
-        return;
-      }
       setDnaLoading(true);
       try {
-        const { data: pref } = await supabase
-          .from("user_mood_preferences")
-          .select("*")
-          .eq("user_id", user.id)
-          .single();
+        let pref: any = null;
+        if (user?.id) {
+          const { data } = await supabase
+            .from("user_mood_preferences")
+            .select("*")
+            .eq("user_id", user.id)
+            .single();
+          pref = data;
+        }
+
+        if (!pref && typeof window !== "undefined") {
+          const cached = localStorage.getItem("cinema_dna_prefs");
+          if (cached) {
+            try { pref = JSON.parse(cached); } catch {}
+          }
+        }
+
+        if (!pref) {
+          setHasDna(false);
+          setDnaMovies([]);
+          return;
+        }
 
         let genresToQuery: string[] = [];
         let label = "";
@@ -712,12 +724,17 @@ export default function Home() {
                 )}
               </>
             ) : (
-              <Link
-                href="/auth/signin"
-                className="px-3 py-1.5 rounded-full bg-primary text-black text-xs font-bold hover:opacity-90 transition-all no-underline shadow-sm inline-block"
+              <button
+                onClick={() =>
+                  showAuthPrompt({
+                    title: "Join CineSocial",
+                    message: "Create an account to track films, build your watchlist, and connect with fellow cinephiles.",
+                  })
+                }
+                className="px-3 py-1.5 rounded-full bg-primary text-black text-xs font-bold hover:opacity-90 transition-all shadow-sm border-none cursor-pointer"
               >
                 Sign In
-              </Link>
+              </button>
             )}
           </div>
           <Link href="/" className="hover:opacity-90 active:scale-98 transition-all block">
@@ -1538,7 +1555,10 @@ export default function Home() {
         <button
           onClick={() => {
             if (!user) {
-              showToast("Please sign in to log a watch");
+              showAuthPrompt({
+                title: "Quick Log a Film",
+                message: "Sign in to log, rate, and review films you've watched.",
+              });
               return;
             }
             setShowQuickLogModal(true);

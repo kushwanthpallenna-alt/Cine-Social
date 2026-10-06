@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 import { useSession } from "next-auth/react";
+import { useAuthPrompt } from "@/components/AuthPromptProvider";
 import ReviewCard from "@/components/ReviewCard";
 import { getSafeAvatarUrl } from "@/lib/avatar";
 import { getPosterUrl } from "@/lib/poster";
@@ -52,20 +53,31 @@ function UserAvatar({ displayName, avatarUrl, size = 8 }: { displayName: string;
 function FollowButton({ targetUserId, currentUserId }: { targetUserId: string; currentUserId: string }) {
   const { data: session } = useSession();
   const user = session?.user;
+  const { showAuthPrompt } = useAuthPrompt();
   const [following, setFollowing] = useState<boolean | null>(null);
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    if (!currentUserId || !targetUserId || currentUserId === targetUserId) return;
+    if (!currentUserId || !targetUserId || currentUserId === targetUserId) {
+      setFollowing(false);
+      return;
+    }
     fetch(`/api/follows?followerId=${currentUserId}&followingId=${targetUserId}`)
       .then((r) => r.json())
       .then((d) => setFollowing(d.isFollowing))
       .catch(() => setFollowing(false));
   }, [currentUserId, targetUserId]);
 
-  if (!currentUserId || currentUserId === targetUserId || following === null) return null;
+  if (currentUserId && currentUserId === targetUserId) return null;
 
   const toggle = async () => {
+    if (!currentUserId) {
+      showAuthPrompt({
+        title: "Follow User",
+        message: "Sign in to follow cinephiles and see their reviews and activity in your feed.",
+      });
+      return;
+    }
     setLoading(true);
     if (following) {
       await fetch(`/api/follows?followerId=${currentUserId}&followingId=${targetUserId}`, { method: "DELETE" });
@@ -104,6 +116,7 @@ function FollowButton({ targetUserId, currentUserId }: { targetUserId: string; c
 export default function CommunityFeed() {
   const { data: session } = useSession();
   const user = session?.user as any;
+  const { showAuthPrompt } = useAuthPrompt();
 
   const [items, setItems] = useState<any[]>([]);
   const [movieDetails, setMovieDetails] = useState<Record<string, any>>({});
@@ -649,12 +662,17 @@ export default function CommunityFeed() {
                   : "Explore what film lovers are watching and reviewing. Search for users or sign in to share your own reviews!"}
               </p>
               {!user && (
-                <Link
-                  href="/auth/signin"
-                  className="inline-block px-5 py-2 bg-primary text-black font-bold rounded-full text-xs hover:opacity-90 transition-opacity no-underline shadow-md"
+                <button
+                  onClick={() =>
+                    showAuthPrompt({
+                      title: "Join the Community",
+                      message: "Sign in to follow film lovers, write reviews, and share your movie activity.",
+                    })
+                  }
+                  className="inline-block px-5 py-2 bg-primary text-black font-bold rounded-full text-xs hover:opacity-90 transition-opacity cursor-pointer border-none shadow-md"
                 >
                   Sign In to Join
-                </Link>
+                </button>
               )}
             </div>
 

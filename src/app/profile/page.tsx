@@ -5,6 +5,7 @@ import { createPortal } from "react-dom";
 import Link from "next/link";
 import { supabase } from "@/lib/supabase";
 import { useSession, signOut } from "next-auth/react";
+import { useAuthPrompt } from "@/components/AuthPromptProvider";
 import ReviewCard from "@/components/ReviewCard";
 import { getSafeAvatarUrl, getAvatarUrlOrDefault } from "@/lib/avatar";
 import AvatarCropperModal from "@/components/AvatarCropperModal";
@@ -148,6 +149,7 @@ const ProfileSkeleton = () => (
 export default function ProfilePage() {
   const { data: session } = useSession();
   const user = session?.user as any;
+  const { showAuthPrompt } = useAuthPrompt();
 
   const [scrolled, setScrolled] = useState(false);
 
@@ -1149,9 +1151,17 @@ export default function ProfilePage() {
             <span className="material-symbols-outlined text-[48px] text-primary mb-4">account_circle</span>
             <h2 className="font-title-lg text-title-lg mb-2">Sign in Required</h2>
             <p className="text-on-surface-variant mb-6">Please sign in to view your profile.</p>
-            <Link href="/auth/signin" className="bg-primary text-black px-6 py-3 rounded-full font-bold inline-block">
+            <button
+              onClick={() => {
+                showAuthPrompt({
+                  title: "View Your Profile",
+                  message: "Sign in to view your cinematic profile, stats, diary, and favorite films.",
+                });
+              }}
+              className="bg-primary text-black px-6 py-3 rounded-full font-bold inline-block border-none cursor-pointer hover:brightness-110 active:scale-95 transition-all"
+            >
               Sign In
-            </Link>
+            </button>
           </div>
         ) : (
           <>

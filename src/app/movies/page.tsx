@@ -4,12 +4,14 @@ import React, { useState, useEffect, useMemo, Suspense } from "react";
 import Link from "next/link";
 import { useSearchParams, useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
+import { useAuthPrompt } from "@/components/AuthPromptProvider";
 import { supabase } from "@/lib/supabase";
 import { getMovieUrl, getTvUrl } from "@/lib/slug";
 
 function WatchlistView() {
   const { data: session } = useSession();
   const user = session?.user as any;
+  const { showAuthPrompt } = useAuthPrompt();
   const [watchlist, setWatchlist] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<"movies" | "tv">("movies");
@@ -95,9 +97,17 @@ function WatchlistView() {
             <span className="material-symbols-outlined text-[48px] text-primary mb-4">account_circle</span>
             <h2 className="font-title-lg text-title-lg mb-2">Sign in Required</h2>
             <p className="text-on-surface-variant mb-6">Please sign in to view your saved titles.</p>
-            <Link href="/auth/signin" className="bg-primary text-black px-6 py-3 rounded-full font-bold inline-block">
+            <button
+              onClick={() => {
+                showAuthPrompt({
+                  title: "View Your Watchlist",
+                  message: "Sign in to view, organize, and track your saved movies and TV shows.",
+                });
+              }}
+              className="bg-primary text-black px-6 py-3 rounded-full font-bold inline-block border-none cursor-pointer hover:brightness-110 active:scale-95 transition-all"
+            >
               Sign In
-            </Link>
+            </button>
           </div>
         ) : (
           <div>

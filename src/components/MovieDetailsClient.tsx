@@ -779,7 +779,16 @@ export default function MovieDetailsClient({ movieId, initialSlug }: { movieId: 
           <NotificationBell />
           <div className="relative">
             <button
-              onClick={() => setShowProfileMenu(!showProfileMenu)}
+              onClick={() => {
+                if (!user) {
+                  showAuthPrompt({
+                    title: "Sign in to Cine Social",
+                    message: "Sign in to access your profile, watchlists, ratings, and custom lists.",
+                  });
+                } else {
+                  setShowProfileMenu(!showProfileMenu);
+                }
+              }}
               className="w-8 h-8 rounded-full overflow-hidden border border-white/10 hover:opacity-80 transition-all focus:outline-none cursor-pointer flex items-center justify-center bg-white/5"
             >
               {user?.image ? (
@@ -793,7 +802,7 @@ export default function MovieDetailsClient({ movieId, initialSlug }: { movieId: 
               )}
             </button>
 
-            {showProfileMenu && (
+            {showProfileMenu && user && (
               <div className="absolute right-0 mt-2 w-56 rounded-xl bg-[#131313]/90 border border-white/10 backdrop-blur-md p-2 shadow-[0_10px_30px_rgba(0,0,0,0.5)] z-50 animate-fade-in text-left">
                 <div className="px-3 py-2 border-b border-white/10 mb-1">
                   <p className="text-body-md font-semibold text-[#e5e2e1] truncate">{user?.name || "Cine Member"}</p>

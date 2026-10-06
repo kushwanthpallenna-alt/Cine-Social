@@ -5,12 +5,12 @@ import Link from "next/link";
 import { useSession, signOut } from "next-auth/react";
 import { supabase } from "@/lib/supabase";
 import { useToast } from "@/components/ToastProvider";
+import { useAuthPrompt } from "@/components/AuthPromptProvider";
 import NotificationBell from "@/components/NotificationBell";
 import { getSafeAvatarUrl } from "@/lib/avatar";
 import EditFilterModal from "@/components/EditFilterModal";
 import SpinWheelModal from "@/components/SpinWheelModal";
 import { getMovieUrl, getTvUrl } from "@/lib/slug";
-
 
 const GENRE_MAP: { [key: number]: string } = {
   28: "Action",
@@ -54,6 +54,7 @@ export default function Recommendations() {
   const [watchlistIds, setWatchlistIds] = useState<Set<string>>(new Set());
   const [watchlistLoadingId, setWatchlistLoadingId] = useState<string | null>(null);
   const { showToast } = useToast();
+  const { showAuthPrompt } = useAuthPrompt();
 
   const [activeMoods, setActiveMoods] = useState<string[]>([
     "Melancholic",
@@ -68,7 +69,28 @@ export default function Recommendations() {
   const [showEditFilterModal, setShowEditFilterModal] = useState(false);
   const [showSpinWheelModal, setShowSpinWheelModal] = useState(false);
 
-  // Fetch watchlist IDs and user mood preferences
+  // Initialize from localStorage first
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      try {
+        const cached = localStorage.getItem("cinema_dna_prefs");
+        if (cached) {
+          const parsed = JSON.parse(cached);
+          if (parsed.moods && Array.isArray(parsed.moods) && parsed.moods.length > 0) {
+            setActiveMoods(parsed.moods);
+          }
+          if (parsed.custom_mood) {
+            setCustomMood(parsed.custom_mood);
+          }
+          if (parsed.genre_weights && Object.keys(parsed.genre_weights).length > 0) {
+            setGenreWeights(parsed.genre_weights);
+          }
+        }
+      } catch {}
+    }
+  }, []);
+
+  // Fetch watchlist IDs and user mood preferences from Supabase
   useEffect(() => {
     if (!user?.id) return;
     async function fetchData() {
@@ -101,7 +123,13 @@ export default function Recommendations() {
 
   // Watchlist Toggle with optimistic updates
   const handleWatchlistToggle = async (movie: any) => {
-    if (!user) return;
+    if (!user) {
+      showAuthPrompt({
+        title: "Save to Watchlist",
+        message: "Sign in to save films to your watchlist and track what you want to watch.",
+      });
+      return;
+    }
     const movieIdStr = String(movie.id || movie.movie_id);
     const isTv = movie.media_type === "tv" || movie.content_type === "tv" || (movie.first_air_date && !movie.release_date) || (!movie.title && !!movie.name);
     const contentType = isTv ? "tv" : "movie";
@@ -337,7 +365,16 @@ export default function Recommendations() {
         <div className="flex items-center gap-stack-md">
           <div className="relative">
             <button
-              onClick={() => setShowProfileMenu(!showProfileMenu)}
+              onClick={() => {
+                if (!user) {
+                  showAuthPrompt({
+                    title: "Sign in to CineSocial",
+                    message: "Create an account to track films, get personalized recommendations, and join the community.",
+                  });
+                } else {
+                  setShowProfileMenu(!showProfileMenu);
+                }
+              }}
               className="w-10 h-10 rounded-full bg-surface-container overflow-hidden border border-white/10 hover:opacity-80 transition-all focus:outline-none cursor-pointer flex items-center justify-center bg-white/5"
             >
               {getSafeAvatarUrl(user?.image) ? (
@@ -347,13 +384,11 @@ export default function Recommendations() {
                   src={getSafeAvatarUrl(user?.image)!}
                 />
               ) : (
-                <span className="text-primary font-bold text-xs font-serif">
-                  {(user?.name || user?.email || "U").slice(0, 2).toUpperCase()}
-                </span>
+                <span className="material-symbols-outlined text-primary text-base">person</span>
               )}
             </button>
             
-            {showProfileMenu && (
+            {showProfileMenu && user && (
               <div className="absolute left-0 mt-2 w-56 rounded-xl bg-[#131313]/90 border border-white/10 backdrop-blur-md p-2 shadow-[0_10px_30px_rgba(0,0,0,0.5)] z-50 animate-fade-in text-left">
                 <div className="px-3 py-2 border-b border-white/10 mb-1">
                   <p className="text-body-md font-semibold text-[#e5e2e1] truncate">{user?.name || "Cine Member"}</p>

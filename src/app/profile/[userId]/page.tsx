@@ -6,6 +6,7 @@ import { useParams, useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { supabase } from "@/lib/supabase";
 import { useToast } from "@/components/ToastProvider";
+import { useAuthPrompt } from "@/components/AuthPromptProvider";
 import { getSafeAvatarUrl } from "@/lib/avatar";
 import ProfileBadges from "@/components/ProfileBadges";
 import ReviewCard from "@/components/ReviewCard";
@@ -285,6 +286,7 @@ export default function PublicProfilePage() {
   const { data: session } = useSession();
   const currentUser = session?.user as any;
   const { showToast } = useToast();
+  const { showAuthPrompt } = useAuthPrompt();
 
   const [scrolled, setScrolled] = useState(false);
 
@@ -597,7 +599,14 @@ export default function PublicProfilePage() {
 
   const toggleFollow = async () => {
     const activeUserId = profile?.user_id || targetUserId;
-    if (!currentUser?.id || isOwnProfile || !activeUserId) return;
+    if (!currentUser?.id) {
+      showAuthPrompt({
+        title: "Follow User",
+        message: "Sign in to follow cinephiles and see their reviews and activity in your feed.",
+      });
+      return;
+    }
+    if (isOwnProfile || !activeUserId) return;
     setFollowLoading(true);
     if (following) {
       await fetch(`/api/follows?followerId=${currentUser.id}&followingId=${activeUserId}`, { method: "DELETE" });

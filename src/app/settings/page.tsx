@@ -1,11 +1,11 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useSession, signOut } from "next-auth/react";
 import { supabase } from "@/lib/supabase";
 import { useToast } from "@/components/ToastProvider";
+import { useAuthPrompt } from "@/components/AuthPromptProvider";
 
 interface ProfilePrefs {
   is_private: boolean;
@@ -23,6 +23,7 @@ export default function SettingsPage() {
   const router = useRouter();
   const { data: session, update: updateSession } = useSession();
   const user = session?.user as any;
+  const { showAuthPrompt } = useAuthPrompt();
   const { showToast } = useToast();
 
   const handleBack = () => {
@@ -250,9 +251,17 @@ export default function SettingsPage() {
       <div className="min-h-screen bg-[#050505] text-white flex items-center justify-center">
         <div className="text-center">
           <p className="text-white/50 mb-4">Sign in to access settings.</p>
-          <Link href="/auth/signin" className="bg-primary text-black px-6 py-3 rounded-full font-bold">
+          <button
+            onClick={() =>
+              showAuthPrompt({
+                title: "Account Settings",
+                message: "Sign in to manage your account, privacy, and notification preferences.",
+              })
+            }
+            className="bg-primary text-black px-6 py-3 rounded-full font-bold border-none cursor-pointer hover:brightness-110 active:scale-95 transition-all"
+          >
             Sign In
-          </Link>
+          </button>
         </div>
       </div>
     );

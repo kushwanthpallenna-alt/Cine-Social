@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useCallback, useMemo } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 import { useSession } from "next-auth/react";
 import ReviewCard from "@/components/ReviewCard";
@@ -9,6 +9,7 @@ import { getPosterUrl } from "@/lib/poster";
 import { getMovieUrl, getTvUrl } from "@/lib/slug";
 
 function timeAgo(dateStr: string): string {
+  if (!dateStr) return "";
   const diff = Date.now() - new Date(dateStr).getTime();
   const mins = Math.floor(diff / 60000);
   if (mins < 1) return "just now";
@@ -126,20 +127,6 @@ export default function CommunityFeed() {
     }
   }, []);
 
-  const handleFilterChange = (filter: string) => {
-    setActiveFilter(filter);
-    if (typeof window !== "undefined") {
-      const p = new URLSearchParams(window.location.search);
-      if (filter === "all") {
-        p.delete("filter");
-      } else {
-        p.set("filter", filter);
-      }
-      const newUrl = `${window.location.pathname}${p.toString() ? `?${p.toString()}` : ""}`;
-      window.history.replaceState(null, "", newUrl);
-    }
-  };
-
   // User search state
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<any[]>([]);
@@ -150,137 +137,186 @@ export default function CommunityFeed() {
   const [communityReviews, setCommunityReviews] = useState<any[]>([]);
   const [communityMovies, setCommunityMovies] = useState<Record<string, any>>({});
 
-  const fetchMovieDetails = useCallback(async (ids: string[]) => {
-    if (!ids || ids.length === 0) return;
-    // Use functional update to avoid capturing movieDetails in closure
-    // (which would create a new fetchMovieDetails on every state change, re-triggering fetchFeed)
+  const fetchMovieDetails = useCallback(async (mediaItems: { id: string; contentType: string }[]) => {
+    if (!mediaItems || mediaItems.length === 0) return;
     setMovieDetails((prev) => {
-      const missing = ids.filter((id) => id && !prev[id]);
-      if (missing.length === 0) return prev; // no-op
+      const missing = mediaItems.filter((m) => m.id && !prev[`${m.contentType}_${m.id}`] && !prev[m.id]);
+      if (missing.length === 0) return prev;
 
-      // Fire-and-forget: fetch missing details and merge into state
+      // Fire-and-forget: fetch missing details from TMDB and merge into state
       Promise.all(
-        missing.map(async (id) => {
+        missing.map(async ({ id, contentType }) => {
           try {
-            const r = await fetch(`/api/tmdb?endpoint=movie/${id}`);
-            if (r.ok) return [id, await r.json()] as [string, any];
+            const endpoint = contentType === "tv" ? `tv/${id}` : `movie/${id}`;
+            const r = await fetch(`/api/tmdb?endpoint=${endpoint}`);
+            if (r.ok) {
+              const data = await r.json();
+              return [`${contentType}_${id}`, id, data] as [string, string, any];
+            }
           } catch {}
           return null;
         })
       ).then((results) => {
         const newDetails: Record<string, any> = {};
         results.forEach((entry) => {
-          if (entry) newDetails[entry[0]] = entry[1];
+          if (entry) {
+            newDetails[entry[0]] = entry[2];
+            newDetails[entry[1]] = entry[2];
+          }
         });
         if (Object.keys(newDetails).length > 0) {
           setMovieDetails((p) => ({ ...p, ...newDetails }));
         }
       });
 
-      return prev; // return unchanged for now; the async fetch will update
+      return prev;
     });
-  }, []); // Empty deps — no stale closure risk because we use functional setState
+  }, []);
 
-  // Stable fetchFeed that doesn't depend on fetchMovieDetails (since fetchMovieDetails is now stable)
-  const fetchFeed = useCallback(async (pageNum: number) => {
-    if (pageNum === 0) setLoading(true); else setLoadingMore(true);
-    try {
-      if (!user?.id) {
-        // Load public community reviews for signed-out users
-        setNoFollows(true);
-        const { supabase } = await import("@/lib/supabase");
-        const { data: revs } = await supabase
-          .from("reviews")
-          .select("*")
-          .order("created_at", { ascending: false })
-          .limit(20);
-        if (revs) {
-          setCommunityReviews(revs);
-          const ids = Array.from(new Set(revs.map((r: any) => r.movie_id)));
-          const det: Record<string, any> = {};
-          await Promise.all(ids.map(async (id: any) => {
-            try {
-              const r = await fetch(`/api/tmdb?endpoint=movie/${id}`);
-              if (r.ok) det[id] = await r.json();
-            } catch {}
-          }));
-          setCommunityMovies(det);
-        }
-        return;
-      }
+  const fetchFeed = useCallback(
+    async (pageNum: number, filterOverride?: string) => {
+      const filterToUse = filterOverride ?? activeFilter;
+      if (pageNum === 0) setLoading(true);
+      else setLoadingMore(true);
 
-      const res = await fetch(`/api/social-feed?userId=${user.id}&page=${pageNum}`);
-      const data = await res.json();
-      if (data.items?.length === 0 && pageNum === 0) {
-        setNoFollows(true);
-        // Load fallback community reviews
-        const { supabase } = await import("@/lib/supabase");
-        const { data: revs } = await supabase
-          .from("reviews")
-          .select("*")
-          .order("created_at", { ascending: false })
-          .limit(20);
-        if (revs) {
-          setCommunityReviews(revs);
-          const ids = Array.from(new Set(revs.map((r: any) => r.movie_id)));
-          const det: Record<string, any> = {};
-          await Promise.all(ids.map(async (id: any) => {
-            try {
-              const r = await fetch(`/api/tmdb?endpoint=movie/${id}`);
-              if (r.ok) det[id] = await r.json();
-            } catch {}
-          }));
-          setCommunityMovies(det);
+      try {
+        if (!user?.id) {
+          // Load public community reviews for signed-out users
+          setNoFollows(true);
+          const { supabase } = await import("@/lib/supabase");
+          const { data: revs } = await supabase
+            .from("reviews")
+            .select("*")
+            .order("created_at", { ascending: false })
+            .limit(20);
+          if (revs) {
+            setCommunityReviews(revs);
+            const mediaItems = revs.map((r: any) => ({
+              id: String(r.movie_id),
+              contentType: r.content_type || "movie",
+            }));
+            const det: Record<string, any> = {};
+            await Promise.all(
+              mediaItems.map(async ({ id, contentType }: any) => {
+                try {
+                  const endpoint = contentType === "tv" ? `tv/${id}` : `movie/${id}`;
+                  const r = await fetch(`/api/tmdb?endpoint=${endpoint}`);
+                  if (r.ok) {
+                    const data = await r.json();
+                    det[`${contentType}_${id}`] = data;
+                    det[id] = data;
+                  }
+                } catch {}
+              })
+            );
+            setCommunityMovies(det);
+          }
+          return;
         }
-      } else {
-        setNoFollows(false);
-        if (pageNum === 0) {
-          setItems(data.items || []);
+
+        const res = await fetch(
+          `/api/social-feed?userId=${encodeURIComponent(user.id)}&page=${pageNum}&filter=${encodeURIComponent(filterToUse)}`
+        );
+        const data = await res.json();
+
+        if (pageNum === 0 && (!data.items || data.items.length === 0) && filterToUse === "all") {
+          setNoFollows(true);
+          // Load fallback community reviews
+          const { supabase } = await import("@/lib/supabase");
+          const { data: revs } = await supabase
+            .from("reviews")
+            .select("*")
+            .order("created_at", { ascending: false })
+            .limit(20);
+          if (revs) {
+            setCommunityReviews(revs);
+            const mediaItems = revs.map((r: any) => ({
+              id: String(r.movie_id),
+              contentType: r.content_type || "movie",
+            }));
+            const det: Record<string, any> = {};
+            await Promise.all(
+              mediaItems.map(async ({ id, contentType }: any) => {
+                try {
+                  const endpoint = contentType === "tv" ? `tv/${id}` : `movie/${id}`;
+                  const r = await fetch(`/api/tmdb?endpoint=${endpoint}`);
+                  if (r.ok) {
+                    const d = await r.json();
+                    det[`${contentType}_${id}`] = d;
+                    det[id] = d;
+                  }
+                } catch {}
+              })
+            );
+            setCommunityMovies(det);
+          }
         } else {
-          setItems((prev) => [...prev, ...(data.items || [])]);
-        }
-        setHasMore(data.hasMore);
-        // Kick off movie detail fetches (stable callback — no re-render loop)
-        const newIds = (data.items || []).map((i: any) => i.movie_id);
-        fetchMovieDetails(newIds);
+          setNoFollows(false);
+          if (pageNum === 0) {
+            setItems(data.items || []);
+          } else {
+            setItems((prev) => [...prev, ...(data.items || [])]);
+          }
+          setHasMore(Boolean(data.hasMore));
 
-        // Batch-fetch poster preferences for items
-        if (data.items && data.items.length > 0) {
-          const mediaItems = data.items.map((i: any) => ({
-            movie_id: String(i.movie_id),
-            content_type: i.content_type || "movie",
-          }));
-          fetch("/api/poster-preference/batch", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ user_id: user.id, items: mediaItems }),
-          })
-            .then((r) => r.json())
-            .then((prefs) => {
-              if (Array.isArray(prefs)) {
-                const map: Record<string, string> = {};
-                prefs.forEach((p) => {
-                  const t = p.content_type || "movie";
-                  map[`${t}_${p.movie_id}`] = p.poster_path;
-                  map[p.movie_id] = p.poster_path;
-                });
-                setPosterPrefs((prev) => ({ ...prev, ...map }));
-              }
+          // Fetch TMDB media details
+          if (data.items && data.items.length > 0) {
+            const mediaItems = data.items.map((i: any) => ({
+              id: String(i.movie_id),
+              contentType: i.content_type || "movie",
+            }));
+            fetchMovieDetails(mediaItems);
+
+            // Batch-fetch poster preferences
+            fetch("/api/poster-preference/batch", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ user_id: user.id, items: mediaItems }),
             })
-            .catch(() => {});
+              .then((r) => r.json())
+              .then((prefs) => {
+                if (Array.isArray(prefs)) {
+                  const map: Record<string, string> = {};
+                  prefs.forEach((p) => {
+                    const t = p.content_type || "movie";
+                    map[`${t}_${p.movie_id}`] = p.poster_path;
+                    map[p.movie_id] = p.poster_path;
+                  });
+                  setPosterPrefs((prev) => ({ ...prev, ...map }));
+                }
+              })
+              .catch(() => {});
+          }
         }
+      } catch (err) {
+        console.error("Feed error:", err);
+      } finally {
+        setLoading(false);
+        setLoadingMore(false);
       }
-    } catch (err) {
-      console.error("Feed error:", err);
-    } finally {
-      setLoading(false);
-      setLoadingMore(false);
-    }
-  }, [user?.id, fetchMovieDetails]);
+    },
+    [user?.id, activeFilter, fetchMovieDetails]
+  );
 
   useEffect(() => {
-    fetchFeed(0);
-  }, [fetchFeed]);
+    fetchFeed(0, activeFilter);
+  }, [user?.id]); // Initial load
+
+  const handleFilterChange = (filter: string) => {
+    setActiveFilter(filter);
+    setPage(0);
+    if (typeof window !== "undefined") {
+      const p = new URLSearchParams(window.location.search);
+      if (filter === "all") {
+        p.delete("filter");
+      } else {
+        p.set("filter", filter);
+      }
+      const newUrl = `${window.location.pathname}${p.toString() ? `?${p.toString()}` : ""}`;
+      window.history.replaceState(null, "", newUrl);
+    }
+    fetchFeed(0, filter);
+  };
 
   // Debounced user search
   useEffect(() => {
@@ -305,17 +341,12 @@ export default function CommunityFeed() {
   const loadMore = () => {
     const next = page + 1;
     setPage(next);
-    fetchFeed(next);
+    fetchFeed(next, activeFilter);
   };
 
-  const filteredItems = useMemo(() => {
-    if (activeFilter === "all") return items;
-    return items.filter((item) => item.type === activeFilter);
-  }, [items, activeFilter]);
-
   const getActionText = (item: any) => {
-    const movie = movieDetails[item.movie_id];
-    const title = movie?.title || item.movie_title || "a movie";
+    const movie = movieDetails[`${item.content_type || "movie"}_${item.movie_id}`] || movieDetails[item.movie_id];
+    const title = movie?.title || movie?.name || item.movie_title || "a title";
     if (item.type === "rating") return <><span className="text-on-surface-variant">rated </span><span className="text-primary font-medium">{title}</span> <StarRating rating={item.rating} /></>;
     if (item.type === "watchlist") return <><span className="text-on-surface-variant">added </span><span className="text-primary font-medium">{title}</span><span className="text-on-surface-variant"> to watchlist</span></>;
     if (item.type === "watched") return <><span className="text-on-surface-variant">watched </span><span className="text-primary font-medium">{title}</span></>;
@@ -328,6 +359,29 @@ export default function CommunityFeed() {
     if (type === "watched") return "visibility";
     if (type === "review") return "rate_review";
     return "movie";
+  };
+
+  const filterEmptyLabels: Record<string, { title: string; subtitle: string; icon: string }> = {
+    review: {
+      title: "No Reviews Yet",
+      subtitle: "When friends you follow write a review, you'll see their thoughts and ratings here.",
+      icon: "rate_review",
+    },
+    watchlist: {
+      title: "No Watchlist Activity Yet",
+      subtitle: "When friends add movies or TV shows to their watchlist, they'll appear here.",
+      icon: "bookmark_add",
+    },
+    watched: {
+      title: "No Watched Activity Yet",
+      subtitle: "When friends log titles as watched, you'll see them right here.",
+      icon: "visibility",
+    },
+    rating: {
+      title: "No Ratings Yet",
+      subtitle: "When friends rate films or TV shows, their scores will be displayed here.",
+      icon: "star",
+    },
   };
 
   return (
@@ -431,10 +485,8 @@ export default function CommunityFeed() {
           </div>
         </div>
 
-
-
         {/* Filter Bar */}
-        {!loading && !noFollows && items.length > 0 && (
+        {!noFollows && (
           <div className="max-w-2xl mx-auto mb-6 flex items-center gap-2 overflow-x-auto pb-2 scrollbar-none">
             {[
               { id: "all", label: "All Activity", icon: "dynamic_feed" },
@@ -478,11 +530,32 @@ export default function CommunityFeed() {
           </div>
         )}
 
+        {/* Filter Empty State (when user has follows, but this specific filter has no items) */}
+        {!loading && !noFollows && items.length === 0 && activeFilter !== "all" && (
+          <div className="max-w-2xl mx-auto text-center py-12 glass-card rounded-2xl border border-white/10 p-8">
+            <span className="material-symbols-outlined text-[48px] text-primary/60 mb-3">
+              {filterEmptyLabels[activeFilter]?.icon || "feed"}
+            </span>
+            <h3 className="font-serif text-lg font-bold text-on-surface mb-1">
+              {filterEmptyLabels[activeFilter]?.title || "No Activity Found"}
+            </h3>
+            <p className="text-on-surface-variant text-sm max-w-sm mx-auto mb-4">
+              {filterEmptyLabels[activeFilter]?.subtitle || "No items in this category yet."}
+            </p>
+            <button
+              onClick={() => handleFilterChange("all")}
+              className="px-5 py-2 rounded-full bg-white/5 border border-white/10 text-xs font-semibold text-on-surface hover:border-primary/40 hover:text-primary transition-all cursor-pointer"
+            >
+              View All Activity
+            </button>
+          </div>
+        )}
+
         {/* Activity Feed */}
-        {!loading && !noFollows && filteredItems.length > 0 && (
+        {!loading && !noFollows && items.length > 0 && (
           <div className="max-w-2xl mx-auto space-y-4">
-            {filteredItems.map((item) => {
-              const movie = movieDetails[item.movie_id];
+            {items.map((item) => {
+              const movie = movieDetails[`${item.content_type || "movie"}_${item.movie_id}`] || movieDetails[item.movie_id];
               const posterUrl = getPosterUrl({
                 movieId: item.movie_id,
                 contentType: item.content_type || "movie",
@@ -498,7 +571,7 @@ export default function CommunityFeed() {
                   <div className="flex gap-4">
                     {/* Movie poster */}
                     <Link href={linkHref} className="w-16 flex-shrink-0">
-                      <div className="aspect-[2/3] rounded-lg overflow-hidden border border-white/5">
+                      <div className="aspect-[2/3] rounded-lg overflow-hidden border border-white/5 bg-white/5">
                         <img
                           className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
                           alt={title}

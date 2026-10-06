@@ -7,6 +7,7 @@ import dynamic from "next/dynamic";
 import { useSession, signOut } from "next-auth/react";
 import { supabase } from "@/lib/supabase";
 import { useToast } from "@/components/ToastProvider";
+import { useAuthPrompt } from "@/components/AuthPromptProvider";
 import { getSafeAvatarUrl } from "@/lib/avatar";
 import { getMovieUrl, getTvUrl } from "@/lib/slug";
 
@@ -119,6 +120,114 @@ export default function Home() {
   const [watchlistLoadingId, setWatchlistLoadingId] = useState<string | null>(null);
 
   const { showToast } = useToast();
+  const { showAuthPrompt } = useAuthPrompt();
+
+  // Cinema DNA states
+  const [dnaMovies, setDnaMovies] = useState<any[]>([]);
+  const [dnaLoading, setDnaLoading] = useState(false);
+  const [dnaLabel, setDnaLabel] = useState<string>("");
+  const [hasDna, setHasDna] = useState<boolean>(false);
+
+  // Fetch DNA Recommendations
+  useEffect(() => {
+    async function fetchDnaRecommendations() {
+      if (!user?.id) {
+        setHasDna(false);
+        setDnaMovies([]);
+        return;
+      }
+      setDnaLoading(true);
+      try {
+        const { data: pref } = await supabase
+          .from("user_mood_preferences")
+          .select("*")
+          .eq("user_id", user.id)
+          .single();
+
+        let genresToQuery: string[] = [];
+        let label = "";
+
+        if (pref?.genre_weights && Object.keys(pref.genre_weights).length > 0) {
+          const sorted = Object.entries(pref.genre_weights as Record<string, number>)
+            .sort((a, b) => b[1] - a[1])
+            .filter(([, weight]) => weight > 0);
+
+          if (sorted.length > 0) {
+            const topGenres = sorted.slice(0, 2);
+            label = topGenres.map(([name]) => name).join(" & ");
+            const GENRE_NAME_TO_ID: Record<string, string> = {
+              "Sci-Fi": "878",
+              "Drama": "18",
+              "Action": "28",
+              "Thriller": "53",
+              "Comedy": "35",
+              "Horror": "27",
+              "Romance": "10749",
+              "Animation": "16",
+              "Documentary": "99",
+              "Crime": "80",
+              "Adventure": "12",
+              "Mystery": "9648",
+              "Fantasy": "14",
+              "Family": "10751",
+              "History": "36",
+              "Music": "10402",
+              "War": "10752",
+              "Western": "37",
+            };
+            genresToQuery = topGenres
+              .map(([name]) => GENRE_NAME_TO_ID[name])
+              .filter(Boolean);
+          }
+        }
+
+        const moods = pref?.moods || pref?.active_moods;
+        if (genresToQuery.length === 0 && moods && Array.isArray(moods) && moods.length > 0) {
+          label = moods.slice(0, 2).join(" & ");
+          const moodGenreMap: Record<string, string> = {
+            "Melancholic": "18",
+            "Adrenaline Rush": "28,53",
+            "Mind-Bending": "878,9648",
+            "Cyberpunk Noir": "878,80",
+            "Existential": "18,878",
+            "Feel-Good": "35,10751",
+            "Romantic": "10749,18",
+            "Darkly Comic": "35,80",
+            "Suspenseful": "53,9648",
+            "Epic & Grand": "12,28",
+          };
+          const topMood = moods[0];
+          if (moodGenreMap[topMood]) {
+            genresToQuery = [moodGenreMap[topMood]];
+          }
+        }
+
+        if (genresToQuery.length > 0) {
+          setHasDna(true);
+          setDnaLabel(label);
+          const genreParam = genresToQuery.join(",");
+          const res = await fetch(
+            `/api/tmdb?endpoint=discover/movie&with_genres=${genreParam}&sort_by=vote_average.desc&vote_count.gte=300`
+          );
+          if (res.ok) {
+            const json = await res.json();
+            if (json.results && json.results.length > 0) {
+              setDnaMovies(json.results);
+            }
+          }
+        } else {
+          setHasDna(false);
+        }
+      } catch (e) {
+        console.error("Failed to load DNA recommendations", e);
+        setHasDna(false);
+      } finally {
+        setDnaLoading(false);
+      }
+    }
+
+    fetchDnaRecommendations();
+  }, [user]);
 
   const loadMoreTrending = async () => {
     if (loadingMore) return;
@@ -209,9 +318,10 @@ export default function Home() {
   // Watchlist Toggle with optimistic updates
   const handleWatchlistToggle = async (movie: any) => {
     if (!user) {
-      if (typeof window !== "undefined") {
-        window.location.href = `/auth/signin?callbackUrl=${encodeURIComponent(window.location.pathname + window.location.search)}`;
-      }
+      showAuthPrompt({
+        title: "Save to Watchlist",
+        message: "Sign in to save films and TV shows to your watchlist and track what you want to watch.",
+      });
       return;
     }
     const movieIdStr = String(movie.id);
@@ -750,9 +860,10 @@ export default function Home() {
                     <button
                       onClick={() => {
                         if (!user?.id) {
-                          if (typeof window !== "undefined") {
-                            window.location.href = `/auth/signin?callbackUrl=${encodeURIComponent(window.location.pathname + window.location.search)}`;
-                          }
+                          showAuthPrompt({
+                            title: "Quick Log",
+                            message: "Sign in to quickly log, rate, and review movies you've watched.",
+                          });
                           return;
                         }
                         setShowQuickLogModal(true);
@@ -899,6 +1010,143 @@ export default function Home() {
               </>
             )}
           </div>
+        </section>
+
+        {/* Based on your Cinema DNA */}
+        <section className="mt-stack-xl px-container-margin max-w-screen-xl mx-auto">
+          <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-2 mb-stack-md">
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="material-symbols-outlined text-primary text-xl" style={{ fontVariationSettings: "'FILL' 1" }}>
+                  dna
+                </span>
+                <h3 className="font-headline-lg text-headline-lg font-serif">Based on your Cinema DNA</h3>
+              </div>
+              <p className="text-on-surface-variant text-xs sm:text-sm mt-0.5">
+                {hasDna && dnaLabel
+                  ? `Curated recommendations matching your ${dnaLabel} profile`
+                  : "Personalized film recommendations tuned to your tastes and moods"}
+              </p>
+            </div>
+            <Link
+              href="/recommendations"
+              className="inline-flex items-center gap-1.5 text-xs font-semibold text-primary hover:text-primary/80 transition-colors self-start sm:self-auto"
+            >
+              <span>{hasDna ? "Tune Cinema DNA" : "Set Up Cinema DNA"}</span>
+              <span className="material-symbols-outlined text-sm">arrow_forward</span>
+            </Link>
+          </div>
+
+          {dnaLoading ? (
+            <div className="flex gap-gutter overflow-hidden pb-4">
+              {Array.from({ length: 6 }).map((_, i) => (
+                <PosterSkeleton key={i} />
+              ))}
+            </div>
+          ) : hasDna && dnaMovies.length > 0 ? (
+            <Carousel
+              onScroll={handleHorizontalScroll}
+              containerClassName="gap-gutter pb-4 -mx-container-margin px-container-margin md:mx-0 md:px-0 snap-x snap-mandatory scroll-px-container-margin md:scroll-px-0"
+            >
+              {dnaMovies.map((movie: any) => {
+                const isSaved = watchlistIds.has(String(movie.id));
+                const isLoading = watchlistLoadingId === String(movie.id);
+
+                return (
+                  <div key={movie.id} className="w-[160px] md:w-[200px] flex-shrink-0 group/card relative snap-start">
+                    <Link href={getMovieUrl(movie.id, movie.title || movie.name)} className="cursor-pointer block">
+                      <div className="relative aspect-[2/3] rounded-xl overflow-hidden glass-panel mb-stack-sm bg-white/5">
+                        <Image
+                          alt={movie.title || "Movie Poster"}
+                          className="object-cover transition-transform duration-700 group-hover/card:scale-105"
+                          src={
+                            movie.poster_path
+                              ? `https://image.tmdb.org/t/p/w500${movie.poster_path}`
+                              : "https://images.unsplash.com/photo-1594909122845-11baa439b7bf?w=500"
+                          }
+                          fill
+                          loading="lazy"
+                          sizes="(max-width: 768px) 160px, 200px"
+                          draggable={false}
+                        />
+                        <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-0 group-hover/card:opacity-100 transition-opacity flex flex-col justify-end p-stack-sm">
+                          <span className="text-secondary text-sm flex items-center gap-1 font-bold">
+                            <span className="material-symbols-outlined text-xs" style={{ fontVariationSettings: "'FILL' 1" }}>
+                              star
+                            </span>
+                            {movie.vote_average ? movie.vote_average.toFixed(1) : "N/A"}
+                          </span>
+                        </div>
+                      </div>
+                    </Link>
+
+                    {/* Card Actions */}
+                    <div className="flex items-center justify-between gap-1 mb-1">
+                      <p className="text-label-sm text-secondary font-mono tracking-wider truncate text-[10px]">
+                        {getGenresString(movie.genre_ids, movie.release_date || movie.first_air_date)}
+                      </p>
+                      <button
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          handleWatchlistToggle(movie);
+                        }}
+                        disabled={isLoading}
+                        className={`p-1 rounded-full transition-colors cursor-pointer border-none bg-transparent ${
+                          isSaved
+                            ? "text-primary bg-primary/10 hover:bg-primary/20"
+                            : "text-on-surface-variant hover:text-primary hover:bg-white/5"
+                        }`}
+                        title={isSaved ? "Remove from Watchlist" : "Add to Watchlist"}
+                      >
+                        <span
+                          className="material-symbols-outlined text-[18px]"
+                          style={{ fontVariationSettings: isSaved ? "'FILL' 1" : "'FILL' 0" }}
+                        >
+                          {isLoading ? "hourglass_empty" : isSaved ? "bookmark_added" : "bookmark_add"}
+                        </span>
+                      </button>
+                    </div>
+
+                    <Link href={getMovieUrl(movie.id, movie.title || movie.name)}>
+                      <h4 className="font-title-lg text-title-lg font-bold truncate group-hover/card:text-primary transition-colors text-sm">
+                        {movie.title || movie.name}
+                      </h4>
+                    </Link>
+                  </div>
+                );
+              })}
+            </Carousel>
+          ) : (
+            <div className="relative overflow-hidden rounded-2xl border border-white/10 bg-gradient-to-r from-primary/10 via-surface-container-low to-surface-container-high/40 p-6 md:p-8 flex flex-col md:flex-row items-center justify-between gap-6 shadow-xl">
+              <div className="flex items-center gap-4">
+                <div className="w-12 h-12 rounded-2xl bg-primary/20 border border-primary/30 flex items-center justify-center flex-shrink-0 text-primary shadow-[0_0_20px_rgba(229,9,20,0.2)]">
+                  <span className="material-symbols-outlined text-2xl" style={{ fontVariationSettings: "'FILL' 1" }}>
+                    tune
+                  </span>
+                </div>
+                <div>
+                  <h4 className="font-serif text-lg md:text-xl font-bold text-white mb-1">
+                    {user ? "Personalize Your Cinema DNA" : "Unlock Your Cinema DNA Profile"}
+                  </h4>
+                  <p className="text-xs md:text-sm text-white/60 max-w-xl">
+                    {user
+                      ? "Fine-tune genre weights and mood pills in the recommendations lab to get high-accuracy film suggestions curated to your exact mood."
+                      : "Sign in to define your genre weights, select mood pills, and get real-time recommendations calibrated to your unique taste profile."}
+                  </p>
+                </div>
+              </div>
+              <div className="flex-shrink-0 w-full md:w-auto">
+                <Link
+                  href="/recommendations"
+                  className="w-full md:w-auto inline-flex items-center justify-center gap-2 px-6 py-3 rounded-full bg-primary text-black font-bold text-sm hover:brightness-110 active:scale-95 transition-all shadow-lg shadow-primary/20"
+                >
+                  <span className="material-symbols-outlined text-lg">auto_awesome</span>
+                  {user ? "Configure Cinema DNA" : "Explore Recommendations"}
+                </Link>
+              </div>
+            </div>
+          )}
         </section>
 
         {/* Trending Now */}

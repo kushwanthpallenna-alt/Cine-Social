@@ -85,8 +85,9 @@ export default function Recommendations() {
           setWatchlistIds(new Set(wlRes.data.map((item: any) => String(item.movie_id))));
         }
         if (moodRes.data) {
-          if (moodRes.data.active_moods && moodRes.data.active_moods.length > 0) {
-            setActiveMoods(moodRes.data.active_moods);
+          const loadedMoods = moodRes.data.moods || moodRes.data.active_moods;
+          if (loadedMoods && Array.isArray(loadedMoods) && loadedMoods.length > 0) {
+            setActiveMoods(loadedMoods);
           }
           if (moodRes.data.custom_mood) {
             setCustomMood(moodRes.data.custom_mood);

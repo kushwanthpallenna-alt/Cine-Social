@@ -35,6 +35,30 @@ const TV_GENRES = [
   { id: 99, label: "Documentary", icon: "video_camera_front" },
 ];
 
+export interface GenreComboPreset {
+  label: string;
+  genreIds: number[];
+  icon: string;
+}
+
+const MOVIE_COMBO_PRESETS: GenreComboPreset[] = [
+  { label: "Rom-Com", genreIds: [10749, 35], icon: "favorite" },
+  { label: "Action-Comedy", genreIds: [28, 35], icon: "theater_comedy" },
+  { label: "Romantic Drama", genreIds: [10749, 18], icon: "favorite" },
+  { label: "Psychological Thriller", genreIds: [9648, 53], icon: "psychology" },
+  { label: "Sci-Fi Thriller", genreIds: [878, 53], icon: "rocket" },
+  { label: "Dark Comedy", genreIds: [35, 80], icon: "gavel" },
+  { label: "Horror Comedy", genreIds: [27, 35], icon: "skull" },
+  { label: "Action-Adventure", genreIds: [28, 12], icon: "explore" },
+];
+
+const TV_COMBO_PRESETS: GenreComboPreset[] = [
+  { label: "Dramedy", genreIds: [18, 35], icon: "theater_comedy" },
+  { label: "Crime Drama", genreIds: [80, 18], icon: "gavel" },
+  { label: "Sci-Fi Mystery", genreIds: [10765, 9648], icon: "rocket" },
+  { label: "Action Sci-Fi", genreIds: [10759, 10765], icon: "bolt" },
+];
+
 const ERAS = [
   { label: "Any Era", gte: null, lte: null },
   { label: "2020s", gte: "2020-01-01", lte: null },
@@ -202,8 +226,8 @@ export default function SpinWheelModal({ onClose }: SpinWheelModalProps) {
   const [scope, setScope] = useState<Scope>("movie");
   const [step, setStep] = useState<Step>("filters");
 
-  // Filters State
-  const [selectedGenreId, setSelectedGenreId] = useState<number | null>(null);
+  // Filters State (Multi-Genre Support)
+  const [selectedGenreIds, setSelectedGenreIds] = useState<number[]>([]);
   const [selectedEra, setSelectedEra] = useState<string>("Any Era");
   const [selectedPerson, setSelectedPerson] = useState<SelectedPerson | null>(
     null
@@ -233,6 +257,7 @@ export default function SpinWheelModal({ onClose }: SpinWheelModalProps) {
   const durationRef = useRef<number>(3800);
 
   const genres = scope === "movie" ? MOVIE_GENRES : TV_GENRES;
+  const comboPresets = scope === "movie" ? MOVIE_COMBO_PRESETS : TV_COMBO_PRESETS;
 
   // Lock scroll
   useEffect(() => {
@@ -284,11 +309,28 @@ export default function SpinWheelModal({ onClose }: SpinWheelModalProps) {
     return () => clearTimeout(timer);
   }, [personQuery, selectedPerson]);
 
-  // Reset genre when scope changes if not valid
+  // Reset genre when scope changes
   const handleScopeChange = (newScope: Scope) => {
     setScope(newScope);
-    setSelectedGenreId(null);
+    setSelectedGenreIds([]);
     setCandidateError(null);
+  };
+
+  const toggleGenreId = (id: number) => {
+    setSelectedGenreIds((prev) =>
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
+    );
+  };
+
+  const applyComboPreset = (genreIds: number[]) => {
+    const isExact =
+      genreIds.length === selectedGenreIds.length &&
+      genreIds.every((id) => selectedGenreIds.includes(id));
+    if (isExact) {
+      setSelectedGenreIds([]);
+    } else {
+      setSelectedGenreIds([...genreIds]);
+    }
   };
 
   // Fetch candidate titles from TMDB matching filters
@@ -300,9 +342,9 @@ export default function SpinWheelModal({ onClose }: SpinWheelModalProps) {
       const endpoint = scope === "movie" ? "discover/movie" : "discover/tv";
       const params = new URLSearchParams();
 
-      // Genre
-      if (selectedGenreId) {
-        params.append("with_genres", String(selectedGenreId));
+      // Multi-genre: comma separator means AND / intersection in TMDB Discover
+      if (selectedGenreIds.length > 0) {
+        params.append("with_genres", selectedGenreIds.join(","));
       }
 
       // Era
@@ -324,27 +366,46 @@ export default function SpinWheelModal({ onClose }: SpinWheelModalProps) {
 
       // Sort and Quality
       params.append("sort_by", "popularity.desc");
-      params.append("vote_count.gte", selectedPerson ? "5" : "30");
+      params.append("vote_count.gte", selectedPerson ? "5" : "20");
 
       // Randomize page between 1 and 3 for variety
       const randomPage = Math.floor(Math.random() * 2) + 1;
       params.append("page", String(randomPage));
 
-      const res = await fetch(`/api/tmdb?endpoint=${endpoint}&${params.toString()}`);
+      let res = await fetch(`/api/tmdb?endpoint=${endpoint}&${params.toString()}`);
       if (!res.ok) throw new Error("Failed to fetch from TMDB");
 
-      const data = await res.json();
-      const results = data.results || [];
+      let data = await res.json();
+      let results = data.results || [];
 
       // Filter out items without valid title or poster
-      const validItems = results.filter(
+      let validItems = results.filter(
         (item: any) =>
           (item.title || item.name) && (item.poster_path || item.backdrop_path)
       );
 
+      // Graceful fallback for strict AND combinations if fewer than 3 titles were found
+      if (validItems.length < 3 && selectedGenreIds.length > 1) {
+        const fallbackParams = new URLSearchParams(params);
+        fallbackParams.set("with_genres", selectedGenreIds.join("|"));
+        const fallbackRes = await fetch(
+          `/api/tmdb?endpoint=${endpoint}&${fallbackParams.toString()}`
+        );
+        if (fallbackRes.ok) {
+          const fallbackData = await fallbackRes.json();
+          const fallbackValid = (fallbackData.results || []).filter(
+            (item: any) =>
+              (item.title || item.name) && (item.poster_path || item.backdrop_path)
+          );
+          if (fallbackValid.length >= 3) {
+            validItems = fallbackValid;
+          }
+        }
+      }
+
       if (validItems.length < 3) {
         setCandidateError(
-          "Not enough titles found matching this combination. Try clearing the era or choosing a broader filter!"
+          "Not enough titles found matching this combination. Try choosing a broader filter or fewer combined genres!"
         );
         return;
       }
@@ -443,7 +504,10 @@ export default function SpinWheelModal({ onClose }: SpinWheelModalProps) {
     setWinner(null);
   };
 
-  const selectedGenreObj = genres.find((g) => g.id === selectedGenreId);
+  const selectedGenreNames = selectedGenreIds
+    .map((id) => genres.find((g) => g.id === id)?.label)
+    .filter(Boolean) as string[];
+
   const releaseYear = winner
     ? new Date(winner.release_date || winner.first_air_date || "").getFullYear()
     : null;
@@ -513,45 +577,85 @@ export default function SpinWheelModal({ onClose }: SpinWheelModalProps) {
               </div>
 
               {/* Genre Filter */}
-              <div className="flex flex-col gap-2">
+              <div className="flex flex-col gap-2.5">
                 <div className="flex items-center justify-between">
-                  <label className="text-xs font-bold uppercase tracking-wider text-white/60">
-                    2. Genre{" "}
-                    <span className="text-white/40 lowercase font-normal">
-                      (optional)
-                    </span>
+                  <label className="text-xs font-bold uppercase tracking-wider text-white/60 flex items-center gap-1.5">
+                    <span>2. Genre / Combos</span>
+                    {selectedGenreIds.length > 0 && (
+                      <span className="px-1.5 py-0.2 bg-primary/20 text-primary border border-primary/30 rounded text-[10px] font-bold">
+                        {selectedGenreIds.length} active
+                      </span>
+                    )}
                   </label>
-                  {selectedGenreId && (
+                  {selectedGenreIds.length > 0 && (
                     <button
-                      onClick={() => setSelectedGenreId(null)}
+                      onClick={() => setSelectedGenreIds([])}
                       className="text-[11px] text-primary hover:underline cursor-pointer bg-transparent border-none p-0"
                     >
-                      Clear Genre
+                      Clear ({selectedGenreIds.length})
                     </button>
                   )}
                 </div>
-                <div className="flex flex-wrap gap-2 max-h-36 overflow-y-auto pr-1 no-scrollbar">
-                  {genres.map((g) => {
-                    const isSelected = selectedGenreId === g.id;
-                    return (
-                      <button
-                        key={g.id}
-                        onClick={() =>
-                          setSelectedGenreId(isSelected ? null : g.id)
-                        }
-                        className={`px-3 py-1.5 rounded-full text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer border ${
-                          isSelected
-                            ? "bg-primary/20 border-primary text-primary shadow-[0_0_12px_rgba(229,9,20,0.3)] font-bold scale-105"
-                            : "bg-white/5 border-white/10 text-white/70 hover:border-white/30 hover:text-white"
-                        }`}
-                      >
-                        <span className="material-symbols-outlined text-[14px]">
-                          {g.icon}
-                        </span>
-                        {g.label}
-                      </button>
-                    );
-                  })}
+
+                {/* Popular Combo Presets */}
+                <div className="flex flex-col gap-1.5">
+                  <span className="text-[10px] uppercase font-bold tracking-wider text-white/40">
+                    Combo Presets:
+                  </span>
+                  <div className="flex flex-wrap gap-1.5">
+                    {comboPresets.map((combo) => {
+                      const isExact =
+                        combo.genreIds.length === selectedGenreIds.length &&
+                        combo.genreIds.every((id) => selectedGenreIds.includes(id));
+                      return (
+                        <button
+                          key={combo.label}
+                          onClick={() => applyComboPreset(combo.genreIds)}
+                          className={`px-2.5 py-1 rounded-lg text-xs font-semibold flex items-center gap-1 transition-all cursor-pointer border ${
+                            isExact
+                              ? "bg-secondary text-black border-secondary font-bold shadow-sm scale-105"
+                              : "bg-white/5 border-white/10 text-white/80 hover:border-white/30 hover:bg-white/10"
+                          }`}
+                        >
+                          <span className="material-symbols-outlined text-[13px]">
+                            {combo.icon}
+                          </span>
+                          {combo.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Base Genres Multi-Select */}
+                <div className="flex flex-col gap-1.5 mt-1">
+                  <span className="text-[10px] uppercase font-bold tracking-wider text-white/40">
+                    All Genres (combine multiple):
+                  </span>
+                  <div className="flex flex-wrap gap-1.5 max-h-36 overflow-y-auto pr-1 no-scrollbar">
+                    {genres.map((g) => {
+                      const isSelected = selectedGenreIds.includes(g.id);
+                      return (
+                        <button
+                          key={g.id}
+                          onClick={() => toggleGenreId(g.id)}
+                          className={`px-2.5 py-1 rounded-full text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer border ${
+                            isSelected
+                              ? "bg-primary/25 border-primary text-primary shadow-[0_0_10px_rgba(229,9,20,0.3)] font-bold scale-105"
+                              : "bg-white/5 border-white/10 text-white/70 hover:border-white/30 hover:text-white"
+                          }`}
+                        >
+                          <span className="material-symbols-outlined text-[13px]">
+                            {g.icon}
+                          </span>
+                          {g.label}
+                          {isSelected && (
+                            <span className="text-[10px] opacity-70">✓</span>
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
                 </div>
               </div>
 
@@ -739,11 +843,11 @@ export default function SpinWheelModal({ onClose }: SpinWheelModalProps) {
                 <span className="px-2.5 py-0.5 rounded-full bg-primary/20 text-primary border border-primary/30 font-bold">
                   {scope === "movie" ? "🎬 Movies" : "📺 TV Shows"}
                 </span>
-                {selectedGenreObj && (
-                  <span className="px-2.5 py-0.5 rounded-full bg-white/10 text-white border border-white/15">
-                    {selectedGenreObj.label}
+                {selectedGenreNames.map((name) => (
+                  <span key={name} className="px-2.5 py-0.5 rounded-full bg-white/10 text-white border border-white/15">
+                    {name}
                   </span>
-                )}
+                ))}
                 {selectedEra !== "Any Era" && (
                   <span className="px-2.5 py-0.5 rounded-full bg-white/10 text-white border border-white/15">
                     {selectedEra}

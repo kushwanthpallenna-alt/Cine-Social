@@ -10,6 +10,7 @@ import ReviewCard from "@/components/ReviewCard";
 import Carousel from "@/components/Carousel";
 import PosterPickerModal from "@/components/PosterPickerModal";
 import AddToListModal from "@/components/AddToListModal";
+import { useAuthPrompt } from "@/components/AuthPromptProvider";
 import { getAvatarUrlOrDefault } from "@/lib/avatar";
 import { getTvUrl } from "@/lib/slug";
 
@@ -52,6 +53,7 @@ export default function TvDetailsClient({ tvId, initialSlug }: { tvId: string; i
   const router = useRouter();
   const { data: session } = useSession();
   const user = session?.user as any;
+  const { showAuthPrompt } = useAuthPrompt();
 
   const [showProfileMenu, setShowProfileMenu] = useState(false);
   const [scrolled, setScrolled] = useState(false);
@@ -242,8 +244,11 @@ export default function TvDetailsClient({ tvId, initialSlug }: { tvId: string; i
 
   const handleWatchlistToggle = async () => {
     if (!user?.id || !tvShow) {
-      if (!user?.id && typeof window !== "undefined") {
-        window.location.href = `/auth/signin?callbackUrl=${encodeURIComponent(window.location.pathname + window.location.search)}`;
+      if (!user?.id) {
+        showAuthPrompt({
+          title: "Save to Watchlist",
+          message: "Sign in to save this TV show to your watchlist.",
+        });
       }
       return;
     }
@@ -290,8 +295,11 @@ export default function TvDetailsClient({ tvId, initialSlug }: { tvId: string; i
 
   const handleWatchedToggle = async (customDate?: string) => {
     if (!user?.id || !tvShow) {
-      if (!user?.id && typeof window !== "undefined") {
-        window.location.href = `/auth/signin?callbackUrl=${encodeURIComponent(window.location.pathname + window.location.search)}`;
+      if (!user?.id) {
+        showAuthPrompt({
+          title: "Mark as Watched",
+          message: "Sign in to log this TV show as watched and record your progress.",
+        });
       }
       return;
     }
@@ -490,9 +498,10 @@ export default function TvDetailsClient({ tvId, initialSlug }: { tvId: string; i
   const handleReviewSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!user?.id) {
-      if (typeof window !== "undefined") {
-        window.location.href = `/auth/signin?callbackUrl=${encodeURIComponent(window.location.pathname + window.location.search)}`;
-      }
+      showAuthPrompt({
+        title: "Leave a Review",
+        message: "Sign in to share your thoughts and review this TV show.",
+      });
       return;
     }
     if (!tvId || !newReviewText.trim()) return;
@@ -817,9 +826,10 @@ export default function TvDetailsClient({ tvId, initialSlug }: { tvId: string; i
                 <button
                   onClick={() => {
                     if (!user?.id) {
-                      if (typeof window !== "undefined") {
-                        window.location.href = `/auth/signin?callbackUrl=${encodeURIComponent(window.location.pathname + window.location.search)}`;
-                      }
+                      showAuthPrompt({
+                        title: "Add to List",
+                        message: "Sign in to add TV shows to your custom lists and collections.",
+                      });
                       return;
                     }
                     setShowAddToListModal(true);
@@ -843,9 +853,10 @@ export default function TvDetailsClient({ tvId, initialSlug }: { tvId: string; i
                 <button
                   onClick={() => {
                     if (!user?.id) {
-                      if (typeof window !== "undefined") {
-                        window.location.href = `/auth/signin?callbackUrl=${encodeURIComponent(window.location.pathname + window.location.search)}`;
-                      }
+                      showAuthPrompt({
+                        title: "Rate this TV Show",
+                        message: "Sign in to rate and log TV shows you've watched.",
+                      });
                       return;
                     }
                     setHoverRating(userRating || 5);

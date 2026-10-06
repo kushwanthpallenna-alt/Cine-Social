@@ -5,6 +5,8 @@ import AuthProvider from "@/components/AuthProvider";
 import ToastProvider from "@/components/ToastProvider";
 import ServiceWorkerRegister from "@/components/ServiceWorkerRegister";
 
+import AuthPromptProvider from "@/components/AuthPromptProvider";
+
 const inter = Inter({
   variable: "--font-inter",
   subsets: ["latin"],
@@ -62,8 +64,10 @@ export default function RootLayout({
       <body className="min-h-full flex flex-col bg-[#050505] text-[#e5e2e1]">
         <AuthProvider>
           <ToastProvider>
-            <ServiceWorkerRegister />
-            {children}
+            <AuthPromptProvider>
+              <ServiceWorkerRegister />
+              {children}
+            </AuthPromptProvider>
           </ToastProvider>
         </AuthProvider>
       </body>

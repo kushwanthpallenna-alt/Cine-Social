@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from "react";
 import Link from "next/link";
 import Image from "next/image";
+import { useAuthPrompt } from "@/components/AuthPromptProvider";
 import { getSafeAvatarUrl } from "@/lib/avatar";
 import { getMovieUrl, getTvUrl } from "@/lib/slug";
 
@@ -81,6 +82,7 @@ export default function ReviewCard({
   isEditingSubmitting,
   className = "",
 }: ReviewCardProps) {
+  const { showAuthPrompt } = useAuthPrompt();
   // Likes state
   const [liked, setLiked] = useState(false);
   const [likeCount, setLikeCount] = useState(0);
@@ -141,9 +143,10 @@ export default function ReviewCard({
   // Toggle Like
   const handleToggleLike = async () => {
     if (!currentUserId) {
-      if (typeof window !== "undefined") {
-        window.location.href = `/auth/signin?callbackUrl=${encodeURIComponent(window.location.pathname + window.location.search)}`;
-      }
+      showAuthPrompt({
+        title: "Like Review",
+        message: "Sign in to like reviews and interact with other cinephiles.",
+      });
       return;
     }
     if (likeLoading) return;
@@ -191,9 +194,10 @@ export default function ReviewCard({
   const handlePostReply = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!currentUserId) {
-      if (typeof window !== "undefined") {
-        window.location.href = `/auth/signin?callbackUrl=${encodeURIComponent(window.location.pathname + window.location.search)}`;
-      }
+      showAuthPrompt({
+        title: "Reply to Review",
+        message: "Sign in to join the discussion and post a reply.",
+      });
       return;
     }
     if (!replyText.trim() || replySubmitting) return;

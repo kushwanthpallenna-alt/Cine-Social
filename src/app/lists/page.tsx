@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
 import NotificationBell from "@/components/NotificationBell";
 import { useToast } from "@/components/ToastProvider";
+import { useAuthPrompt } from "@/components/AuthPromptProvider";
 import { getAvatarUrlOrDefault } from "@/lib/avatar";
 
 interface CustomList {
@@ -26,6 +27,7 @@ export default function ListsPage() {
   const { data: session } = useSession();
   const user = session?.user as any;
   const { showToast } = useToast();
+  const { showAuthPrompt } = useAuthPrompt();
 
   const [lists, setLists] = useState<CustomList[]>([]);
   const [loading, setLoading] = useState(true);
@@ -199,7 +201,11 @@ export default function ListsPage() {
           <button
             onClick={() => {
               if (!user?.id) {
-                router.push(`/auth/signin?callbackUrl=${encodeURIComponent("/lists")}`);
+                showAuthPrompt({
+                  title: "Create New List",
+                  message: "Sign in to curate, rank, and share custom film lists with fellow cinephiles.",
+                  callbackUrl: "/lists",
+                });
                 return;
               }
               setShowCreateModal(true);

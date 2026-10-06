@@ -10,6 +10,7 @@ import ReviewCard from "@/components/ReviewCard";
 import Carousel from "@/components/Carousel";
 import PosterPickerModal from "@/components/PosterPickerModal";
 import AddToListModal from "@/components/AddToListModal";
+import { useAuthPrompt } from "@/components/AuthPromptProvider";
 import { getAvatarUrlOrDefault } from "@/lib/avatar";
 import { getMovieUrl } from "@/lib/slug";
 
@@ -112,6 +113,7 @@ export default function MovieDetailsClient({ movieId, initialSlug }: { movieId: 
   const router = useRouter();
   const { data: session } = useSession();
   const user = session?.user as any;
+  const { showAuthPrompt } = useAuthPrompt();
   const [showProfileMenu, setShowProfileMenu] = useState(false);
 
   const [scrolled, setScrolled] = useState(false);
@@ -237,8 +239,11 @@ export default function MovieDetailsClient({ movieId, initialSlug }: { movieId: 
   // Toggle watchlist status
   const handleWatchlistToggle = async () => {
     if (!user?.id || !movie) {
-      if (!user?.id && typeof window !== "undefined") {
-        window.location.href = `/auth/signin?callbackUrl=${encodeURIComponent(window.location.pathname + window.location.search)}`;
+      if (!user?.id) {
+        showAuthPrompt({
+          title: "Save to Watchlist",
+          message: "Sign in to save this film to your watchlist and keep track of movies to watch.",
+        });
       }
       return;
     }
@@ -303,8 +308,11 @@ export default function MovieDetailsClient({ movieId, initialSlug }: { movieId: 
   // Toggle watched status (or update watched date)
   const handleWatchedToggle = async (customDate?: string) => {
     if (!user?.id || !movie) {
-      if (!user?.id && typeof window !== "undefined") {
-        window.location.href = `/auth/signin?callbackUrl=${encodeURIComponent(window.location.pathname + window.location.search)}`;
+      if (!user?.id) {
+        showAuthPrompt({
+          title: "Log Film as Watched",
+          message: "Sign in to mark films as watched, log dates, and build your viewing history.",
+        });
       }
       return;
     }
@@ -602,9 +610,10 @@ export default function MovieDetailsClient({ movieId, initialSlug }: { movieId: 
   const handleReviewSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!user?.id) {
-      if (typeof window !== "undefined") {
-        window.location.href = `/auth/signin?callbackUrl=${encodeURIComponent(window.location.pathname + window.location.search)}`;
-      }
+      showAuthPrompt({
+        title: "Leave a Review",
+        message: "Sign in to write and share your review with the CineSocial community.",
+      });
       return;
     }
     if (!movieId || !newReviewText.trim()) return;
@@ -992,9 +1001,10 @@ export default function MovieDetailsClient({ movieId, initialSlug }: { movieId: 
                 <button
                   onClick={() => {
                     if (!user?.id) {
-                      if (typeof window !== "undefined") {
-                        window.location.href = `/auth/signin?callbackUrl=${encodeURIComponent(window.location.pathname + window.location.search)}`;
-                      }
+                      showAuthPrompt({
+                        title: "Add to List",
+                        message: "Sign in to create, organize, and add movies to your custom lists.",
+                      });
                       return;
                     }
                     setShowAddToListModal(true);
@@ -1019,9 +1029,10 @@ export default function MovieDetailsClient({ movieId, initialSlug }: { movieId: 
                 <button
                   onClick={() => {
                     if (!user?.id) {
-                      if (typeof window !== "undefined") {
-                        window.location.href = `/auth/signin?callbackUrl=${encodeURIComponent(window.location.pathname + window.location.search)}`;
-                      }
+                      showAuthPrompt({
+                        title: "Rate this Film",
+                        message: "Sign in to rate films, give thumbs up/down, and log your score.",
+                      });
                       return;
                     }
                     setHoverRating(userRating || 5);

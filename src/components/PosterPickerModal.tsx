@@ -2,6 +2,11 @@
 
 import React, { useState, useEffect, useCallback } from "react";
 
+interface PosterItem {
+  path: string;
+  lang: string | null; // iso_639_1 from TMDB; null = textless
+}
+
 interface PosterPickerModalProps {
   movieId: string;
   movieTitle: string;
@@ -23,7 +28,7 @@ export default function PosterPickerModal({
   onClose,
   onSelect,
 }: PosterPickerModalProps) {
-  const [posters, setPosters] = useState<string[]>([]);
+  const [posters, setPosters] = useState<PosterItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [selected, setSelected] = useState<string | null>(currentPosterPath);
@@ -34,24 +39,72 @@ export default function PosterPickerModal({
     let cancelled = false;
     setLoading(true);
     setError(null);
-    fetch(`/api/tmdb?endpoint=${contentType}/${movieId}/images`)
+
+    // Request a broad language set so we get genuinely different artwork:
+    //   null  = textless/international posters (most visually distinct)
+    //   en    = English-text posters
+    //   + a handful of other major languages to catch regional exclusive art
+    const langParam = "include_image_language=en%2Cnull%2Cja%2Cko%2Cfr%2Cde%2Ces%2Cit%2Cpt";
+    fetch(`/api/tmdb?endpoint=${contentType}/${movieId}/images&${langParam}`)
       .then((r) => r.json())
       .then((data) => {
         if (cancelled) return;
         if (data?.posters && Array.isArray(data.posters)) {
-          // Sort by vote_average desc, take top 12
-          const sorted = data.posters
-            .filter((p: any) => p.file_path)
-            .sort((a: any, b: any) => (b.vote_average ?? 0) - (a.vote_average ?? 0))
-            .slice(0, 12)
-            .map((p: any) => p.file_path as string);
-          // Always put the default poster first if not already present
-          if (defaultPosterPath && !sorted.includes(defaultPosterPath)) {
-            sorted.unshift(defaultPosterPath);
+          const raw: any[] = data.posters.filter((p: any) => p.file_path);
+
+          // --- Deduplication + ranking ---
+          // Strategy: bucket posters by their (width × height) fingerprint.
+          // Multiple language variants of the same base art almost always share
+          // identical dimensions. Keep the "best" representative of each bucket:
+          //   tier 0 = textless (iso_639_1 === null)
+          //   tier 1 = English  (iso_639_1 === "en")
+          //   tier 2 = everything else
+          // Within a bucket, pick the lowest tier (most preferred), then highest vote_average.
+          // Across buckets, sort: tier 0 first, then tier 1, then tier 2;
+          // within the same tier, descending vote_average.
+
+          const tierOf = (p: any): number => {
+            if (p.iso_639_1 === null) return 0;
+            if (p.iso_639_1 === "en") return 1;
+            return 2;
+          };
+
+          // Build dimension-keyed buckets
+          const buckets = new Map<string, any>();
+          for (const p of raw) {
+            const key = `${p.width ?? 0}x${p.height ?? 0}`;
+            const existing = buckets.get(key);
+            if (!existing) {
+              buckets.set(key, p);
+            } else {
+              // Replace if this poster is more preferred
+              const better =
+                tierOf(p) < tierOf(existing) ||
+                (tierOf(p) === tierOf(existing) && (p.vote_average ?? 0) > (existing.vote_average ?? 0));
+              if (better) buckets.set(key, p);
+            }
           }
-          setPosters(sorted);
+
+          // Sort deduplicated posters
+          const deduplicated = Array.from(buckets.values()).sort((a, b) => {
+            const ta = tierOf(a);
+            const tb = tierOf(b);
+            if (ta !== tb) return ta - tb;
+            return (b.vote_average ?? 0) - (a.vote_average ?? 0);
+          });
+
+          const sortedItems: PosterItem[] = deduplicated.slice(0, 20).map((p: any) => ({
+            path: p.file_path as string,
+            lang: p.iso_639_1 ?? null,
+          }));
+
+          // Always put the default poster first if not already present
+          if (defaultPosterPath && !sortedItems.find(p => p.path === defaultPosterPath)) {
+            sortedItems.unshift({ path: defaultPosterPath, lang: "en" });
+          }
+          setPosters(sortedItems);
         } else {
-          setPosters(defaultPosterPath ? [defaultPosterPath] : []);
+          setPosters(defaultPosterPath ? [{ path: defaultPosterPath, lang: "en" }] : []);
         }
       })
       .catch(() => {
@@ -145,8 +198,8 @@ export default function PosterPickerModal({
         {/* Poster Grid */}
         <div className="flex-1 overflow-y-auto px-6 py-5 no-scrollbar">
           {loading ? (
-            <div className="grid grid-cols-4 gap-3">
-              {Array.from({ length: 8 }).map((_, i) => (
+            <div className="grid grid-cols-3 sm:grid-cols-4 gap-3">
+              {Array.from({ length: 12 }).map((_, i) => (
                 <div key={i} className="aspect-[2/3] rounded-xl bg-white/10 animate-pulse" />
               ))}
             </div>
@@ -162,13 +215,14 @@ export default function PosterPickerModal({
             </div>
           ) : (
             <div className="grid grid-cols-3 sm:grid-cols-4 gap-3">
-              {posters.map((path, i) => {
-                const isSelected = selected === path;
-                const isDefault = path === defaultPosterPath;
+              {posters.map((poster, i) => {
+                const isSelected = selected === poster.path;
+                const isDefault = poster.path === defaultPosterPath;
+                const isTextless = poster.lang === null;
                 return (
                   <button
                     key={i}
-                    onClick={() => setSelected(path)}
+                    onClick={() => setSelected(poster.path)}
                     className={`relative aspect-[2/3] rounded-xl overflow-hidden border-2 transition-all duration-200 cursor-pointer focus:outline-none group ${
                       isSelected
                         ? "border-[#ffb4aa] shadow-[0_0_20px_rgba(255,180,170,0.4)] scale-[1.03]"
@@ -176,11 +230,19 @@ export default function PosterPickerModal({
                     }`}
                   >
                     <img
-                      src={`https://image.tmdb.org/t/p/w342${path}`}
+                      src={`https://image.tmdb.org/t/p/w342${poster.path}`}
                       alt={`Poster option ${i + 1}`}
                       className="w-full h-full object-cover"
                       loading="lazy"
                     />
+                    {/* Language / Textless badge — top-left */}
+                    {isTextless && !isDefault && (
+                      <div className="absolute top-1.5 left-1.5">
+                        <span className="px-1.5 py-0.5 rounded text-[8px] font-black uppercase tracking-widest bg-black/70 text-emerald-400 border border-emerald-400/30">
+                          Textless
+                        </span>
+                      </div>
+                    )}
                     {/* Selected check */}
                     {isSelected && (
                       <div className="absolute inset-0 bg-[#ffb4aa]/10 flex items-start justify-end p-2">

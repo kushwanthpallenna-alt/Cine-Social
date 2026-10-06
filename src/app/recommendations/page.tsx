@@ -63,11 +63,7 @@ export default function Recommendations() {
     "Existential",
   ]);
   const [customMood, setCustomMood] = useState<string>("");
-  const [genreWeights, setGenreWeights] = useState<Record<string, number>>({
-    "Sci-Fi": 80,
-    "Noir": 10,
-    "Drama": 10,
-  });
+  const [genreWeights, setGenreWeights] = useState<Record<string, number>>({});
 
   const [showEditFilterModal, setShowEditFilterModal] = useState(false);
   const [showSpinWheelModal, setShowSpinWheelModal] = useState(false);
@@ -78,7 +74,7 @@ export default function Recommendations() {
     async function fetchData() {
       try {
         const [wlRes, moodRes] = await Promise.all([
-          supabase.from("watchlist").select("movie_id").eq("user_id", user.id),
+          supabase.from("watchlist").select("movie_id, content_type").eq("user_id", user.id),
           supabase.from("user_mood_preferences").select("*").eq("user_id", user.id).single()
         ]);
         if (wlRes.data) {
@@ -106,7 +102,9 @@ export default function Recommendations() {
   // Watchlist Toggle with optimistic updates
   const handleWatchlistToggle = async (movie: any) => {
     if (!user) return;
-    const movieIdStr = String(movie.id);
+    const movieIdStr = String(movie.id || movie.movie_id);
+    const isTv = movie.media_type === "tv" || movie.content_type === "tv" || (movie.first_air_date && !movie.release_date) || (!movie.title && !!movie.name);
+    const contentType = isTv ? "tv" : "movie";
     const isSaved = watchlistIds.has(movieIdStr);
     
     setWatchlistLoadingId(movieIdStr);
@@ -122,12 +120,17 @@ export default function Recommendations() {
 
     try {
       if (isSaved) {
-        const { error } = await supabase
+        let delQuery = supabase
           .from("watchlist")
           .delete()
           .eq("user_id", user.id)
-          .eq("movie_id", movieIdStr)
-          .or("content_type.eq.movie,content_type.is.null");
+          .eq("movie_id", movieIdStr);
+        if (contentType === "tv") {
+          delQuery = delQuery.eq("content_type", "tv");
+        } else {
+          delQuery = delQuery.or("content_type.eq.movie,content_type.is.null");
+        }
+        const { error } = await delQuery;
         if (error) {
           setWatchlistIds(watchlistIds);
           console.error("Error deleting from watchlist:", error);
@@ -141,9 +144,9 @@ export default function Recommendations() {
           .insert({
             user_id: user.id,
             movie_id: movieIdStr,
-            movie_title: movie.title || movie.name || "Unknown Movie",
+            movie_title: movie.title || movie.name || "Unknown Title",
             poster_path: movie.poster_path || "",
-            content_type: "movie",
+            content_type: contentType,
           });
         if (error) {
           setWatchlistIds(watchlistIds);
@@ -195,6 +198,7 @@ export default function Recommendations() {
     // Build Cinema DNA context preamble so CineAI knows the user's current taste profile
     const moodList = [...activeMoods, ...(customMood ? [customMood] : [])];
     const dnaEntries = Object.entries(genreWeights)
+      .filter(([, weight]) => weight > 0)
       .sort((a, b) => b[1] - a[1])
       .map(([genre, weight]) => `${genre} (${weight}%)`)
       .join(", ");
@@ -280,18 +284,18 @@ export default function Recommendations() {
 
   // Top 3 genres for Cinema DNA display
   const topDnaGenres = useMemo(() => {
-    const entries = Object.entries(genreWeights);
-    if (entries.length === 0) return "80% Sci-Fi, 10% Noir, 10% Drama";
+    const entries = Object.entries(genreWeights).filter(([, val]) => val > 0);
+    if (entries.length === 0) return "No genres selected";
+    const total = entries.reduce((sum, [, val]) => sum + val, 0) || 1;
     const sorted = [...entries].sort((a, b) => b[1] - a[1]).slice(0, 3);
-    const total = sorted.reduce((sum, [, val]) => sum + val, 0) || 1;
     return sorted
       .map(([name, val]) => `${Math.round((val / total) * 100)}% ${name}`)
       .join(", ");
   }, [genreWeights]);
 
   const topDnaPercentage = useMemo(() => {
-    const entries = Object.entries(genreWeights);
-    if (entries.length === 0) return 80;
+    const entries = Object.entries(genreWeights).filter(([, val]) => val > 0);
+    if (entries.length === 0) return 0;
     const sorted = [...entries].sort((a, b) => b[1] - a[1]);
     const total = entries.reduce((sum, [, val]) => sum + val, 0) || 1;
     return Math.round((sorted[0][1] / total) * 100);

@@ -307,7 +307,7 @@ export default function ListsPage() {
                     )}
 
                     <div className="text-[11px] text-on-surface-variant/70 font-mono">
-                      {list.item_count ?? previewItems.length} {(list.item_count ?? previewItems.length) === 1 ? "entry" : "entries"}
+                      {(list.item_count ?? list.items?.length ?? 0)} {(list.item_count ?? list.items?.length ?? 0) === 1 ? "entry" : "entries"}
                     </div>
                   </div>
 

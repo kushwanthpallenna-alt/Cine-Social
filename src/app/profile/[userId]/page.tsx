@@ -165,10 +165,123 @@ function UserProfileSkeleton() {
   );
 }
 
+function WatchlistSection({
+  watchlistMovies,
+  watchlistTv,
+  getMovieUrl,
+  getTvUrl,
+}: {
+  watchlistMovies: any[];
+  watchlistTv: any[];
+  getMovieUrl: (id: string, title: string) => string;
+  getTvUrl: (id: string, title: string) => string;
+}) {
+  const INITIAL_COUNT = 10;
+  const [showAllMovies, setShowAllMovies] = useState(false);
+  const [showAllTv, setShowAllTv] = useState(false);
+
+  const visibleMovies = showAllMovies ? watchlistMovies : watchlistMovies.slice(0, INITIAL_COUNT);
+  const visibleTv = showAllTv ? watchlistTv : watchlistTv.slice(0, INITIAL_COUNT);
+
+  return (
+    <section className="mb-8">
+      <h3 className="text-xs text-on-surface-variant uppercase tracking-widest mb-4 border-l-2 border-white/30 pl-2">
+        Watchlist
+      </h3>
+
+      {/* Watchlist — Movies */}
+      {watchlistMovies.length > 0 && (
+        <div className="mb-5">
+          <p className="text-[10px] uppercase tracking-widest text-on-surface-variant/60 mb-2 flex items-center gap-1">
+            <span className="material-symbols-outlined text-[13px]">movie</span>
+            Movies ({watchlistMovies.length})
+          </p>
+          <div className="grid grid-cols-5 gap-2">
+            {visibleMovies.map((item: any) => {
+              const poster = item.poster_path;
+              const title = item.movie_title || "";
+              return (
+                <a
+                  key={item.id ? `wl_movie_${item.id}` : `wl_movie_${item.movie_id}_${item.created_at || ""}`}
+                  href={getMovieUrl(item.movie_id, title)}
+                  className="aspect-[2/3] rounded-xl overflow-hidden border border-white/10 group relative block bg-white/5"
+                  title={title}
+                >
+                  <img
+                    src={poster ? `https://image.tmdb.org/t/p/w342${poster}` : "https://images.unsplash.com/photo-1594909122845-11baa439b7bf?w=342"}
+                    alt={title}
+                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                  />
+                  <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex items-end p-1.5">
+                    <p className="text-[9px] text-white font-bold line-clamp-2 leading-tight">{title}</p>
+                  </div>
+                </a>
+              );
+            })}
+          </div>
+          {watchlistMovies.length > INITIAL_COUNT && (
+            <button
+              onClick={() => setShowAllMovies(prev => !prev)}
+              className="mt-3 w-full py-2 rounded-xl border border-white/10 text-xs text-on-surface-variant hover:text-white hover:border-white/30 transition-all flex items-center justify-center gap-1.5 cursor-pointer bg-white/[0.03]"
+            >
+              <span className="material-symbols-outlined text-[14px]">{showAllMovies ? "expand_less" : "expand_more"}</span>
+              {showAllMovies ? "Show less" : `Show all ${watchlistMovies.length} movies`}
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* Watchlist — TV Shows */}
+      {watchlistTv.length > 0 && (
+        <div>
+          <p className="text-[10px] uppercase tracking-widest text-on-surface-variant/60 mb-2 flex items-center gap-1">
+            <span className="material-symbols-outlined text-[13px]">tv</span>
+            TV Shows ({watchlistTv.length})
+          </p>
+          <div className="grid grid-cols-5 gap-2">
+            {visibleTv.map((item: any) => {
+              const poster = item.poster_path;
+              const title = item.movie_title || "";
+              return (
+                <a
+                  key={item.id ? `wl_tv_${item.id}` : `wl_tv_${item.movie_id}_${item.created_at || ""}`}
+                  href={getTvUrl(item.movie_id, title)}
+                  className="aspect-[2/3] rounded-xl overflow-hidden border border-white/10 group relative block bg-white/5"
+                  title={title}
+                >
+                  <img
+                    src={poster ? `https://image.tmdb.org/t/p/w342${poster}` : "https://images.unsplash.com/photo-1594909122845-11baa439b7bf?w=342"}
+                    alt={title}
+                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                  />
+                  <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex items-end p-1.5">
+                    <p className="text-[9px] text-white font-bold line-clamp-2 leading-tight">{title}</p>
+                  </div>
+                </a>
+              );
+            })}
+          </div>
+          {watchlistTv.length > INITIAL_COUNT && (
+            <button
+              onClick={() => setShowAllTv(prev => !prev)}
+              className="mt-3 w-full py-2 rounded-xl border border-white/10 text-xs text-on-surface-variant hover:text-white hover:border-white/30 transition-all flex items-center justify-center gap-1.5 cursor-pointer bg-white/[0.03]"
+            >
+              <span className="material-symbols-outlined text-[14px]">{showAllTv ? "expand_less" : "expand_more"}</span>
+              {showAllTv ? "Show less" : `Show all ${watchlistTv.length} TV shows`}
+            </button>
+          )}
+        </div>
+      )}
+    </section>
+  );
+}
+
+
 export default function PublicProfilePage() {
   const router = useRouter();
   const routeParams = useParams();
   const targetUserId = (routeParams?.userId as string) || "";
+
   const { data: session } = useSession();
   const currentUser = session?.user as any;
   const { showToast } = useToast();
@@ -827,77 +940,12 @@ export default function PublicProfilePage() {
 
         {/* Watchlist */}
         {(watchlistMovies.length > 0 || watchlistTv.length > 0) && (
-          <section className="mb-8">
-            <h3 className="text-xs text-on-surface-variant uppercase tracking-widest mb-4 border-l-2 border-white/30 pl-2">
-              Watchlist
-            </h3>
-
-            {/* Watchlist — Movies */}
-            {watchlistMovies.length > 0 && (
-              <div className="mb-5">
-                <p className="text-[10px] uppercase tracking-widest text-on-surface-variant/60 mb-2 flex items-center gap-1">
-                  <span className="material-symbols-outlined text-[13px]">movie</span>
-                  Movies ({watchlistMovies.length})
-                </p>
-                <div className="grid grid-cols-5 gap-2">
-                  {watchlistMovies.slice(0, 10).map((item: any) => {
-                    const poster = item.poster_path;
-                    const title = item.movie_title || "";
-                    return (
-                      <Link
-                        key={item.id ? `wl_movie_${item.id}` : `wl_movie_${item.movie_id}_${item.created_at || ""}`}
-                        href={getMovieUrl(item.movie_id, title)}
-                        className="aspect-[2/3] rounded-xl overflow-hidden border border-white/10 group relative block bg-white/5"
-                        title={title}
-                      >
-                        <img
-                          src={poster ? `https://image.tmdb.org/t/p/w342${poster}` : "https://images.unsplash.com/photo-1594909122845-11baa439b7bf?w=342"}
-                          alt={title}
-                          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
-                        />
-                        <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex items-end p-1.5">
-                          <p className="text-[9px] text-white font-bold line-clamp-2 leading-tight">{title}</p>
-                        </div>
-                      </Link>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
-
-            {/* Watchlist — TV Shows */}
-            {watchlistTv.length > 0 && (
-              <div>
-                <p className="text-[10px] uppercase tracking-widest text-on-surface-variant/60 mb-2 flex items-center gap-1">
-                  <span className="material-symbols-outlined text-[13px]">tv</span>
-                  TV Shows ({watchlistTv.length})
-                </p>
-                <div className="grid grid-cols-5 gap-2">
-                  {watchlistTv.slice(0, 10).map((item: any) => {
-                    const poster = item.poster_path;
-                    const title = item.movie_title || "";
-                    return (
-                      <Link
-                        key={item.id ? `wl_tv_${item.id}` : `wl_tv_${item.movie_id}_${item.created_at || ""}`}
-                        href={getTvUrl(item.movie_id, title)}
-                        className="aspect-[2/3] rounded-xl overflow-hidden border border-white/10 group relative block bg-white/5"
-                        title={title}
-                      >
-                        <img
-                          src={poster ? `https://image.tmdb.org/t/p/w342${poster}` : "https://images.unsplash.com/photo-1594909122845-11baa439b7bf?w=342"}
-                          alt={title}
-                          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
-                        />
-                        <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex items-end p-1.5">
-                          <p className="text-[9px] text-white font-bold line-clamp-2 leading-tight">{title}</p>
-                        </div>
-                      </Link>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
-          </section>
+          <WatchlistSection
+            watchlistMovies={watchlistMovies}
+            watchlistTv={watchlistTv}
+            getMovieUrl={getMovieUrl}
+            getTvUrl={getTvUrl}
+          />
         )}
 
         {/* Public Lists */}

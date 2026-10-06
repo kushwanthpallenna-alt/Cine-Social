@@ -66,15 +66,25 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "Missing userId" }, { status: 400 });
   }
 
-  // Fetch all lists for user (with item count)
-  const { data, error } = await supabaseAdmin
+  // Fetch all lists for user (with items and accurate item count)
+  const { data: lists, error } = await supabaseAdmin
     .from("lists")
-    .select("*, list_items(count)")
+    .select("*, list_items(*)")
     .eq("user_id", userId)
     .order("updated_at", { ascending: false });
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-  return NextResponse.json(data || []);
+
+  const formatted = (lists || []).map((l: any) => {
+    const items = (l.list_items || []).sort((a: any, b: any) => (a.position || 0) - (b.position || 0));
+    return {
+      ...l,
+      items,
+      item_count: items.length,
+    };
+  });
+
+  return NextResponse.json(formatted);
 }
 
 // POST /api/lists  { user_id, title, description, is_ranked, is_public }

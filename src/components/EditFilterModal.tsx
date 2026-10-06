@@ -51,7 +51,7 @@ export default function EditFilterModal({
   const [weights, setWeights] = useState<Record<string, number>>(
     initialWeights && Object.keys(initialWeights).length > 0
       ? initialWeights
-      : Object.fromEntries(Object.keys(GENRE_LABELS).map((g) => [g, 10]))
+      : Object.fromEntries(Object.keys(GENRE_LABELS).map((g) => [g, 0]))
   );
   const [saving, setSaving] = useState(false);
   const [activeTab, setActiveTab] = useState<"moods" | "dna">("moods");
@@ -209,7 +209,7 @@ export default function EditFilterModal({
                 </div>
                 <div className="space-y-4">
                   {Object.keys(GENRE_LABELS).map((genre) => {
-                    const val = weights[genre] ?? 10;
+                    const val = weights[genre] ?? 0;
                     const pct = totalWeight > 0 ? Math.round((val / totalWeight) * 100) : 0;
                     return (
                       <div key={genre}>

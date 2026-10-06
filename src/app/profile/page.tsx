@@ -14,6 +14,7 @@ import NotificationBell from "@/components/NotificationBell";
 import RatingDistributionChart from "@/components/RatingDistributionChart";
 import { getPosterUrl } from "@/lib/poster";
 import { getMovieUrl, getTvUrl } from "@/lib/slug";
+import { isAnimeShow } from "@/lib/anime";
 
 type SortOption =
   | "default"
@@ -213,6 +214,7 @@ export default function ProfilePage() {
   const [importResult, setImportResult] = useState<{ imported: number; skipped: number; errors: string[] } | null>(null);
   const [exporting, setExporting] = useState(false);
   const [mediaType, setMediaType] = useState<"movie" | "tv">("movie");
+  const [tvSubFilter, setTvSubFilter] = useState<"all" | "anime" | "others">("all");
   const [watchedSort, setWatchedSort] = useState<SortOption>("default");
   const [watchlistSort, setWatchlistSort] = useState<SortOption>("default");
 
@@ -681,8 +683,48 @@ export default function ProfilePage() {
   const watchedMovies = useMemo(() => watched.filter(w => (w.content_type || "movie") !== "tv"), [watched]);
   const watchedTv = useMemo(() => watched.filter(w => w.content_type === "tv"), [watched]);
 
+  const watchedTvAnime = useMemo(() => {
+    return watchedTv.filter((w) => {
+      const detail = mediaDetails[`tv_${w.movie_id}`] || mediaDetails[w.movie_id] || w;
+      return isAnimeShow(detail);
+    });
+  }, [watchedTv, mediaDetails]);
+
+  const watchedTvOthers = useMemo(() => {
+    return watchedTv.filter((w) => {
+      const detail = mediaDetails[`tv_${w.movie_id}`] || mediaDetails[w.movie_id] || w;
+      return !isAnimeShow(detail);
+    });
+  }, [watchedTv, mediaDetails]);
+
+  const currentWatchedTv = useMemo(() => {
+    if (tvSubFilter === "anime") return watchedTvAnime;
+    if (tvSubFilter === "others") return watchedTvOthers;
+    return watchedTv;
+  }, [tvSubFilter, watchedTvAnime, watchedTvOthers, watchedTv]);
+
   const watchlistMovies = useMemo(() => watchlist.filter(w => (w.content_type || "movie") !== "tv"), [watchlist]);
   const watchlistTv = useMemo(() => watchlist.filter(w => w.content_type === "tv"), [watchlist]);
+
+  const watchlistTvAnime = useMemo(() => {
+    return watchlistTv.filter((w) => {
+      const detail = mediaDetails[`tv_${w.movie_id}`] || mediaDetails[w.movie_id] || w;
+      return isAnimeShow(detail);
+    });
+  }, [watchlistTv, mediaDetails]);
+
+  const watchlistTvOthers = useMemo(() => {
+    return watchlistTv.filter((w) => {
+      const detail = mediaDetails[`tv_${w.movie_id}`] || mediaDetails[w.movie_id] || w;
+      return !isAnimeShow(detail);
+    });
+  }, [watchlistTv, mediaDetails]);
+
+  const currentWatchlistTv = useMemo(() => {
+    if (tvSubFilter === "anime") return watchlistTvAnime;
+    if (tvSubFilter === "others") return watchlistTvOthers;
+    return watchlistTv;
+  }, [tvSubFilter, watchlistTvAnime, watchlistTvOthers, watchlistTv]);
 
   const reviewsMovies = useMemo(() => reviews.filter(r => (r.content_type || "movie") !== "tv"), [reviews]);
   const reviewsTv = useMemo(() => reviews.filter(r => r.content_type === "tv"), [reviews]);
@@ -691,8 +733,8 @@ export default function ProfilePage() {
   const ratingsTv = useMemo(() => ratings.filter(r => r.content_type === "tv"), [ratings]);
 
   // Current active filtered list
-  const currentWatched = mediaType === "tv" ? watchedTv : watchedMovies;
-  const currentWatchlist = mediaType === "tv" ? watchlistTv : watchlistMovies;
+  const currentWatched = mediaType === "tv" ? currentWatchedTv : watchedMovies;
+  const currentWatchlist = mediaType === "tv" ? currentWatchlistTv : watchlistMovies;
   const currentReviews = mediaType === "tv" ? reviewsTv : reviewsMovies;
   const currentRatings = mediaType === "tv" ? ratingsTv : ratingsMovies;
 
@@ -1547,28 +1589,68 @@ export default function ProfilePage() {
 
             {/* Media Type Split Toggle (Movies vs TV Shows) — hidden on Lists tab */}
             {activeTab !== "lists" && (
-            <div className="flex items-center gap-2 mb-6">
-              <button
-                onClick={() => setMediaType("movie")}
-                className={`px-4 py-2 rounded-full text-xs font-bold transition-all flex items-center gap-2 cursor-pointer border select-none ${mediaType === "movie"
-                  ? "bg-[#e50914] text-white border-[#e50914] shadow-[0_0_15px_rgba(229,9,20,0.4)] scale-[1.02]"
-                  : "bg-white/5 text-on-surface-variant border-white/10 hover:bg-white/10 hover:text-white"
-                  }`}
-              >
-                <span className="material-symbols-outlined text-[16px]">movie</span>
-                Movies ({activeTab === "watched" ? watchedMovies.length : activeTab === "watchlist" ? watchlistMovies.length : activeTab === "reviews" ? reviewsMovies.length : watchedMovies.length})
-              </button>
+            <div className="flex flex-wrap items-center gap-3 mb-6">
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setMediaType("movie")}
+                  className={`px-4 py-2 rounded-full text-xs font-bold transition-all flex items-center gap-2 cursor-pointer border select-none ${mediaType === "movie"
+                    ? "bg-[#e50914] text-white border-[#e50914] shadow-[0_0_15px_rgba(229,9,20,0.4)] scale-[1.02]"
+                    : "bg-white/5 text-on-surface-variant border-white/10 hover:bg-white/10 hover:text-white"
+                    }`}
+                >
+                  <span className="material-symbols-outlined text-[16px]">movie</span>
+                  Movies ({activeTab === "watched" ? watchedMovies.length : activeTab === "watchlist" ? watchlistMovies.length : activeTab === "reviews" ? reviewsMovies.length : watchedMovies.length})
+                </button>
 
-              <button
-                onClick={() => setMediaType("tv")}
-                className={`px-4 py-2 rounded-full text-xs font-bold transition-all flex items-center gap-2 cursor-pointer border select-none ${mediaType === "tv"
-                  ? "bg-[#a855f7] text-white border-[#a855f7] shadow-[0_0_15px_rgba(168,85,247,0.4)] scale-[1.02]"
-                  : "bg-white/5 text-on-surface-variant border-white/10 hover:bg-white/10 hover:text-white"
-                  }`}
-              >
-                <span className="material-symbols-outlined text-[16px]">tv</span>
-                TV Shows ({activeTab === "watched" ? watchedTv.length : activeTab === "watchlist" ? watchlistTv.length : activeTab === "reviews" ? reviewsTv.length : watchedTv.length})
-              </button>
+                <button
+                  onClick={() => setMediaType("tv")}
+                  className={`px-4 py-2 rounded-full text-xs font-bold transition-all flex items-center gap-2 cursor-pointer border select-none ${mediaType === "tv"
+                    ? "bg-[#a855f7] text-white border-[#a855f7] shadow-[0_0_15px_rgba(168,85,247,0.4)] scale-[1.02]"
+                    : "bg-white/5 text-on-surface-variant border-white/10 hover:bg-white/10 hover:text-white"
+                    }`}
+                >
+                  <span className="material-symbols-outlined text-[16px]">tv</span>
+                  TV Shows ({activeTab === "watched" ? watchedTv.length : activeTab === "watchlist" ? watchlistTv.length : activeTab === "reviews" ? reviewsTv.length : watchedTv.length})
+                </button>
+              </div>
+
+              {/* Sub-filter for TV Shows: All vs Anime vs Others */}
+              {mediaType === "tv" && (
+                <div className="flex items-center gap-1.5 p-1 rounded-full bg-white/5 border border-white/10 backdrop-blur-md animate-fade-in">
+                  <button
+                    onClick={() => setTvSubFilter("all")}
+                    className={`px-3 py-1 rounded-full text-[11px] font-bold transition-all cursor-pointer border flex items-center gap-1 select-none ${
+                      tvSubFilter === "all"
+                        ? "bg-[#a855f7] text-white border-[#a855f7] shadow-sm"
+                        : "bg-transparent text-on-surface-variant border-transparent hover:text-white"
+                    }`}
+                  >
+                    All ({activeTab === "watched" ? watchedTv.length : activeTab === "watchlist" ? watchlistTv.length : watchedTv.length})
+                  </button>
+                  <button
+                    onClick={() => setTvSubFilter("anime")}
+                    className={`px-3 py-1 rounded-full text-[11px] font-bold transition-all cursor-pointer border flex items-center gap-1 select-none ${
+                      tvSubFilter === "anime"
+                        ? "bg-gradient-to-r from-pink-500 to-purple-500 text-white border-pink-400 shadow-[0_0_10px_rgba(236,72,153,0.4)]"
+                        : "bg-transparent text-on-surface-variant border-transparent hover:text-white"
+                    }`}
+                  >
+                    <span>⛩️</span>
+                    Anime ({activeTab === "watched" ? watchedTvAnime.length : activeTab === "watchlist" ? watchlistTvAnime.length : watchedTvAnime.length})
+                  </button>
+                  <button
+                    onClick={() => setTvSubFilter("others")}
+                    className={`px-3 py-1 rounded-full text-[11px] font-bold transition-all cursor-pointer border flex items-center gap-1 select-none ${
+                      tvSubFilter === "others"
+                        ? "bg-white/20 text-white border-white/40 shadow-sm"
+                        : "bg-transparent text-on-surface-variant border-transparent hover:text-white"
+                    }`}
+                  >
+                    <span>📺</span>
+                    Others ({activeTab === "watched" ? watchedTvOthers.length : activeTab === "watchlist" ? watchlistTvOthers.length : watchedTvOthers.length})
+                  </button>
+                </div>
+              )}
             </div>
             )}
 
@@ -1581,7 +1663,13 @@ export default function ProfilePage() {
                       {mediaType === "tv" ? "tv_off" : "movie"}
                     </span>
                     <p className="text-on-surface-variant text-body-md">
-                      You haven't marked any {mediaType === "tv" ? "TV shows" : "movies"} as watched yet.
+                      {mediaType === "tv"
+                        ? tvSubFilter === "anime"
+                          ? "You haven't marked any Anime as watched yet."
+                          : tvSubFilter === "others"
+                          ? "You haven't marked any non-Anime TV shows as watched yet."
+                          : "You haven't marked any TV shows as watched yet."
+                        : "You haven't marked any movies as watched yet."}
                     </p>
                   </div>
                 ) : (

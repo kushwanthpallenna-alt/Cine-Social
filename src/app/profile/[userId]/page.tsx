@@ -14,6 +14,7 @@ import NotificationBell from "@/components/NotificationBell";
 import RatingDistributionChart from "@/components/RatingDistributionChart";
 import { getPosterUrl } from "@/lib/poster";
 import { getMovieUrl, getTvUrl } from "@/lib/slug";
+import { isAnimeShow } from "@/lib/anime";
 
 type SortOption =
   | "default"
@@ -319,6 +320,7 @@ export default function PublicProfilePage() {
   const [favorites, setFavorites] = useState<any[]>([]);
   const [watchedSort, setWatchedSort] = useState<SortOption>("default");
   const [mediaFilter, setMediaFilter] = useState<"movie" | "tv">("movie");
+  const [tvSubFilter, setTvSubFilter] = useState<"all" | "anime" | "others">("all");
   const [followListModal, setFollowListModal] = useState<{ type: "followers" | "following"; users: any[]; loading: boolean } | null>(null);
   const [avatarModalOpen, setAvatarModalOpen] = useState(false);
   const [bannerBackdropUrl, setBannerBackdropUrl] = useState<string | null>(null);
@@ -515,11 +517,51 @@ export default function PublicProfilePage() {
   const watchedMovies = useMemo(() => watchItems.filter(w => (w.content_type || "movie") !== "tv"), [watchItems]);
   const watchedTv = useMemo(() => watchItems.filter(w => w.content_type === "tv"), [watchItems]);
 
+  const watchedTvAnime = useMemo(() => {
+    return watchedTv.filter((w) => {
+      const detail = mediaDetails[`tv_${w.movie_id}`] || mediaDetails[w.movie_id] || w;
+      return isAnimeShow(detail);
+    });
+  }, [watchedTv, mediaDetails]);
+
+  const watchedTvOthers = useMemo(() => {
+    return watchedTv.filter((w) => {
+      const detail = mediaDetails[`tv_${w.movie_id}`] || mediaDetails[w.movie_id] || w;
+      return !isAnimeShow(detail);
+    });
+  }, [watchedTv, mediaDetails]);
+
+  const currentWatchedTv = useMemo(() => {
+    if (tvSubFilter === "anime") return watchedTvAnime;
+    if (tvSubFilter === "others") return watchedTvOthers;
+    return watchedTv;
+  }, [tvSubFilter, watchedTvAnime, watchedTvOthers, watchedTv]);
+
   const watchlistMovies = useMemo(() => watchlistItems.filter(w => (w.content_type || "movie") !== "tv"), [watchlistItems]);
   const watchlistTv = useMemo(() => watchlistItems.filter(w => w.content_type === "tv"), [watchlistItems]);
 
   const reviewsMovies = useMemo(() => reviews.filter(r => (r.content_type || "movie") !== "tv"), [reviews]);
   const reviewsTv = useMemo(() => reviews.filter(r => r.content_type === "tv"), [reviews]);
+
+  const reviewsTvAnime = useMemo(() => {
+    return reviewsTv.filter((r) => {
+      const detail = mediaDetails[`tv_${r.movie_id}`] || mediaDetails[r.movie_id] || r;
+      return isAnimeShow(detail);
+    });
+  }, [reviewsTv, mediaDetails]);
+
+  const reviewsTvOthers = useMemo(() => {
+    return reviewsTv.filter((r) => {
+      const detail = mediaDetails[`tv_${r.movie_id}`] || mediaDetails[r.movie_id] || r;
+      return !isAnimeShow(detail);
+    });
+  }, [reviewsTv, mediaDetails]);
+
+  const currentReviewsTv = useMemo(() => {
+    if (tvSubFilter === "anime") return reviewsTvAnime;
+    if (tvSubFilter === "others") return reviewsTvOthers;
+    return reviewsTv;
+  }, [tvSubFilter, reviewsTvAnime, reviewsTvOthers, reviewsTv]);
 
   const distinctGenresCount = useMemo(() => {
     const genresSet = new Set<number>();
@@ -533,8 +575,8 @@ export default function PublicProfilePage() {
     return genresSet.size;
   }, [watchItems, mediaDetails]);
 
-  const currentWatched = mediaFilter === "tv" ? watchedTv : watchedMovies;
-  const currentReviews = mediaFilter === "tv" ? reviewsTv : reviewsMovies;
+  const currentWatched = mediaFilter === "tv" ? currentWatchedTv : watchedMovies;
+  const currentReviews = mediaFilter === "tv" ? currentReviewsTv : reviewsMovies;
 
   const sortedWatched = useMemo(() => {
     if (!currentWatched || currentWatched.length === 0) return [];
@@ -1008,29 +1050,69 @@ export default function PublicProfilePage() {
         )}
 
         {/* Media Filter Tabs for Watched & Reviews */}
-        <div className="flex items-center gap-2 mb-6 pt-4 border-t border-white/10">
-          <button
-            onClick={() => setMediaFilter("movie")}
-            className={`px-3.5 py-1.5 rounded-full text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer border ${
-              mediaFilter === "movie"
-                ? "bg-[#e50914] text-white border-[#e50914] shadow-[0_0_12px_rgba(229,9,20,0.4)]"
-                : "bg-white/5 text-on-surface-variant border-white/10 hover:bg-white/10 hover:text-white"
-            }`}
-          >
-            <span className="material-symbols-outlined text-[15px]">movie</span>
-            Movies ({watchedMovies.length})
-          </button>
-          <button
-            onClick={() => setMediaFilter("tv")}
-            className={`px-3.5 py-1.5 rounded-full text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer border ${
-              mediaFilter === "tv"
-                ? "bg-[#a855f7] text-white border-[#a855f7] shadow-[0_0_12px_rgba(168,85,247,0.4)]"
-                : "bg-white/5 text-on-surface-variant border-white/10 hover:bg-white/10 hover:text-white"
-            }`}
-          >
-            <span className="material-symbols-outlined text-[15px]">tv</span>
-            TV Shows ({watchedTv.length})
-          </button>
+        <div className="flex flex-wrap items-center gap-3 mb-6 pt-4 border-t border-white/10">
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setMediaFilter("movie")}
+              className={`px-3.5 py-1.5 rounded-full text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer border ${
+                mediaFilter === "movie"
+                  ? "bg-[#e50914] text-white border-[#e50914] shadow-[0_0_12px_rgba(229,9,20,0.4)]"
+                  : "bg-white/5 text-on-surface-variant border-white/10 hover:bg-white/10 hover:text-white"
+              }`}
+            >
+              <span className="material-symbols-outlined text-[15px]">movie</span>
+              Movies ({watchedMovies.length})
+            </button>
+            <button
+              onClick={() => setMediaFilter("tv")}
+              className={`px-3.5 py-1.5 rounded-full text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer border ${
+                mediaFilter === "tv"
+                  ? "bg-[#a855f7] text-white border-[#a855f7] shadow-[0_0_12px_rgba(168,85,247,0.4)]"
+                  : "bg-white/5 text-on-surface-variant border-white/10 hover:bg-white/10 hover:text-white"
+              }`}
+            >
+              <span className="material-symbols-outlined text-[15px]">tv</span>
+              TV Shows ({watchedTv.length})
+            </button>
+          </div>
+
+          {/* Sub-filter for TV Shows: All vs Anime vs Others */}
+          {mediaFilter === "tv" && (
+            <div className="flex items-center gap-1.5 p-1 rounded-full bg-white/5 border border-white/10 backdrop-blur-md animate-fade-in">
+              <button
+                onClick={() => setTvSubFilter("all")}
+                className={`px-3 py-1 rounded-full text-[11px] font-bold transition-all cursor-pointer border flex items-center gap-1 select-none ${
+                  tvSubFilter === "all"
+                    ? "bg-[#a855f7] text-white border-[#a855f7] shadow-sm"
+                    : "bg-transparent text-on-surface-variant border-transparent hover:text-white"
+                }`}
+              >
+                All ({watchedTv.length})
+              </button>
+              <button
+                onClick={() => setTvSubFilter("anime")}
+                className={`px-3 py-1 rounded-full text-[11px] font-bold transition-all cursor-pointer border flex items-center gap-1 select-none ${
+                  tvSubFilter === "anime"
+                    ? "bg-gradient-to-r from-pink-500 to-purple-500 text-white border-pink-400 shadow-[0_0_10px_rgba(236,72,153,0.4)]"
+                    : "bg-transparent text-on-surface-variant border-transparent hover:text-white"
+                }`}
+              >
+                <span>⛩️</span>
+                Anime ({watchedTvAnime.length})
+              </button>
+              <button
+                onClick={() => setTvSubFilter("others")}
+                className={`px-3 py-1 rounded-full text-[11px] font-bold transition-all cursor-pointer border flex items-center gap-1 select-none ${
+                  tvSubFilter === "others"
+                    ? "bg-white/20 text-white border-white/40 shadow-sm"
+                    : "bg-transparent text-on-surface-variant border-transparent hover:text-white"
+                }`}
+              >
+                <span>📺</span>
+                Others ({watchedTvOthers.length})
+              </button>
+            </div>
+          )}
         </div>
 
         {/* Recent Reviews */}

@@ -1100,7 +1100,14 @@ export default function TvDetailsClient({ tvId, initialSlug }: { tvId: string; i
                 ))}
               </div>
             ) : (
-              <p className="text-on-surface-variant opacity-60 text-body-md">No reviews yet. Be the first to share your thoughts!</p>
+              <div className="glass-card p-8 rounded-xl border border-white/10 text-center">
+                <span className="material-symbols-outlined text-4xl text-on-surface-variant/40 mb-2 block">
+                  rate_review
+                </span>
+                <p className="text-on-surface-variant opacity-80 text-body-md font-medium">
+                  No reviews yet — be the first to review this show!
+                </p>
+              </div>
             )}
           </section>
 

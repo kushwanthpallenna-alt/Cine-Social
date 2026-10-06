@@ -710,20 +710,7 @@ export default function MovieDetailsClient({ movieId, initialSlug }: { movieId: 
         if (reviewsData.results && reviewsData.results.length > 0) {
           setReviews(reviewsData.results.slice(0, 2));
         } else {
-          setReviews([
-            {
-              id: "fallback-1",
-              author: "Julian Dreyfus",
-              content: "A technical masterpiece. The sound design alone is enough to leave you breathless. Haunting storytelling that keeps you fully engaged.",
-              author_details: { rating: 10 }
-            },
-            {
-              id: "fallback-2",
-              author: "Maya K.",
-              content: "Incredible pacing and powerful performances. Densely layered and extremely rewarding. A must watch movie.",
-              author_details: { rating: 9 }
-            }
-          ]);
+          setReviews([]);
         }
       } catch (err: any) {
         console.error("Error loading movie details:", err);
@@ -1177,75 +1164,86 @@ export default function MovieDetailsClient({ movieId, initialSlug }: { movieId: 
               </form>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-stack-lg">
-              {/* Database Reviews */}
-              {dbReviews.map((rev: any) => {
-                const avatar = reviewAvatars[rev.user_id];
-                const rating = reviewRatings[rev.user_id];
-                const isEditing = editingReviewId === rev.id;
+            {dbReviews.length > 0 || reviews.length > 0 ? (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-stack-lg">
+                {/* Database Reviews */}
+                {dbReviews.map((rev: any) => {
+                  const avatar = reviewAvatars[rev.user_id];
+                  const rating = reviewRatings[rev.user_id];
+                  const isEditing = editingReviewId === rev.id;
 
-                return (
-                  <ReviewCard
-                    key={rev.id || rev.created_at}
-                    review={rev}
-                    currentUserId={user?.id}
-                    currentUserName={user?.name}
-                    currentUserAvatar={user?.image}
-                    avatarUrl={avatar}
-                    userRating={rating}
-                    movieTitle={movie?.title || movie?.name}
-                    onEdit={handleStartEdit}
-                    onDelete={handleDeleteReview}
-                    isEditing={isEditing}
-                    editText={editText}
-                    setEditText={setEditText}
-                    onSaveEdit={handleSaveEdit}
-                    onCancelEdit={() => setEditingReviewId(null)}
-                    isEditingSubmitting={isEditingSubmitting}
-                  />
-                );
-              })}
+                  return (
+                    <ReviewCard
+                      key={rev.id || rev.created_at}
+                      review={rev}
+                      currentUserId={user?.id}
+                      currentUserName={user?.name}
+                      currentUserAvatar={user?.image}
+                      avatarUrl={avatar}
+                      userRating={rating}
+                      movieTitle={movie?.title || movie?.name}
+                      onEdit={handleStartEdit}
+                      onDelete={handleDeleteReview}
+                      isEditing={isEditing}
+                      editText={editText}
+                      setEditText={setEditText}
+                      onSaveEdit={handleSaveEdit}
+                      onCancelEdit={() => setEditingReviewId(null)}
+                      isEditingSubmitting={isEditingSubmitting}
+                    />
+                  );
+                })}
 
-              {/* TMDB / Fallback Reviews */}
-              {reviews.map((rev: any) => (
-                <div
-                  key={rev.id}
-                  className="glass-card p-6 rounded-xl relative overflow-hidden group"
-                  onMouseMove={handleMouseMove}
-                >
-                  <div className="absolute top-0 right-0 p-3">
-                    <span className="px-2 py-0.5 bg-green-500/20 text-green-400 text-[10px] rounded uppercase font-bold tracking-tighter">
-                      No Spoilers
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-3 mb-4">
-                    <div className="w-10 h-10 rounded-full bg-secondary-container/30 flex items-center justify-center text-secondary font-bold text-sm uppercase">
-                      {rev.author ? rev.author.slice(0, 2) : "UR"}
+                {/* TMDB Reviews */}
+                {reviews.map((rev: any) => (
+                  <div
+                    key={rev.id}
+                    className="glass-card p-6 rounded-xl relative overflow-hidden group"
+                    onMouseMove={handleMouseMove}
+                  >
+                    <div className="absolute top-0 right-0 p-3">
+                      <span className="px-2 py-0.5 bg-green-500/20 text-green-400 text-[10px] rounded uppercase font-bold tracking-tighter">
+                        No Spoilers
+                      </span>
                     </div>
-                    <div>
-                      <h4 className="font-body-lg font-bold text-on-surface">{rev.author}</h4>
-                      {rev.author_details?.rating && (
-                        <div className="flex text-secondary scale-75 -ml-4">
-                          {Array.from({ length: Math.min(5, Math.ceil(rev.author_details.rating / 2)) }).map((_, i) => (
-                            <span key={i} className="material-symbols-outlined" style={{ fontVariationSettings: "'FILL' 1" }}>
-                              star
-                            </span>
-                          ))}
-                          {Array.from({ length: 5 - Math.min(5, Math.ceil(rev.author_details.rating / 2)) }).map((_, i) => (
-                            <span key={i} className="material-symbols-outlined">
-                              star
-                            </span>
-                          ))}
-                        </div>
-                      )}
+                    <div className="flex items-center gap-3 mb-4">
+                      <div className="w-10 h-10 rounded-full bg-secondary-container/30 flex items-center justify-center text-secondary font-bold text-sm uppercase">
+                        {rev.author ? rev.author.slice(0, 2) : "UR"}
+                      </div>
+                      <div>
+                        <h4 className="font-body-lg font-bold text-on-surface">{rev.author}</h4>
+                        {rev.author_details?.rating && (
+                          <div className="flex text-secondary scale-75 -ml-4">
+                            {Array.from({ length: Math.min(5, Math.ceil(rev.author_details.rating / 2)) }).map((_, i) => (
+                              <span key={i} className="material-symbols-outlined" style={{ fontVariationSettings: "'FILL' 1" }}>
+                                star
+                              </span>
+                            ))}
+                            {Array.from({ length: 5 - Math.min(5, Math.ceil(rev.author_details.rating / 2)) }).map((_, i) => (
+                              <span key={i} className="material-symbols-outlined">
+                                star
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                      </div>
                     </div>
+                    <p className="text-on-surface-variant text-body-md line-clamp-4 overflow-y-auto max-h-24 hide-scrollbar">
+                      {rev.content}
+                    </p>
                   </div>
-                  <p className="text-on-surface-variant text-body-md line-clamp-4 overflow-y-auto max-h-24 hide-scrollbar">
-                    {rev.content}
-                  </p>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            ) : (
+              <div className="glass-card p-8 rounded-xl border border-white/10 text-center max-w-3xl">
+                <span className="material-symbols-outlined text-4xl text-on-surface-variant/40 mb-2 block">
+                  rate_review
+                </span>
+                <p className="text-on-surface-variant opacity-80 text-body-md font-medium">
+                  No reviews yet — be the first to review this film!
+                </p>
+              </div>
+            )}
           </section>
 
           {/* Similar Movies Grid */}

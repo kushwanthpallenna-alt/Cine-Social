@@ -6,7 +6,7 @@ const supabaseAdmin = createClient(
   process.env.SUPABASE_SECRET_KEY || ""
 );
 
-// GET /api/follows?userId=X          → { following: [...], followers: [...], followingCount, followerCount }
+// GET /api/follows?userId=X          → { following: [...], followers: [...], followingUsers: [...], followerUsers: [...], followingCount, followerCount }
 // GET /api/follows?followerId=X&followingId=Y → { isFollowing: bool }
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
@@ -29,16 +29,89 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "Missing userId" }, { status: 400 });
   }
 
+  // 1. Resolve real userId if username was provided
+  let resolvedUserId = userId;
+  const isIdLike =
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(userId) ||
+    /^cred_[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(userId) ||
+    /^\d+$/.test(userId);
+
+  if (!isIdLike) {
+    const { data: prof } = await supabaseAdmin
+      .from("profiles")
+      .select("user_id")
+      .eq("username", userId.toLowerCase().trim())
+      .maybeSingle();
+    if (prof?.user_id) {
+      resolvedUserId = prof.user_id;
+    }
+  }
+
+  // 2. Fetch raw follows rows before any join
   const [followingRes, followersRes] = await Promise.all([
-    supabaseAdmin.from("follows").select("following_id").eq("follower_id", userId),
-    supabaseAdmin.from("follows").select("follower_id").eq("following_id", userId),
+    supabaseAdmin.from("follows").select("following_id, created_at").eq("follower_id", resolvedUserId),
+    supabaseAdmin.from("follows").select("follower_id, created_at").eq("following_id", resolvedUserId),
   ]);
 
+  const rawFollowing = followingRes.data || [];
+  const rawFollowers = followersRes.data || [];
+
+  console.log(`[Follows API] Raw following rows for user=${resolvedUserId}:`, rawFollowing);
+  console.log(`[Follows API] Raw followers rows for user=${resolvedUserId}:`, rawFollowers);
+
+  const followingIds = rawFollowing.map((r) => r.following_id);
+  const followerIds = rawFollowers.map((r) => r.follower_id);
+  const allTargetIds = Array.from(new Set([...followingIds, ...followerIds]));
+
+  // 3. Batch fetch profiles
+  let profileMap = new Map<string, any>();
+  if (allTargetIds.length > 0) {
+    const { data: profiles, error: pErr } = await supabaseAdmin
+      .from("profiles")
+      .select("user_id, username, display_name, avatar_url, bio")
+      .in("user_id", allTargetIds);
+
+    console.log(`[Follows API] Profile lookup returned:`, profiles);
+    if (pErr) console.error("[Follows API] Error fetching profiles:", pErr);
+    if (profiles) {
+      profiles.forEach((p) => profileMap.set(p.user_id, p));
+    }
+  }
+
+  // 4. Build user objects with fallback entry if profile row is missing
+  const mapToUser = (uid: string) => {
+    const p = profileMap.get(uid);
+    if (p) {
+      return {
+        user_id: p.user_id,
+        username: p.username || null,
+        display_name: p.display_name || p.username || "Cine Member",
+        avatar_url: p.avatar_url || null,
+        bio: p.bio || null,
+      };
+    }
+    console.warn(`[Follows API] Missing profile row for user_id=${uid}, returning fallback entry.`);
+    return {
+      user_id: uid,
+      username: null,
+      display_name: "Cine Member",
+      avatar_url: null,
+      bio: null,
+      is_fallback: true,
+    };
+  };
+
+  const followingUsers = followingIds.map(mapToUser);
+  const followerUsers = followerIds.map(mapToUser);
+
+  // Derive counts strictly from the list so they can NEVER disagree
   return NextResponse.json({
-    following: followingRes.data?.map((r) => r.following_id) || [],
-    followers: followersRes.data?.map((r) => r.follower_id) || [],
-    followingCount: followingRes.data?.length || 0,
-    followerCount: followersRes.data?.length || 0,
+    following: followingIds,
+    followers: followerIds,
+    followingUsers,
+    followerUsers,
+    followingCount: followingUsers.length,
+    followerCount: followerUsers.length,
   });
 }
 

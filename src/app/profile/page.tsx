@@ -15,11 +15,14 @@ import RatingDistributionChart from "@/components/RatingDistributionChart";
 import { getPosterUrl } from "@/lib/poster";
 import { getMovieUrl, getTvUrl } from "@/lib/slug";
 import { isAnimeShow } from "@/lib/anime";
+import WatchlistSearchToAdd from "@/components/WatchlistSearchToAdd";
 
 type SortOption =
   | "default"
   | "rating_desc"
   | "rating_asc"
+  | "runtime_desc"
+  | "runtime_asc"
   | "tmdb_desc"
   | "tmdb_asc"
   | "year_desc"
@@ -32,6 +35,8 @@ const SORT_OPTIONS: { id: SortOption; label: string }[] = [
   { id: "default", label: "Default (Date Watched)" },
   { id: "rating_desc", label: "My Rating (Highest)" },
   { id: "rating_asc", label: "My Rating (Lowest)" },
+  { id: "runtime_desc", label: "Runtime (Longest)" },
+  { id: "runtime_asc", label: "Runtime (Shortest)" },
   { id: "tmdb_desc", label: "TMDB Rating (Highest)" },
   { id: "tmdb_asc", label: "TMDB Rating (Lowest)" },
   { id: "year_desc", label: "Release Year (Newest)" },
@@ -43,12 +48,35 @@ const SORT_OPTIONS: { id: SortOption; label: string }[] = [
 
 const WATCHLIST_SORT_OPTIONS: { id: SortOption; label: string }[] = [
   { id: "default", label: "Default (Date Added)" },
+  { id: "runtime_desc", label: "Runtime (Longest)" },
+  { id: "runtime_asc", label: "Runtime (Shortest)" },
   { id: "tmdb_desc", label: "TMDB Rating (Highest)" },
   { id: "tmdb_asc", label: "TMDB Rating (Lowest)" },
   { id: "year_desc", label: "Release Year (Newest)" },
   { id: "year_asc", label: "Release Year (Oldest)" },
   { id: "title_asc", label: "Title (A-Z)" },
   { id: "date_added_asc", label: "Date Added (Oldest)" },
+];
+
+const GENRE_LIST = [
+  "Action",
+  "Adventure",
+  "Animation",
+  "Comedy",
+  "Crime",
+  "Documentary",
+  "Drama",
+  "Family",
+  "Fantasy",
+  "History",
+  "Horror",
+  "Music",
+  "Mystery",
+  "Romance",
+  "Sci-Fi",
+  "Thriller",
+  "War",
+  "Western",
 ];
 
 const GENRE_MAP: { [key: number]: string } = {
@@ -217,6 +245,10 @@ export default function ProfilePage() {
   const [tvSubFilter, setTvSubFilter] = useState<"all" | "anime" | "others">("all");
   const [watchedSort, setWatchedSort] = useState<SortOption>("default");
   const [watchlistSort, setWatchlistSort] = useState<SortOption>("default");
+  const [watchedGenres, setWatchedGenres] = useState<string[]>([]);
+  const [watchedGenreMode, setWatchedGenreMode] = useState<"all" | "any">("all");
+  const [watchlistGenres, setWatchlistGenres] = useState<string[]>([]);
+  const [watchlistGenreMode, setWatchlistGenreMode] = useState<"all" | "any">("all");
 
   // Multi-select & Bulk Delete State
   const [isWatchedSelectMode, setIsWatchedSelectMode] = useState(false);
@@ -654,27 +686,16 @@ export default function ProfilePage() {
     setFollowListModal({ type, users: [], loading: true });
     try {
       const realUserId = profileUserId || user?.id;
-      const res = await fetch(`/api/follows?userId=${realUserId}`);
+      const res = await fetch(`/api/follows/list?userId=${encodeURIComponent(realUserId)}&type=${type}`);
       const data = await res.json();
-      const ids: string[] = type === "followers" ? (data.followers || []) : (data.following || []);
-      const profiles = await Promise.all(
-        ids.map(async (uid: string) => {
-          try {
-            const isUserId =
-              /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(uid) ||
-              /^cred_[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(uid) ||
-              /^\d+$/.test(uid);
-            const profileUrl = isUserId
-              ? `/api/user-profile?userId=${uid}`
-              : `/api/user-profile?username=${encodeURIComponent(uid)}`;
-            const r = await fetch(profileUrl);
-            if (r.ok) return await r.json();
-          } catch { }
-          return { user_id: uid, username: null, display_name: null, avatar_url: null };
-        })
-      );
-      setFollowListModal({ type, users: profiles.filter(Boolean), loading: false });
-    } catch {
+      const userList = Array.isArray(data.users) ? data.users : [];
+      setFollowListModal({ type, users: userList, loading: false });
+      setFollowCounts(prev => ({
+        ...prev,
+        [type]: userList.length,
+      }));
+    } catch (e) {
+      console.error("Error opening follow list:", e);
       setFollowListModal(prev => prev ? { ...prev, loading: false } : null);
     }
   };
@@ -774,6 +795,30 @@ export default function ProfilePage() {
   const getItemDetails = (item: any) => {
     const type = item.content_type === "tv" ? "tv" : "movie";
     return mediaDetails[`${type}_${item.movie_id}`] || mediaDetails[item.movie_id] || item;
+  };
+
+  const getItemRuntime = (item: any, detail: any): number => {
+    if (detail?.runtime && typeof detail.runtime === "number") return detail.runtime;
+    if (Array.isArray(detail?.episode_run_time) && detail.episode_run_time[0]) return detail.episode_run_time[0];
+    if (detail?.number_of_episodes) return detail.number_of_episodes * 45;
+    return 0;
+  };
+
+  const getItemGenres = (item: any, detail: any): string[] => {
+    const list: string[] = [];
+    if (detail?.genres && Array.isArray(detail.genres)) {
+      detail.genres.forEach((g: any) => {
+        if (typeof g === "string") list.push(g);
+        else if (g?.name) list.push(g.name);
+      });
+    }
+    if (detail?.genre_ids && Array.isArray(detail.genre_ids)) {
+      detail.genre_ids.forEach((id: number) => {
+        const mapped = GENRE_MAP[id];
+        if (mapped) list.push(mapped);
+      });
+    }
+    return list;
   };
 
   // Cinema DNA Computations for current mediaType
@@ -892,7 +937,25 @@ export default function ProfilePage() {
 
   const sortedWatched = useMemo(() => {
     if (!currentWatched || currentWatched.length === 0) return [];
-    const list = [...currentWatched];
+    let list = [...currentWatched];
+
+    // Filter by selected watchedGenres
+    if (watchedGenres.length > 0) {
+      list = list.filter((item) => {
+        const type = item.content_type === "tv" ? "tv" : "movie";
+        const detail = mediaDetails[`${type}_${item.movie_id}`] || mediaDetails[item.movie_id] || item;
+        const itemGenres = getItemGenres(item, detail);
+        if (watchedGenreMode === "all") {
+          return watchedGenres.every((sg) =>
+            itemGenres.some((ig) => ig.toLowerCase().includes(sg.toLowerCase()))
+          );
+        } else {
+          return watchedGenres.some((sg) =>
+            itemGenres.some((ig) => ig.toLowerCase().includes(sg.toLowerCase()))
+          );
+        }
+      });
+    }
 
     return list.sort((a, b) => {
       const typeA = a.content_type === "tv" ? "tv" : "movie";
@@ -905,6 +968,19 @@ export default function ProfilePage() {
         const ratingB = ratingsMap[`${typeB}_${b.movie_id}`] ?? ratingsMap[b.movie_id] ?? 0;
         if (ratingA !== ratingB) {
           return watchedSort === "rating_desc" ? ratingB - ratingA : ratingA - ratingB;
+        }
+      }
+
+      if (watchedSort === "runtime_desc" || watchedSort === "runtime_asc") {
+        const runA = getItemRuntime(a, itemA);
+        const runB = getItemRuntime(b, itemB);
+        if (watchedSort === "runtime_desc") {
+          return runB - runA;
+        } else {
+          if (runA === 0 && runB === 0) return 0;
+          if (runA === 0) return 1;
+          if (runB === 0) return -1;
+          return runA - runB;
         }
       }
 
@@ -950,17 +1026,48 @@ export default function ProfilePage() {
       const timeB = b.watched_at ? new Date(b.watched_at).getTime() : 0;
       return timeB - timeA;
     });
-  }, [currentWatched, watchedSort, mediaDetails, ratingsMap]);
+  }, [currentWatched, watchedSort, watchedGenres, watchedGenreMode, mediaDetails, ratingsMap]);
 
   const sortedWatchlist = useMemo(() => {
     if (!currentWatchlist || currentWatchlist.length === 0) return [];
-    const list = [...currentWatchlist];
+    let list = [...currentWatchlist];
+
+    // Filter by selected watchlistGenres
+    if (watchlistGenres.length > 0) {
+      list = list.filter((item) => {
+        const type = item.content_type === "tv" ? "tv" : "movie";
+        const detail = mediaDetails[`${type}_${item.movie_id}`] || mediaDetails[item.movie_id] || item;
+        const itemGenres = getItemGenres(item, detail);
+        if (watchlistGenreMode === "all") {
+          return watchlistGenres.every((sg) =>
+            itemGenres.some((ig) => ig.toLowerCase().includes(sg.toLowerCase()))
+          );
+        } else {
+          return watchlistGenres.some((sg) =>
+            itemGenres.some((ig) => ig.toLowerCase().includes(sg.toLowerCase()))
+          );
+        }
+      });
+    }
 
     return list.sort((a, b) => {
       const typeA = a.content_type === "tv" ? "tv" : "movie";
       const typeB = b.content_type === "tv" ? "tv" : "movie";
       const itemA = mediaDetails[`${typeA}_${a.movie_id}`] || mediaDetails[a.movie_id] || a;
       const itemB = mediaDetails[`${typeB}_${b.movie_id}`] || mediaDetails[b.movie_id] || b;
+
+      if (watchlistSort === "runtime_desc" || watchlistSort === "runtime_asc") {
+        const runA = getItemRuntime(a, itemA);
+        const runB = getItemRuntime(b, itemB);
+        if (watchlistSort === "runtime_desc") {
+          return runB - runA;
+        } else {
+          if (runA === 0 && runB === 0) return 0;
+          if (runA === 0) return 1;
+          if (runB === 0) return -1;
+          return runA - runB;
+        }
+      }
 
       if (watchlistSort === "tmdb_desc" || watchlistSort === "tmdb_asc") {
         const voteA = itemA?.vote_average ?? 0;
@@ -998,7 +1105,7 @@ export default function ProfilePage() {
       const timeB = b.created_at ? new Date(b.created_at).getTime() : (b.added_at ? new Date(b.added_at).getTime() : 0);
       return timeB - timeA;
     });
-  }, [currentWatchlist, watchlistSort, mediaDetails]);
+  }, [currentWatchlist, watchlistSort, watchlistGenres, watchlistGenreMode, mediaDetails]);
 
   // Multi-select helpers
   const toggleWatchedItemSelection = (itemKey: string) => {
@@ -1721,6 +1828,84 @@ export default function ProfilePage() {
                       </div>
                     </div>
 
+                    {/* Watched Genre Filter Row */}
+                    <div className="mb-4 p-3 rounded-2xl bg-white/[0.03] border border-white/10">
+                      <div className="flex items-center justify-between flex-wrap gap-2 mb-2">
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs text-white/50 uppercase tracking-widest font-semibold flex items-center gap-1">
+                            <span className="material-symbols-outlined text-[14px]">tune</span>
+                            Genre Filter:
+                          </span>
+                          {watchedGenres.length > 0 && (
+                            <span className="text-[11px] bg-primary/20 text-primary border border-primary/30 px-2 py-0.5 rounded-full font-bold">
+                              {watchedGenres.length} selected
+                            </span>
+                          )}
+                        </div>
+
+                        <div className="flex items-center gap-2">
+                          <div className="flex items-center bg-black/40 rounded-full p-0.5 border border-white/10 text-[11px]">
+                            <button
+                              onClick={() => setWatchedGenreMode("all")}
+                              className={`px-2.5 py-0.5 rounded-full font-semibold transition-all cursor-pointer ${
+                                watchedGenreMode === "all"
+                                  ? "bg-white/20 text-white"
+                                  : "text-white/40 hover:text-white"
+                              }`}
+                            >
+                              Match All
+                            </button>
+                            <button
+                              onClick={() => setWatchedGenreMode("any")}
+                              className={`px-2.5 py-0.5 rounded-full font-semibold transition-all cursor-pointer ${
+                                watchedGenreMode === "any"
+                                  ? "bg-white/20 text-white"
+                                  : "text-white/40 hover:text-white"
+                              }`}
+                            >
+                              Match Any
+                            </button>
+                          </div>
+
+                          {watchedGenres.length > 0 && (
+                            <button
+                              onClick={() => setWatchedGenres([])}
+                              className="text-[11px] text-white/40 hover:text-white underline cursor-pointer bg-transparent border-none"
+                            >
+                              Clear
+                            </button>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="flex flex-wrap gap-1.5">
+                        {GENRE_LIST.map((genre) => {
+                          const isSelected = watchedGenres.includes(genre);
+                          return (
+                            <button
+                              key={genre}
+                              onClick={() =>
+                                setWatchedGenres((prev) =>
+                                  prev.includes(genre)
+                                    ? prev.filter((g) => g !== genre)
+                                    : [...prev, genre]
+                                )
+                              }
+                              className={`px-2.5 py-1 rounded-full text-xs font-medium transition-all cursor-pointer border select-none ${
+                                isSelected
+                                  ? mediaType === "tv"
+                                    ? "bg-purple-600 text-white font-bold border-purple-500 shadow-sm"
+                                    : "bg-[#e50914] text-white font-bold border-[#e50914] shadow-sm"
+                                  : "bg-white/5 text-white/60 border-white/10 hover:border-white/30 hover:text-white"
+                              }`}
+                            >
+                              {genre}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+
                     {/* Bulk Selection Bar */}
                     {isWatchedSelectMode && (
                       <div className="flex flex-wrap items-center justify-between gap-3 p-3 mb-4 rounded-xl bg-white/5 border border-white/10 animate-fade-in">
@@ -1860,11 +2045,34 @@ export default function ProfilePage() {
 
             {activeTab === "watchlist" && (
               <section className="animate-fade-in">
+                {/* Watchlist Quick Search to Add */}
+                <div className="mb-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                  <WatchlistSearchToAdd
+                    userId={user?.id}
+                    watchlist={watchlist}
+                    onItemAdded={(newItem, detail) => {
+                      setWatchlist((prev) => [newItem, ...prev]);
+                      if (detail) {
+                        const type = newItem.content_type === "tv" ? "tv" : "movie";
+                        setMediaDetails((prev) => ({
+                          ...prev,
+                          [`${type}_${newItem.movie_id}`]: detail,
+                          [newItem.movie_id]: detail,
+                        }));
+                      }
+                    }}
+                    className="w-full sm:w-96"
+                  />
+                  <div className="text-xs text-white/40">
+                    Saved in Watchlist: <span className="text-white/80 font-bold">{currentWatchlist.length}</span>
+                  </div>
+                </div>
+
                 {currentWatchlist.length === 0 ? (
                   <div className="text-center py-12 glass-card rounded-2xl border border-white/5 p-8 max-w-md mx-auto">
                     <span className="material-symbols-outlined text-[40px] text-on-surface-variant/40 mb-2">bookmark_border</span>
                     <p className="text-on-surface-variant text-body-md">
-                      Your {mediaType === "tv" ? "TV show" : "movie"} watchlist is empty.
+                      Your {mediaType === "tv" ? "TV show" : "movie"} watchlist is empty. Search above to add titles!
                     </p>
                   </div>
                 ) : (
@@ -1913,6 +2121,84 @@ export default function ProfilePage() {
                           </span>
                           {isWatchlistSelectMode ? "Cancel" : "Select"}
                         </button>
+                      </div>
+                    </div>
+
+                    {/* Watchlist Genre Filter Row */}
+                    <div className="mb-4 p-3 rounded-2xl bg-white/[0.03] border border-white/10">
+                      <div className="flex items-center justify-between flex-wrap gap-2 mb-2">
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs text-white/50 uppercase tracking-widest font-semibold flex items-center gap-1">
+                            <span className="material-symbols-outlined text-[14px]">tune</span>
+                            Genre Filter:
+                          </span>
+                          {watchlistGenres.length > 0 && (
+                            <span className="text-[11px] bg-primary/20 text-primary border border-primary/30 px-2 py-0.5 rounded-full font-bold">
+                              {watchlistGenres.length} selected
+                            </span>
+                          )}
+                        </div>
+
+                        <div className="flex items-center gap-2">
+                          <div className="flex items-center bg-black/40 rounded-full p-0.5 border border-white/10 text-[11px]">
+                            <button
+                              onClick={() => setWatchlistGenreMode("all")}
+                              className={`px-2.5 py-0.5 rounded-full font-semibold transition-all cursor-pointer ${
+                                watchlistGenreMode === "all"
+                                  ? "bg-white/20 text-white"
+                                  : "text-white/40 hover:text-white"
+                              }`}
+                            >
+                              Match All
+                            </button>
+                            <button
+                              onClick={() => setWatchlistGenreMode("any")}
+                              className={`px-2.5 py-0.5 rounded-full font-semibold transition-all cursor-pointer ${
+                                watchlistGenreMode === "any"
+                                  ? "bg-white/20 text-white"
+                                  : "text-white/40 hover:text-white"
+                              }`}
+                            >
+                              Match Any
+                            </button>
+                          </div>
+
+                          {watchlistGenres.length > 0 && (
+                            <button
+                              onClick={() => setWatchlistGenres([])}
+                              className="text-[11px] text-white/40 hover:text-white underline cursor-pointer bg-transparent border-none"
+                            >
+                              Clear
+                            </button>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="flex flex-wrap gap-1.5">
+                        {GENRE_LIST.map((genre) => {
+                          const isSelected = watchlistGenres.includes(genre);
+                          return (
+                            <button
+                              key={genre}
+                              onClick={() =>
+                                setWatchlistGenres((prev) =>
+                                  prev.includes(genre)
+                                    ? prev.filter((g) => g !== genre)
+                                    : [...prev, genre]
+                                )
+                              }
+                              className={`px-2.5 py-1 rounded-full text-xs font-medium transition-all cursor-pointer border select-none ${
+                                isSelected
+                                  ? mediaType === "tv"
+                                    ? "bg-purple-600 text-white font-bold border-purple-500 shadow-sm"
+                                    : "bg-[#e50914] text-white font-bold border-[#e50914] shadow-sm"
+                                  : "bg-white/5 text-white/60 border-white/10 hover:border-white/30 hover:text-white"
+                              }`}
+                            >
+                              {genre}
+                            </button>
+                          );
+                        })}
                       </div>
                     </div>
 

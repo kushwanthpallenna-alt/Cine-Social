@@ -35,13 +35,36 @@ export async function GET(request: Request) {
     return NextResponse.json({ items: [], total: 0, hasMore: false });
   }
 
-  // 2. Fetch profiles for display names / avatars
-  const { data: profiles } = await supabaseAdmin
-    .from("profiles")
-    .select("user_id, display_name, username, avatar_url")
-    .in("user_id", followingIds);
+  // 2. Fetch profiles for display names / avatars AND custom poster preferences of followed users
+  const [{ data: profiles }, { data: posterPrefsData }] = await Promise.all([
+    supabaseAdmin
+      .from("profiles")
+      .select("user_id, display_name, username, avatar_url")
+      .in("user_id", followingIds),
+    supabaseAdmin
+      .from("user_poster_preferences")
+      .select("user_id, movie_id, poster_path, content_type")
+      .in("user_id", followingIds),
+  ]);
 
   const profileMap = new Map<string, any>(profiles?.map((p) => [p.user_id, p]) || []);
+  const posterPrefMap = new Map<string, string>();
+  (posterPrefsData || []).forEach((p) => {
+    if (p.user_id && p.movie_id && p.poster_path) {
+      const type = p.content_type || "movie";
+      posterPrefMap.set(`${p.user_id}_${type}_${p.movie_id}`, p.poster_path);
+      posterPrefMap.set(`${p.user_id}_${p.movie_id}`, p.poster_path);
+    }
+  });
+
+  const getCustomPoster = (uid: string, mid: string, cType: string, defaultPath: string = "") => {
+    const type = cType || "movie";
+    return (
+      posterPrefMap.get(`${uid}_${type}_${mid}`) ||
+      posterPrefMap.get(`${uid}_${mid}`) ||
+      defaultPath
+    );
+  };
 
   const from = page * PAGE_SIZE;
   const to = from + PAGE_SIZE - 1;
@@ -68,6 +91,7 @@ export async function GET(request: Request) {
         avatar_url: profile?.avatar_url || null,
         movie_id: rev.movie_id,
         review_text: rev.review_text,
+        poster_path: getCustomPoster(rev.user_id, rev.movie_id, rev.content_type || "movie", ""),
         content_type: rev.content_type || "movie",
         created_at: ts,
         id: `review_${rev.id}`,
@@ -98,7 +122,7 @@ export async function GET(request: Request) {
         avatar_url: profile?.avatar_url || null,
         movie_id: w.movie_id,
         movie_title: w.movie_title || "",
-        poster_path: w.poster_path || "",
+        poster_path: getCustomPoster(w.user_id, w.movie_id, w.content_type || "movie", w.poster_path || ""),
         content_type: w.content_type || "movie",
         created_at: ts,
         id: `watched_${w.user_id}_${w.movie_id}_${new Date(ts).getTime()}`,
@@ -129,7 +153,7 @@ export async function GET(request: Request) {
         avatar_url: profile?.avatar_url || null,
         movie_id: w.movie_id,
         movie_title: w.movie_title || "",
-        poster_path: w.poster_path || "",
+        poster_path: getCustomPoster(w.user_id, w.movie_id, w.content_type || "movie", w.poster_path || ""),
         content_type: w.content_type || "movie",
         created_at: ts,
         id: `watchlist_${w.user_id}_${w.movie_id}_${new Date(ts).getTime()}`,
@@ -160,6 +184,7 @@ export async function GET(request: Request) {
         avatar_url: profile?.avatar_url || null,
         movie_id: r.movie_id,
         rating: r.rating,
+        poster_path: getCustomPoster(r.user_id, r.movie_id, r.content_type || "movie", ""),
         content_type: r.content_type || "movie",
         created_at: ts,
         id: `rating_${r.user_id}_${r.movie_id}_${new Date(ts).getTime()}`,
@@ -211,7 +236,7 @@ export async function GET(request: Request) {
       avatar_url: profile?.avatar_url || null,
       movie_id: w.movie_id,
       movie_title: w.movie_title || "",
-      poster_path: w.poster_path || "",
+      poster_path: getCustomPoster(w.user_id, w.movie_id, w.content_type || "movie", w.poster_path || ""),
       content_type: w.content_type || "movie",
       created_at: ts,
       id: `watched_${w.user_id}_${w.movie_id}_${new Date(ts).getTime()}`,
@@ -228,6 +253,7 @@ export async function GET(request: Request) {
       avatar_url: profile?.avatar_url || null,
       movie_id: r.movie_id,
       rating: r.rating,
+      poster_path: getCustomPoster(r.user_id, r.movie_id, r.content_type || "movie", ""),
       content_type: r.content_type || "movie",
       created_at: ts,
       id: `rating_${r.user_id}_${r.movie_id}_${new Date(ts).getTime()}`,
@@ -244,7 +270,7 @@ export async function GET(request: Request) {
       avatar_url: profile?.avatar_url || null,
       movie_id: w.movie_id,
       movie_title: w.movie_title || "",
-      poster_path: w.poster_path || "",
+      poster_path: getCustomPoster(w.user_id, w.movie_id, w.content_type || "movie", w.poster_path || ""),
       content_type: w.content_type || "movie",
       created_at: ts,
       id: `watchlist_${w.user_id}_${w.movie_id}_${new Date(ts).getTime()}`,
@@ -261,6 +287,7 @@ export async function GET(request: Request) {
       avatar_url: profile?.avatar_url || null,
       movie_id: rev.movie_id,
       review_text: rev.review_text,
+      poster_path: getCustomPoster(rev.user_id, rev.movie_id, rev.content_type || "movie", ""),
       content_type: rev.content_type || "movie",
       created_at: ts,
       id: `review_${rev.id}`,

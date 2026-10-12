@@ -7,16 +7,97 @@ import { useSession } from "next-auth/react";
 import { useAuthPrompt } from "@/components/AuthPromptProvider";
 import { supabase } from "@/lib/supabase";
 import { getMovieUrl, getTvUrl } from "@/lib/slug";
+import WatchlistSearchToAdd from "@/components/WatchlistSearchToAdd";
+
+type SortOption =
+  | "default"
+  | "runtime_desc"
+  | "runtime_asc"
+  | "tmdb_desc"
+  | "tmdb_asc"
+  | "year_desc"
+  | "year_asc"
+  | "title_asc"
+  | "date_added_asc";
+
+const SORT_OPTIONS: { id: SortOption; label: string }[] = [
+  { id: "default", label: "Default (Date Added)" },
+  { id: "runtime_desc", label: "Runtime (Longest)" },
+  { id: "runtime_asc", label: "Runtime (Shortest)" },
+  { id: "tmdb_desc", label: "TMDB Rating (Highest)" },
+  { id: "tmdb_asc", label: "TMDB Rating (Lowest)" },
+  { id: "year_desc", label: "Release Year (Newest)" },
+  { id: "year_asc", label: "Release Year (Oldest)" },
+  { id: "title_asc", label: "Title (A-Z)" },
+  { id: "date_added_asc", label: "Date Added (Oldest)" },
+];
+
+const GENRE_LIST = [
+  "Action",
+  "Adventure",
+  "Animation",
+  "Comedy",
+  "Crime",
+  "Documentary",
+  "Drama",
+  "Family",
+  "Fantasy",
+  "History",
+  "Horror",
+  "Music",
+  "Mystery",
+  "Romance",
+  "Sci-Fi",
+  "Thriller",
+  "War",
+  "Western",
+];
+
+const GENRE_MAP: Record<number, string> = {
+  28: "Action",
+  12: "Adventure",
+  16: "Animation",
+  35: "Comedy",
+  80: "Crime",
+  99: "Documentary",
+  18: "Drama",
+  10751: "Family",
+  14: "Fantasy",
+  36: "History",
+  27: "Horror",
+  10402: "Music",
+  9648: "Mystery",
+  10749: "Romance",
+  878: "Sci-Fi",
+  10770: "TV Movie",
+  53: "Thriller",
+  10752: "War",
+  37: "Western",
+  10759: "Action & Adventure",
+  10762: "Kids",
+  10763: "News",
+  10764: "Reality",
+  10765: "Sci-Fi & Fantasy",
+  10766: "Soap",
+  10767: "Talk",
+  10768: "War & Politics",
+};
 
 function WatchlistView() {
   const { data: session } = useSession();
   const user = session?.user as any;
   const { showAuthPrompt } = useAuthPrompt();
   const [watchlist, setWatchlist] = useState<any[]>([]);
+  const [mediaDetails, setMediaDetails] = useState<Record<string, any>>({});
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<"movies" | "tv">("movies");
   // Map of [type_id] or [id] → preferred poster_path
   const [posterPrefs, setPosterPrefs] = useState<Record<string, string>>({});
+
+  // Sorting & Filtering
+  const [sortOption, setSortOption] = useState<SortOption>("default");
+  const [selectedGenres, setSelectedGenres] = useState<string[]>([]);
+  const [genreMatchMode, setGenreMatchMode] = useState<"all" | "any">("all");
 
   useEffect(() => {
     if (!user?.id) {
@@ -32,6 +113,7 @@ function WatchlistView() {
           .order("created_at", { ascending: false });
         if (data) {
           setWatchlist(data);
+
           // Batch-fetch poster preferences for all watchlist items (movies + tv shows)
           if (data.length > 0) {
             const items = data.map((m: any) => ({
@@ -56,6 +138,23 @@ function WatchlistView() {
                 }
               })
               .catch(() => { });
+
+            // Fetch TMDB details for all watchlist items for runtime, genres, release date
+            const detailsMap: Record<string, any> = {};
+            await Promise.all(
+              data.map(async (item: any) => {
+                const type = item.content_type === "tv" ? "tv" : "movie";
+                try {
+                  const res = await fetch(`/api/tmdb?endpoint=${type}/${item.movie_id}&append_to_response=credits`);
+                  if (res.ok) {
+                    const d = await res.json();
+                    detailsMap[`${type}_${item.movie_id}`] = d;
+                    detailsMap[item.movie_id] = d;
+                  }
+                } catch { }
+              })
+            );
+            setMediaDetails(detailsMap);
           }
         }
       } catch (err) {
@@ -67,6 +166,24 @@ function WatchlistView() {
     fetchWatchlist();
   }, [user]);
 
+  const handleItemAdded = (item: any, detail?: any) => {
+    setWatchlist((prev) => [item, ...prev]);
+    if (detail) {
+      const type = item.content_type === "tv" ? "tv" : "movie";
+      setMediaDetails((prev) => ({
+        ...prev,
+        [`${type}_${item.movie_id}`]: detail,
+        [item.movie_id]: detail,
+      }));
+    }
+  };
+
+  const toggleGenre = (genre: string) => {
+    setSelectedGenres((prev) =>
+      prev.includes(genre) ? prev.filter((g) => g !== genre) : [...prev, genre]
+    );
+  };
+
   const movieWatchlist = useMemo(
     () => watchlist.filter((item) => (item.content_type || "movie") !== "tv"),
     [watchlist]
@@ -76,6 +193,111 @@ function WatchlistView() {
     [watchlist]
   );
   const currentList = activeTab === "movies" ? movieWatchlist : tvWatchlist;
+
+  const getItemRuntime = (item: any, detail: any): number => {
+    if (detail?.runtime && typeof detail.runtime === "number") return detail.runtime;
+    if (Array.isArray(detail?.episode_run_time) && detail.episode_run_time[0]) return detail.episode_run_time[0];
+    if (detail?.number_of_episodes) return detail.number_of_episodes * 45;
+    return 0;
+  };
+
+  const getItemGenres = (item: any, detail: any): string[] => {
+    const list: string[] = [];
+    if (detail?.genres && Array.isArray(detail.genres)) {
+      detail.genres.forEach((g: any) => {
+        if (typeof g === "string") list.push(g);
+        else if (g?.name) list.push(g.name);
+      });
+    }
+    if (detail?.genre_ids && Array.isArray(detail.genre_ids)) {
+      detail.genre_ids.forEach((id: number) => {
+        const mapped = GENRE_MAP[id];
+        if (mapped) list.push(mapped);
+      });
+    }
+    return list;
+  };
+
+  // Combined Genre Filter and Sort
+  const processedList = useMemo(() => {
+    let list = [...currentList];
+
+    // Filter by selected genres
+    if (selectedGenres.length > 0) {
+      list = list.filter((item) => {
+        const type = item.content_type === "tv" ? "tv" : "movie";
+        const detail = mediaDetails[`${type}_${item.movie_id}`] || mediaDetails[item.movie_id];
+        const itemGenres = getItemGenres(item, detail);
+
+        if (genreMatchMode === "all") {
+          return selectedGenres.every((sg) =>
+            itemGenres.some((ig) => ig.toLowerCase().includes(sg.toLowerCase()))
+          );
+        } else {
+          return selectedGenres.some((sg) =>
+            itemGenres.some((ig) => ig.toLowerCase().includes(sg.toLowerCase()))
+          );
+        }
+      });
+    }
+
+    // Sort
+    return list.sort((a, b) => {
+      const typeA = a.content_type === "tv" ? "tv" : "movie";
+      const typeB = b.content_type === "tv" ? "tv" : "movie";
+      const detailA = mediaDetails[`${typeA}_${a.movie_id}`] || mediaDetails[a.movie_id];
+      const detailB = mediaDetails[`${typeB}_${b.movie_id}`] || mediaDetails[b.movie_id];
+
+      if (sortOption === "runtime_desc" || sortOption === "runtime_asc") {
+        const runA = getItemRuntime(a, detailA);
+        const runB = getItemRuntime(b, detailB);
+        if (sortOption === "runtime_desc") {
+          return runB - runA;
+        } else {
+          if (runA === 0 && runB === 0) return 0;
+          if (runA === 0) return 1;
+          if (runB === 0) return -1;
+          return runA - runB;
+        }
+      }
+
+      if (sortOption === "tmdb_desc" || sortOption === "tmdb_asc") {
+        const voteA = detailA?.vote_average ?? 0;
+        const voteB = detailB?.vote_average ?? 0;
+        if (voteA !== voteB) {
+          return sortOption === "tmdb_desc" ? voteB - voteA : voteA - voteB;
+        }
+      }
+
+      if (sortOption === "year_desc" || sortOption === "year_asc") {
+        const dateA = detailA?.release_date || detailA?.first_air_date || a.year || "";
+        const dateB = detailB?.release_date || detailB?.first_air_date || b.year || "";
+        const yearA = dateA ? parseInt(String(dateA).substring(0, 4), 10) || 0 : 0;
+        const yearB = dateB ? parseInt(String(dateB).substring(0, 4), 10) || 0 : 0;
+        if (yearA !== yearB) {
+          return sortOption === "year_desc" ? yearB - yearA : yearA - yearB;
+        }
+      }
+
+      if (sortOption === "title_asc") {
+        const titleA = String(detailA?.title || detailA?.name || a.movie_title || "").toLowerCase();
+        const titleB = String(detailB?.title || detailB?.name || b.movie_title || "").toLowerCase();
+        const cmp = titleA.localeCompare(titleB);
+        if (cmp !== 0) return cmp;
+      }
+
+      if (sortOption === "date_added_asc") {
+        const timeA = a.created_at ? new Date(a.created_at).getTime() : 0;
+        const timeB = b.created_at ? new Date(b.created_at).getTime() : 0;
+        return timeA - timeB;
+      }
+
+      // Default: date added descending
+      const timeA = a.created_at ? new Date(a.created_at).getTime() : 0;
+      const timeB = b.created_at ? new Date(b.created_at).getTime() : 0;
+      return timeB - timeA;
+    });
+  }, [currentList, selectedGenres, genreMatchMode, sortOption, mediaDetails]);
 
   return (
     <div className="bg-[#050505] text-[#e5e2e1] font-body-md overflow-x-clip min-h-screen relative pb-32">
@@ -111,9 +333,10 @@ function WatchlistView() {
           </div>
         ) : (
           <div>
-            {/* Split Switcher: Movies vs TV Shows */}
-            <div className="flex items-center justify-between flex-wrap gap-4 mb-8">
-              <div className="flex items-center gap-2 p-1 rounded-full bg-white/5 border border-white/10 backdrop-blur-md">
+            {/* Top Toolbar: Search-to-add & Media Switcher */}
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
+              {/* Media Switcher: Movies vs TV */}
+              <div className="flex items-center gap-2 p-1 rounded-full bg-white/5 border border-white/10 backdrop-blur-md self-start">
                 <button
                   onClick={() => setActiveTab("movies")}
                   className={`px-5 py-2 rounded-full text-sm font-semibold transition-all cursor-pointer flex items-center gap-2 ${
@@ -153,36 +376,164 @@ function WatchlistView() {
                 </button>
               </div>
 
-              <div className="text-xs text-white/40">
-                Total Saved: <span className="text-white/80 font-bold">{watchlist.length}</span>
+              {/* Watchlist Quick Search to Add */}
+              <WatchlistSearchToAdd
+                userId={user.id}
+                watchlist={watchlist}
+                onItemAdded={handleItemAdded}
+                className="w-full md:w-96"
+              />
+            </div>
+
+            {/* Sort Bar */}
+            <div className="mb-4">
+              <div className="flex items-center gap-2 overflow-x-auto no-scrollbar scroll-smooth py-1">
+                <span className="text-xs text-on-surface-variant uppercase tracking-widest font-semibold flex items-center gap-1 shrink-0 mr-1 opacity-70">
+                  <span className="material-symbols-outlined text-[15px]">sort</span>
+                  Sort:
+                </span>
+                {SORT_OPTIONS.map((opt) => {
+                  const isActive = sortOption === opt.id;
+                  return (
+                    <button
+                      key={opt.id}
+                      onClick={() => setSortOption(opt.id)}
+                      className={`px-3 py-1 rounded-full text-xs font-semibold whitespace-nowrap transition-all duration-200 cursor-pointer border flex items-center gap-1 shrink-0 ${
+                        isActive
+                          ? activeTab === "tv"
+                            ? "bg-purple-600 text-white border-purple-500 shadow-[0_0_12px_rgba(168,85,247,0.4)]"
+                            : "bg-[#e50914] text-white border-[#e50914] shadow-[0_0_12px_rgba(229,9,20,0.4)]"
+                          : "bg-white/5 text-white/60 border-white/10 hover:bg-white/10 hover:text-white"
+                      }`}
+                    >
+                      {isActive && <span className="material-symbols-outlined text-[13px] font-bold">check</span>}
+                      {opt.label}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Multi-Genre Filter Row */}
+            <div className="mb-6 p-3 rounded-2xl bg-white/[0.03] border border-white/10">
+              <div className="flex items-center justify-between flex-wrap gap-2 mb-2.5">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-white/50 uppercase tracking-widest font-semibold flex items-center gap-1">
+                    <span className="material-symbols-outlined text-[14px]">tune</span>
+                    Genre Filter:
+                  </span>
+                  {selectedGenres.length > 0 && (
+                    <span className="text-[11px] bg-primary/20 text-primary border border-primary/30 px-2 py-0.5 rounded-full font-bold">
+                      {selectedGenres.length} selected
+                    </span>
+                  )}
+                </div>
+
+                <div className="flex items-center gap-2">
+                  {/* Any / All Toggle */}
+                  <div className="flex items-center bg-black/40 rounded-full p-0.5 border border-white/10 text-[11px]">
+                    <button
+                      onClick={() => setGenreMatchMode("all")}
+                      className={`px-2.5 py-0.5 rounded-full font-semibold transition-all cursor-pointer ${
+                        genreMatchMode === "all"
+                          ? "bg-white/20 text-white"
+                          : "text-white/40 hover:text-white"
+                      }`}
+                      title="Match ALL selected genres"
+                    >
+                      Match All
+                    </button>
+                    <button
+                      onClick={() => setGenreMatchMode("any")}
+                      className={`px-2.5 py-0.5 rounded-full font-semibold transition-all cursor-pointer ${
+                        genreMatchMode === "any"
+                          ? "bg-white/20 text-white"
+                          : "text-white/40 hover:text-white"
+                      }`}
+                      title="Match ANY selected genre"
+                    >
+                      Match Any
+                    </button>
+                  </div>
+
+                  {selectedGenres.length > 0 && (
+                    <button
+                      onClick={() => setSelectedGenres([])}
+                      className="text-[11px] text-white/40 hover:text-white underline cursor-pointer bg-transparent border-none"
+                    >
+                      Clear
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {/* Genre Chips */}
+              <div className="flex flex-wrap gap-1.5">
+                {GENRE_LIST.map((genre) => {
+                  const isSelected = selectedGenres.includes(genre);
+                  return (
+                    <button
+                      key={genre}
+                      onClick={() => toggleGenre(genre)}
+                      className={`px-2.5 py-1 rounded-full text-xs font-medium transition-all cursor-pointer border select-none ${
+                        isSelected
+                          ? "bg-primary text-black font-bold border-primary shadow-sm"
+                          : "bg-white/5 text-white/60 border-white/10 hover:border-white/30 hover:text-white"
+                      }`}
+                    >
+                      {genre}
+                    </button>
+                  );
+                })}
               </div>
             </div>
 
             {/* Current Tab Grid or Empty State */}
-            {currentList.length === 0 ? (
+            {processedList.length === 0 ? (
               <div className="text-center py-20 glass-card rounded-xl border border-white/10 max-w-md mx-auto animate-fade-in">
                 <span className="material-symbols-outlined text-[48px] text-on-surface-variant/50 mb-4">
-                  {activeTab === "tv" ? "tv_off" : "bookmark_border"}
+                  {selectedGenres.length > 0
+                    ? "filter_alt_off"
+                    : activeTab === "tv"
+                    ? "tv_off"
+                    : "bookmark_border"}
                 </span>
                 <h2 className="font-title-lg text-title-lg mb-2">
-                  {activeTab === "tv" ? "Your TV Show Watchlist is Empty" : "Your Movie Watchlist is Empty"}
+                  {selectedGenres.length > 0
+                    ? "No matches for selected genres"
+                    : activeTab === "tv"
+                    ? "Your TV Show Watchlist is Empty"
+                    : "Your Movie Watchlist is Empty"}
                 </h2>
-                <p className="text-on-surface-variant text-sm max-w-xs mx-auto">
-                  {activeTab === "tv"
-                    ? "TV shows you bookmark will appear here."
-                    : "Movies you bookmark will appear here."}
+                <p className="text-on-surface-variant text-sm max-w-xs mx-auto mb-4">
+                  {selectedGenres.length > 0
+                    ? "Try loosening your genre filters or switching between Match All and Match Any."
+                    : activeTab === "tv"
+                    ? "Use the search bar above to bookmark your favorite TV shows."
+                    : "Use the search bar above to bookmark your favorite movies."}
                 </p>
+                {selectedGenres.length > 0 && (
+                  <button
+                    onClick={() => setSelectedGenres([])}
+                    className="bg-white/10 hover:bg-white/20 text-white text-xs px-4 py-2 rounded-full font-bold transition-all border border-white/10"
+                  >
+                    Reset Filters
+                  </button>
+                )}
               </div>
             ) : (
               <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-stack-md animate-fade-in">
-                {currentList.map((item: any) => {
+                {processedList.map((item: any) => {
                   const isTv = item.content_type === "tv";
                   const itemType = isTv ? "tv" : "movie";
-                  const linkHref = isTv ? getTvUrl(item.movie_id, item.movie_title) : getMovieUrl(item.movie_id, item.movie_title);
+                  const detail = mediaDetails[`${itemType}_${item.movie_id}`] || mediaDetails[item.movie_id];
+                  const displayTitle = detail?.title || detail?.name || item.movie_title || "Untitled";
+                  const linkHref = isTv ? getTvUrl(item.movie_id, displayTitle) : getMovieUrl(item.movie_id, displayTitle);
                   const displayPoster =
                     posterPrefs[`${itemType}_${item.movie_id}`] ??
                     posterPrefs[String(item.movie_id)] ??
                     item.poster_path;
+                  const runtime = getItemRuntime(item, detail);
 
                   return (
                     <Link
@@ -193,7 +544,7 @@ function WatchlistView() {
                       <div className="aspect-[2/3] rounded-xl overflow-hidden border border-white/10 relative mb-2 bg-white/5">
                         <img
                           className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
-                          alt={item.movie_title || "Poster"}
+                          alt={displayTitle}
                           src={
                             displayPoster
                               ? `https://image.tmdb.org/t/p/w500${displayPoster}`
@@ -204,7 +555,7 @@ function WatchlistView() {
                           loading="lazy"
                         />
                         <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
-                        
+
                         {/* Type badge */}
                         <div className="absolute top-2 left-2">
                           <span
@@ -217,9 +568,18 @@ function WatchlistView() {
                             {isTv ? "TV" : "Movie"}
                           </span>
                         </div>
+
+                        {/* Runtime badge */}
+                        {runtime > 0 && (
+                          <div className="absolute bottom-2 right-2">
+                            <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-black/75 backdrop-blur-md border border-white/10 text-white/90">
+                              {runtime}m
+                            </span>
+                          </div>
+                        )}
                       </div>
                       <h4 className="text-body-md font-bold truncate group-hover:text-primary transition-colors">
-                        {item.movie_title || "Untitled"}
+                        {displayTitle}
                       </h4>
                     </Link>
                   );

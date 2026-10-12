@@ -49,6 +49,35 @@ const handler = NextAuth({
     signIn: "/auth/signin",
   },
   callbacks: {
+    async signIn({ user, account }) {
+      if (account?.provider === "google" && user?.id) {
+        try {
+          const { data: existing } = await supabaseAdmin
+            .from("profiles")
+            .select("user_id")
+            .eq("user_id", user.id)
+            .maybeSingle();
+
+          if (!existing) {
+            const baseUsername = (user.name || "user")
+              .toLowerCase()
+              .replace(/[^a-z0-9_]/g, "_")
+              .slice(0, 20);
+            const uniqueUsername = `${baseUsername}_${Math.floor(1000 + Math.random() * 9000)}`;
+
+            await supabaseAdmin.from("profiles").insert({
+              user_id: user.id,
+              username: uniqueUsername,
+              display_name: user.name || "Cine Member",
+              avatar_url: user.image || null,
+            });
+          }
+        } catch (e) {
+          console.error("Error auto-creating profile on Google signIn:", e);
+        }
+      }
+      return true;
+    },
     async session({ session, token }) {
       if (session.user && token.sub) {
         (session.user as any).id = token.sub;

@@ -18,8 +18,12 @@ import { isAnimeShow } from "@/lib/anime";
 
 type SortOption =
   | "default"
+  | "my_rating_desc"
+  | "my_rating_asc"
   | "rating_desc"
   | "rating_asc"
+  | "runtime_desc"
+  | "runtime_asc"
   | "tmdb_desc"
   | "tmdb_asc"
   | "year_desc"
@@ -28,10 +32,65 @@ type SortOption =
   | "date_added_desc"
   | "date_added_asc";
 
-const SORT_OPTIONS: { id: SortOption; label: string }[] = [
-  { id: "default", label: "Default (Date Watched)" },
+const GENRE_MAP: { [key: number]: string } = {
+  28: "Action",
+  12: "Adventure",
+  16: "Animation",
+  35: "Comedy",
+  80: "Crime",
+  99: "Documentary",
+  18: "Drama",
+  10751: "Family",
+  14: "Fantasy",
+  36: "History",
+  27: "Horror",
+  10402: "Music",
+  9648: "Mystery",
+  10749: "Romance",
+  878: "Sci-Fi",
+  10770: "TV Movie",
+  53: "Thriller",
+  10752: "War",
+  37: "Western",
+  10759: "Action & Adventure",
+  10762: "Kids",
+  10763: "News",
+  10764: "Reality",
+  10765: "Sci-Fi & Fantasy",
+  10766: "Soap",
+  10767: "Talk",
+  10768: "War & Politics",
+};
+
+const GENRE_LIST = [
+  "Action",
+  "Adventure",
+  "Animation",
+  "Comedy",
+  "Crime",
+  "Documentary",
+  "Drama",
+  "Family",
+  "Fantasy",
+  "History",
+  "Horror",
+  "Music",
+  "Mystery",
+  "Romance",
+  "Sci-Fi",
+  "Thriller",
+  "War",
+  "Western",
+];
+
+const BASE_SORT_OPTIONS: { id: SortOption; label: string }[] = [
+  { id: "default", label: "Default" },
+  { id: "my_rating_desc", label: "My Rating (Highest)" },
+  { id: "my_rating_asc", label: "My Rating (Lowest)" },
   { id: "rating_desc", label: "Rating (Highest)" },
   { id: "rating_asc", label: "Rating (Lowest)" },
+  { id: "runtime_desc", label: "Runtime (Longest)" },
+  { id: "runtime_asc", label: "Runtime (Shortest)" },
   { id: "tmdb_desc", label: "TMDB Rating (Highest)" },
   { id: "tmdb_asc", label: "TMDB Rating (Lowest)" },
   { id: "year_desc", label: "Release Year (Newest)" },
@@ -167,118 +226,6 @@ function UserProfileSkeleton() {
   );
 }
 
-function WatchlistSection({
-  watchlistMovies,
-  watchlistTv,
-  getMovieUrl,
-  getTvUrl,
-}: {
-  watchlistMovies: any[];
-  watchlistTv: any[];
-  getMovieUrl: (id: string, title: string) => string;
-  getTvUrl: (id: string, title: string) => string;
-}) {
-  const INITIAL_COUNT = 10;
-  const [showAllMovies, setShowAllMovies] = useState(false);
-  const [showAllTv, setShowAllTv] = useState(false);
-
-  const visibleMovies = showAllMovies ? watchlistMovies : watchlistMovies.slice(0, INITIAL_COUNT);
-  const visibleTv = showAllTv ? watchlistTv : watchlistTv.slice(0, INITIAL_COUNT);
-
-  return (
-    <section className="mb-8">
-      <h3 className="text-xs text-on-surface-variant uppercase tracking-widest mb-4 border-l-2 border-white/30 pl-2">
-        Watchlist
-      </h3>
-
-      {/* Watchlist — Movies */}
-      {watchlistMovies.length > 0 && (
-        <div className="mb-5">
-          <p className="text-[10px] uppercase tracking-widest text-on-surface-variant/60 mb-2 flex items-center gap-1">
-            <span className="material-symbols-outlined text-[13px]">movie</span>
-            Movies ({watchlistMovies.length})
-          </p>
-          <div className="grid grid-cols-5 gap-2">
-            {visibleMovies.map((item: any) => {
-              const poster = item.poster_path;
-              const title = item.movie_title || "";
-              return (
-                <a
-                  key={item.id ? `wl_movie_${item.id}` : `wl_movie_${item.movie_id}_${item.created_at || ""}`}
-                  href={getMovieUrl(item.movie_id, title)}
-                  className="aspect-[2/3] rounded-xl overflow-hidden border border-white/10 group relative block bg-white/5"
-                  title={title}
-                >
-                  <img
-                    src={poster ? `https://image.tmdb.org/t/p/w342${poster}` : "https://images.unsplash.com/photo-1594909122845-11baa439b7bf?w=342"}
-                    alt={title}
-                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
-                  />
-                  <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex items-end p-1.5">
-                    <p className="text-[9px] text-white font-bold line-clamp-2 leading-tight">{title}</p>
-                  </div>
-                </a>
-              );
-            })}
-          </div>
-          {watchlistMovies.length > INITIAL_COUNT && (
-            <button
-              onClick={() => setShowAllMovies(prev => !prev)}
-              className="mt-3 w-full py-2 rounded-xl border border-white/10 text-xs text-on-surface-variant hover:text-white hover:border-white/30 transition-all flex items-center justify-center gap-1.5 cursor-pointer bg-white/[0.03]"
-            >
-              <span className="material-symbols-outlined text-[14px]">{showAllMovies ? "expand_less" : "expand_more"}</span>
-              {showAllMovies ? "Show less" : `Show all ${watchlistMovies.length} movies`}
-            </button>
-          )}
-        </div>
-      )}
-
-      {/* Watchlist — TV Shows */}
-      {watchlistTv.length > 0 && (
-        <div>
-          <p className="text-[10px] uppercase tracking-widest text-on-surface-variant/60 mb-2 flex items-center gap-1">
-            <span className="material-symbols-outlined text-[13px]">tv</span>
-            TV Shows ({watchlistTv.length})
-          </p>
-          <div className="grid grid-cols-5 gap-2">
-            {visibleTv.map((item: any) => {
-              const poster = item.poster_path;
-              const title = item.movie_title || "";
-              return (
-                <a
-                  key={item.id ? `wl_tv_${item.id}` : `wl_tv_${item.movie_id}_${item.created_at || ""}`}
-                  href={getTvUrl(item.movie_id, title)}
-                  className="aspect-[2/3] rounded-xl overflow-hidden border border-white/10 group relative block bg-white/5"
-                  title={title}
-                >
-                  <img
-                    src={poster ? `https://image.tmdb.org/t/p/w342${poster}` : "https://images.unsplash.com/photo-1594909122845-11baa439b7bf?w=342"}
-                    alt={title}
-                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
-                  />
-                  <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex items-end p-1.5">
-                    <p className="text-[9px] text-white font-bold line-clamp-2 leading-tight">{title}</p>
-                  </div>
-                </a>
-              );
-            })}
-          </div>
-          {watchlistTv.length > INITIAL_COUNT && (
-            <button
-              onClick={() => setShowAllTv(prev => !prev)}
-              className="mt-3 w-full py-2 rounded-xl border border-white/10 text-xs text-on-surface-variant hover:text-white hover:border-white/30 transition-all flex items-center justify-center gap-1.5 cursor-pointer bg-white/[0.03]"
-            >
-              <span className="material-symbols-outlined text-[14px]">{showAllTv ? "expand_less" : "expand_more"}</span>
-              {showAllTv ? "Show less" : `Show all ${watchlistTv.length} TV shows`}
-            </button>
-          )}
-        </div>
-      )}
-    </section>
-  );
-}
-
-
 export default function PublicProfilePage() {
   const router = useRouter();
   const routeParams = useParams();
@@ -314,12 +261,15 @@ export default function PublicProfilePage() {
   const [followCounts, setFollowCounts] = useState({ followers: 0, following: 0 });
   const [reviews, setReviews] = useState<any[]>([]);
   const [ratings, setRatings] = useState<any[]>([]);
+  const [myRatings, setMyRatings] = useState<any[]>([]);
   const [mediaDetails, setMediaDetails] = useState<Record<string, any>>({});
   const [watchItems, setWatchItems] = useState<any[]>([]);
   const [watchlistItems, setWatchlistItems] = useState<any[]>([]);
   const [favorites, setFavorites] = useState<any[]>([]);
   const [watchedSort, setWatchedSort] = useState<SortOption>("default");
+  const [watchlistSort, setWatchlistSort] = useState<SortOption>("default");
   const [mediaFilter, setMediaFilter] = useState<"movie" | "tv">("movie");
+  const [watchlistMediaFilter, setWatchlistMediaFilter] = useState<"movie" | "tv">("movie");
   const [tvSubFilter, setTvSubFilter] = useState<"all" | "anime" | "others">("all");
   const [followListModal, setFollowListModal] = useState<{ type: "followers" | "following"; users: any[]; loading: boolean } | null>(null);
   const [avatarModalOpen, setAvatarModalOpen] = useState(false);
@@ -328,10 +278,20 @@ export default function PublicProfilePage() {
   const [publicLists, setPublicLists] = useState<any[]>([]);
   const [posterPrefs, setPosterPrefs] = useState<Record<string, string>>({});
 
+  // Tab State: default to "watched"
+  const [activeProfileTab, setActiveProfileTab] = useState<"watched" | "watchlist" | "reviews" | "lists">("watched");
+
+  // Multi-genre filtering
+  const [selectedWatchedGenres, setSelectedWatchedGenres] = useState<string[]>([]);
+  const [watchedGenreMode, setWatchedGenreMode] = useState<"all" | "any">("all");
+
+  const [selectedWatchlistGenres, setSelectedWatchlistGenres] = useState<string[]>([]);
+  const [watchlistGenreMode, setWatchlistGenreMode] = useState<"all" | "any">("all");
+
   const realUserId = profile?.user_id || targetUserId;
   const isOwnProfile = currentUser?.id === realUserId;
 
-  // Map of (type_movieId) -> rating number (1-10)
+  // Map of (type_movieId) -> rating number (1-10) for profile owner
   const ratingsMap = useMemo(() => {
     const map: Record<string, number> = {};
     ratings.forEach((r: any) => {
@@ -343,6 +303,27 @@ export default function PublicProfilePage() {
     });
     return map;
   }, [ratings]);
+
+  // Map of (type_movieId) -> rating number (1-10) for CURRENT VIEWER
+  const myRatingsMap = useMemo(() => {
+    const map: Record<string, number> = {};
+    myRatings.forEach((r: any) => {
+      if (r?.movie_id && r?.rating !== undefined && r?.rating !== null) {
+        const type = r.content_type || "movie";
+        map[`${type}_${r.movie_id}`] = r.rating;
+        map[r.movie_id] = r.rating;
+      }
+    });
+    return map;
+  }, [myRatings]);
+
+  // Available sort options
+  const sortOptions = useMemo(() => {
+    if (isOwnProfile || !currentUser?.id) {
+      return BASE_SORT_OPTIONS.filter((o) => o.id !== "my_rating_desc" && o.id !== "my_rating_asc");
+    }
+    return BASE_SORT_OPTIONS;
+  }, [isOwnProfile, currentUser?.id]);
 
   // Fetch TMDB backdrop_path for Film 1 or TV 1 in Top 5
   useEffect(() => {
@@ -412,17 +393,30 @@ export default function PublicProfilePage() {
 
         const activeId = profileData.user_id;
 
-        const [followStatusRes, followCountsRes, reviewsRes, ratingsRes, watchedRes, watchlistRes, favoritesRes, publicListsRes] = await Promise.all([
+        const [
+          followStatusRes,
+          followCountsRes,
+          reviewsRes,
+          ratingsRes,
+          watchedRes,
+          watchlistRes,
+          favoritesRes,
+          publicListsRes,
+          myRatingsRes,
+        ] = await Promise.all([
           currentUser?.id && currentUser?.id !== activeId
             ? fetch(`/api/follows?followerId=${currentUser.id}&followingId=${activeId}`).then((r) => r.json())
             : Promise.resolve(null),
           fetch(`/api/follows?userId=${activeId}`).then((r) => r.json()),
-          supabase.from("reviews").select("*").eq("user_id", activeId).order("created_at", { ascending: false }).limit(20),
+          supabase.from("reviews").select("*").eq("user_id", activeId).order("created_at", { ascending: false }).limit(30),
           supabase.from("ratings").select("*").eq("user_id", activeId).order("created_at", { ascending: false }),
           supabase.from("watched").select("*").eq("user_id", activeId).order("watched_at", { ascending: false }),
-          supabase.from("watchlist").select("*").eq("user_id", activeId),
-          fetch(`/api/favorites?userId=${activeId}`).then(r => r.ok ? r.json() : []),
-          fetch(`/api/lists?userId=${encodeURIComponent(activeId)}`).then(r => r.ok ? r.json() : []).catch(() => []),
+          supabase.from("watchlist").select("*").eq("user_id", activeId).order("created_at", { ascending: false }),
+          fetch(`/api/favorites?userId=${activeId}`).then((r) => (r.ok ? r.json() : [])),
+          fetch(`/api/lists?userId=${encodeURIComponent(activeId)}`).then((r) => (r.ok ? r.json() : [])).catch(() => []),
+          currentUser?.id && currentUser.id !== activeId
+            ? supabase.from("ratings").select("*").eq("user_id", currentUser.id)
+            : Promise.resolve({ data: [] }),
         ]);
 
         if (followStatusRes) setFollowing(followStatusRes.isFollowing);
@@ -437,10 +431,10 @@ export default function PublicProfilePage() {
         setRatings(rats);
         setWatchItems(watchedList);
         setWatchlistItems(watchlistList);
+        setMyRatings(myRatingsRes.data || []);
 
         const favsArray = Array.isArray(favoritesRes) ? favoritesRes : [];
         setFavorites(favsArray);
-        // publicListsRes is 7th element
         const listsData = Array.isArray(publicListsRes) ? publicListsRes.filter((l: any) => l.is_public !== false) : [];
         setPublicLists(listsData);
 
@@ -457,7 +451,6 @@ export default function PublicProfilePage() {
         revs.forEach(registerMedia);
         watchedList.forEach(registerMedia);
         watchlistList.forEach(registerMedia);
-        // Also register favorites so their TMDB details are fetched (for poster fallback)
         favsArray.forEach((fav: any) => {
           if (fav?.tmdb_id) {
             const isTv = fav.slot_type?.startsWith("tv_");
@@ -467,20 +460,22 @@ export default function PublicProfilePage() {
         });
 
         const det: Record<string, any> = {};
-        await Promise.all(Array.from(uniqueMedia.values()).map(async ({ id, type }) => {
-          try {
-            const r = await fetch(`/api/tmdb?endpoint=${type}/${id}`);
-            if (r.ok) {
-              const d = await r.json();
-              det[`${type}_${id}`] = d;
-              if (!det[id]) det[id] = d;
-            }
-          } catch { }
-        }));
+        await Promise.all(
+          Array.from(uniqueMedia.values()).map(async ({ id, type }) => {
+            try {
+              const r = await fetch(`/api/tmdb?endpoint=${type}/${id}`);
+              if (r.ok) {
+                const d = await r.json();
+                det[`${type}_${id}`] = d;
+                if (!det[id]) det[id] = d;
+              }
+            } catch {}
+          })
+        );
         setMediaDetails(det);
 
-        // Batch-fetch poster preferences for this user's media
-        const mediaItems = Array.from(uniqueMedia.values()).map(m => ({
+        // Batch-fetch custom poster preferences for profile owner (activeId)
+        const mediaItems = Array.from(uniqueMedia.values()).map((m) => ({
           movie_id: m.id,
           content_type: m.type,
         }));
@@ -490,11 +485,11 @@ export default function PublicProfilePage() {
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ user_id: activeId, items: mediaItems }),
           })
-            .then(r => r.json())
+            .then((r) => r.json())
             .then((prefs: { movie_id: string; content_type?: string; poster_path: string }[]) => {
               if (Array.isArray(prefs)) {
                 const map: Record<string, string> = {};
-                prefs.forEach(p => {
+                prefs.forEach((p) => {
                   const t = p.content_type || "movie";
                   map[`${t}_${p.movie_id}`] = p.poster_path;
                   map[p.movie_id] = p.poster_path;
@@ -505,7 +500,7 @@ export default function PublicProfilePage() {
             .catch(() => {});
         }
       } catch (err) {
-        console.error(err);
+        console.error("PublicProfilePage loadAll error:", err);
       } finally {
         setLoading(false);
       }
@@ -514,8 +509,8 @@ export default function PublicProfilePage() {
   }, [targetUserId, currentUser?.id]);
 
   // Split Counts
-  const watchedMovies = useMemo(() => watchItems.filter(w => (w.content_type || "movie") !== "tv"), [watchItems]);
-  const watchedTv = useMemo(() => watchItems.filter(w => w.content_type === "tv"), [watchItems]);
+  const watchedMovies = useMemo(() => watchItems.filter((w) => (w.content_type || "movie") !== "tv"), [watchItems]);
+  const watchedTv = useMemo(() => watchItems.filter((w) => w.content_type === "tv"), [watchItems]);
 
   const watchedTvAnime = useMemo(() => {
     return watchedTv.filter((w) => {
@@ -537,11 +532,11 @@ export default function PublicProfilePage() {
     return watchedTv;
   }, [tvSubFilter, watchedTvAnime, watchedTvOthers, watchedTv]);
 
-  const watchlistMovies = useMemo(() => watchlistItems.filter(w => (w.content_type || "movie") !== "tv"), [watchlistItems]);
-  const watchlistTv = useMemo(() => watchlistItems.filter(w => w.content_type === "tv"), [watchlistItems]);
+  const watchlistMovies = useMemo(() => watchlistItems.filter((w) => (w.content_type || "movie") !== "tv"), [watchlistItems]);
+  const watchlistTv = useMemo(() => watchlistItems.filter((w) => w.content_type === "tv"), [watchlistItems]);
 
-  const reviewsMovies = useMemo(() => reviews.filter(r => (r.content_type || "movie") !== "tv"), [reviews]);
-  const reviewsTv = useMemo(() => reviews.filter(r => r.content_type === "tv"), [reviews]);
+  const reviewsMovies = useMemo(() => reviews.filter((r) => (r.content_type || "movie") !== "tv"), [reviews]);
+  const reviewsTv = useMemo(() => reviews.filter((r) => r.content_type === "tv"), [reviews]);
 
   const reviewsTvAnime = useMemo(() => {
     return reviewsTv.filter((r) => {
@@ -565,7 +560,7 @@ export default function PublicProfilePage() {
 
   const distinctGenresCount = useMemo(() => {
     const genresSet = new Set<number>();
-    watchItems.forEach(w => {
+    watchItems.forEach((w) => {
       const type = w.content_type === "tv" ? "tv" : "movie";
       const movie = mediaDetails[`${type}_${w.movie_id}`] || mediaDetails[w.movie_id];
       if (movie?.genres) {
@@ -577,67 +572,149 @@ export default function PublicProfilePage() {
 
   const currentWatched = mediaFilter === "tv" ? currentWatchedTv : watchedMovies;
   const currentReviews = mediaFilter === "tv" ? currentReviewsTv : reviewsMovies;
+  const currentWatchlist = watchlistMediaFilter === "tv" ? watchlistTv : watchlistMovies;
 
-  const sortedWatched = useMemo(() => {
-    if (!currentWatched || currentWatched.length === 0) return [];
-    const list = [...currentWatched];
+  // Runtime helper
+  const getItemRuntime = (item: any) => {
+    const type = item.content_type === "tv" ? "tv" : "movie";
+    const detail = mediaDetails[`${type}_${item.movie_id}`] || mediaDetails[item.movie_id];
+    if (type === "tv") {
+      return (
+        detail?.episode_run_time?.[0] ||
+        detail?.runtime ||
+        (detail?.number_of_episodes ? detail.number_of_episodes * 45 : 0) ||
+        0
+      );
+    }
+    return detail?.runtime || 0;
+  };
 
-    return list.sort((a, b) => {
+  // Generic genre matcher
+  const matchesGenres = (item: any, selected: string[], mode: "all" | "any") => {
+    if (!selected || selected.length === 0) return true;
+    const type = item.content_type === "tv" ? "tv" : "movie";
+    const detail = mediaDetails[`${type}_${item.movie_id}`] || mediaDetails[item.movie_id];
+    const names = new Set<string>();
+
+    if (detail?.genres && Array.isArray(detail.genres)) {
+      detail.genres.forEach((g: any) => {
+        if (g?.name) names.add(g.name);
+        if (g?.id && GENRE_MAP[g.id]) names.add(GENRE_MAP[g.id]);
+      });
+    }
+    if (detail?.genre_ids && Array.isArray(detail.genre_ids)) {
+      detail.genre_ids.forEach((gid: number) => {
+        if (GENRE_MAP[gid]) names.add(GENRE_MAP[gid]);
+      });
+    }
+
+    if (mode === "all") {
+      return selected.every((g) => names.has(g));
+    } else {
+      return selected.some((g) => names.has(g));
+    }
+  };
+
+  // Generic media sorter
+  const sortMediaList = (list: any[], sort: SortOption) => {
+    return [...list].sort((a, b) => {
       const typeA = a.content_type === "tv" ? "tv" : "movie";
       const typeB = b.content_type === "tv" ? "tv" : "movie";
       const itemA = mediaDetails[`${typeA}_${a.movie_id}`] || mediaDetails[a.movie_id] || a;
       const itemB = mediaDetails[`${typeB}_${b.movie_id}`] || mediaDetails[b.movie_id] || b;
 
-      if (watchedSort === "rating_desc" || watchedSort === "rating_asc") {
+      // My Rating sorting (order films friend watched by viewer's ratings)
+      if (sort === "my_rating_desc" || sort === "my_rating_asc") {
+        const myA = myRatingsMap[`${typeA}_${a.movie_id}`] ?? myRatingsMap[a.movie_id];
+        const myB = myRatingsMap[`${typeB}_${b.movie_id}`] ?? myRatingsMap[b.movie_id];
+        const hasA = myA !== undefined && myA !== null;
+        const hasB = myB !== undefined && myB !== null;
+        if (hasA && !hasB) return -1;
+        if (!hasA && hasB) return 1;
+        if (hasA && hasB && myA !== myB) {
+          return sort === "my_rating_desc" ? myB - myA : myA - myB;
+        }
+      }
+
+      // Friend's Rating sorting
+      if (sort === "rating_desc" || sort === "rating_asc") {
         const ratingA = ratingsMap[`${typeA}_${a.movie_id}`] ?? ratingsMap[a.movie_id] ?? 0;
         const ratingB = ratingsMap[`${typeB}_${b.movie_id}`] ?? ratingsMap[b.movie_id] ?? 0;
         if (ratingA !== ratingB) {
-          return watchedSort === "rating_desc" ? ratingB - ratingA : ratingA - ratingB;
+          return sort === "rating_desc" ? ratingB - ratingA : ratingA - ratingB;
         }
       }
 
-      if (watchedSort === "tmdb_desc" || watchedSort === "tmdb_asc") {
+      // Runtime sorting
+      if (sort === "runtime_desc" || sort === "runtime_asc") {
+        const rtA = getItemRuntime(a);
+        const rtB = getItemRuntime(b);
+        if (rtA !== rtB) {
+          return sort === "runtime_desc" ? rtB - rtA : rtA - rtB;
+        }
+      }
+
+      if (sort === "tmdb_desc" || sort === "tmdb_asc") {
         const voteA = itemA?.vote_average ?? 0;
         const voteB = itemB?.vote_average ?? 0;
         if (voteA !== voteB) {
-          return watchedSort === "tmdb_desc" ? voteB - voteA : voteA - voteB;
+          return sort === "tmdb_desc" ? voteB - voteA : voteA - voteB;
         }
       }
 
-      if (watchedSort === "year_desc" || watchedSort === "year_asc") {
+      if (sort === "year_desc" || sort === "year_asc") {
         const dateA = itemA?.release_date || itemA?.first_air_date || itemA?.year || "";
         const dateB = itemB?.release_date || itemB?.first_air_date || itemB?.year || "";
         const yearA = dateA ? parseInt(String(dateA).substring(0, 4), 10) || 0 : 0;
         const yearB = dateB ? parseInt(String(dateB).substring(0, 4), 10) || 0 : 0;
         if (yearA !== yearB) {
-          return watchedSort === "year_desc" ? yearB - yearA : yearA - yearB;
+          return sort === "year_desc" ? yearB - yearA : yearA - yearB;
         }
       }
 
-      if (watchedSort === "title_asc") {
+      if (sort === "title_asc") {
         const titleA = String(itemA?.title || itemA?.name || itemA?.movie_title || "").toLowerCase();
         const titleB = String(itemB?.title || itemB?.name || itemB?.movie_title || "").toLowerCase();
         const comp = titleA.localeCompare(titleB);
         if (comp !== 0) return comp;
       }
 
-      if (watchedSort === "date_added_desc") {
-        const timeA = a.created_at ? new Date(a.created_at).getTime() : (a.watched_at ? new Date(a.watched_at).getTime() : 0);
-        const timeB = b.created_at ? new Date(b.created_at).getTime() : (b.watched_at ? new Date(b.watched_at).getTime() : 0);
+      if (sort === "date_added_desc") {
+        const timeA = a.created_at ? new Date(a.created_at).getTime() : a.watched_at ? new Date(a.watched_at).getTime() : 0;
+        const timeB = b.created_at ? new Date(b.created_at).getTime() : b.watched_at ? new Date(b.watched_at).getTime() : 0;
         return timeB - timeA;
       }
 
-      if (watchedSort === "date_added_asc") {
-        const timeA = a.created_at ? new Date(a.created_at).getTime() : (a.watched_at ? new Date(a.watched_at).getTime() : 0);
-        const timeB = b.created_at ? new Date(b.created_at).getTime() : (b.watched_at ? new Date(b.watched_at).getTime() : 0);
+      if (sort === "date_added_asc") {
+        const timeA = a.created_at ? new Date(a.created_at).getTime() : a.watched_at ? new Date(a.watched_at).getTime() : 0;
+        const timeB = b.created_at ? new Date(b.created_at).getTime() : b.watched_at ? new Date(b.watched_at).getTime() : 0;
         return timeA - timeB;
       }
 
-      const timeA = a.watched_at ? new Date(a.watched_at).getTime() : 0;
-      const timeB = b.watched_at ? new Date(b.watched_at).getTime() : 0;
+      // Default (date watched or added desc)
+      const timeA = a.watched_at ? new Date(a.watched_at).getTime() : a.created_at ? new Date(a.created_at).getTime() : 0;
+      const timeB = b.watched_at ? new Date(b.watched_at).getTime() : b.created_at ? new Date(b.created_at).getTime() : 0;
       return timeB - timeA;
     });
-  }, [currentWatched, watchedSort, mediaDetails, ratingsMap]);
+  };
+
+  // Filtered & Sorted Watched items
+  const sortedWatched = useMemo(() => {
+    if (!currentWatched || currentWatched.length === 0) return [];
+    const genreFiltered = currentWatched.filter((item) =>
+      matchesGenres(item, selectedWatchedGenres, watchedGenreMode)
+    );
+    return sortMediaList(genreFiltered, watchedSort);
+  }, [currentWatched, selectedWatchedGenres, watchedGenreMode, watchedSort, mediaDetails, ratingsMap, myRatingsMap]);
+
+  // Filtered & Sorted Watchlist items
+  const sortedWatchlist = useMemo(() => {
+    if (!currentWatchlist || currentWatchlist.length === 0) return [];
+    const genreFiltered = currentWatchlist.filter((item) =>
+      matchesGenres(item, selectedWatchlistGenres, watchlistGenreMode)
+    );
+    return sortMediaList(genreFiltered, watchlistSort);
+  }, [currentWatchlist, selectedWatchlistGenres, watchlistGenreMode, watchlistSort, mediaDetails, ratingsMap, myRatingsMap]);
 
   const toggleFollow = async () => {
     const activeUserId = profile?.user_id || targetUserId;
@@ -648,573 +725,842 @@ export default function PublicProfilePage() {
       });
       return;
     }
-    if (isOwnProfile || !activeUserId) return;
     setFollowLoading(true);
-    if (following) {
-      await fetch(`/api/follows?followerId=${currentUser.id}&followingId=${activeUserId}`, { method: "DELETE" });
-      setFollowing(false);
-      setFollowCounts((prev) => ({ ...prev, followers: Math.max(0, prev.followers - 1) }));
-      showToast("Unfollowed");
-    } else {
-      await fetch("/api/follows", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          follower_id: currentUser.id,
-          following_id: activeUserId,
-          follower_name: currentUser.name || currentUser.email || "Someone",
-          follower_avatar: currentUser.image || null,
-        }),
-      });
-      setFollowing(true);
-      setFollowCounts((prev) => ({ ...prev, followers: prev.followers + 1 }));
-      showToast("Following user");
+    try {
+      if (following) {
+        await fetch(`/api/follows?followerId=${currentUser.id}&followingId=${activeUserId}`, { method: "DELETE" });
+        setFollowing(false);
+        setFollowCounts((prev) => ({ ...prev, followers: Math.max(0, prev.followers - 1) }));
+      } else {
+        await fetch("/api/follows", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            follower_id: currentUser.id,
+            following_id: activeUserId,
+            follower_name: currentUser.name || currentUser.email || undefined,
+            follower_avatar: currentUser.image || undefined,
+          }),
+        });
+        setFollowing(true);
+        setFollowCounts((prev) => ({ ...prev, followers: prev.followers + 1 }));
+      }
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setFollowLoading(false);
     }
-    setFollowLoading(false);
   };
 
   const openFollowList = async (type: "followers" | "following") => {
     const activeUserId = profile?.user_id || targetUserId;
     setFollowListModal({ type, users: [], loading: true });
     try {
-      const res = await fetch(`/api/follows?userId=${activeUserId}`);
+      const res = await fetch(`/api/follows/list?userId=${encodeURIComponent(activeUserId)}&type=${type}`);
       const data = await res.json();
-      const ids: string[] = type === "followers" ? (data.followers || []) : (data.following || []);
-      const profiles = await Promise.all(
-        ids.map(async (uid: string) => {
-          try {
-            const isUserId =
-              /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(uid) ||
-              /^cred_[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(uid) ||
-              /^\d+$/.test(uid);
-            const profileUrl = isUserId
-              ? `/api/user-profile?userId=${uid}`
-              : `/api/user-profile?username=${encodeURIComponent(uid)}`;
-            const r = await fetch(profileUrl);
-            if (r.ok) return await r.json();
-          } catch { }
-          return null;
-        })
-      );
-      setFollowListModal({ type, users: profiles.filter(Boolean), loading: false });
-    } catch {
-      setFollowListModal(prev => prev ? { ...prev, loading: false } : null);
+      const userList = Array.isArray(data.users) ? data.users : [];
+      setFollowListModal({ type, users: userList, loading: false });
+      // Derive count from list length so they can never disagree
+      setFollowCounts((prev) => ({
+        ...prev,
+        [type]: userList.length,
+      }));
+    } catch (e) {
+      console.error("Error opening follow list:", e);
+      setFollowListModal({ type, users: [], loading: false });
     }
   };
 
-  if (loading) {
-    return <UserProfileSkeleton />;
-  }
+  const renderGenreChips = (
+    selected: string[],
+    setSelected: React.Dispatch<React.SetStateAction<string[]>>,
+    mode: "all" | "any",
+    setMode: React.Dispatch<React.SetStateAction<"all" | "any">>
+  ) => (
+    <div className="space-y-2 mb-4 bg-white/[0.02] p-3 rounded-2xl border border-white/5">
+      <div className="flex items-center justify-between gap-2 flex-wrap">
+        <div className="flex items-center gap-1.5 text-xs text-on-surface-variant font-medium">
+          <span className="material-symbols-outlined text-[15px]">filter_list</span>
+          <span>Genres:</span>
+          {selected.length > 0 && (
+            <button
+              onClick={() => setSelected([])}
+              className="text-[11px] text-primary hover:underline ml-1 cursor-pointer bg-transparent border-none font-bold"
+            >
+              Clear ({selected.length})
+            </button>
+          )}
+        </div>
 
-  if (!profile) {
-    return (
-      <div className="min-h-screen bg-[#050505] text-[#e5e2e1] flex flex-col items-center justify-center gap-4">
-        <span className="material-symbols-outlined text-[48px] text-on-surface-variant">person_off</span>
-        <h1 className="font-serif text-2xl">User Not Found</h1>
-        <Link href="/community" className="text-primary hover:underline text-sm">← Back to Community</Link>
+        {/* Any / All Toggle */}
+        <div className="flex items-center gap-1 p-0.5 rounded-full bg-white/5 border border-white/10 text-[10px] font-bold">
+          <span className="px-2 text-on-surface-variant/60 uppercase">Match:</span>
+          <button
+            onClick={() => setMode("all")}
+            className={`px-2.5 py-0.5 rounded-full transition-all cursor-pointer border-none ${
+              mode === "all"
+                ? "bg-primary text-black font-extrabold shadow-sm"
+                : "bg-transparent text-on-surface-variant hover:text-white"
+            }`}
+          >
+            ALL
+          </button>
+          <button
+            onClick={() => setMode("any")}
+            className={`px-2.5 py-0.5 rounded-full transition-all cursor-pointer border-none ${
+              mode === "any"
+                ? "bg-primary text-black font-extrabold shadow-sm"
+                : "bg-transparent text-on-surface-variant hover:text-white"
+            }`}
+          >
+            ANY
+          </button>
+        </div>
       </div>
-    );
-  }
 
-  const displayName = profile.display_name || profile.username || "Cine Member";
-  const initials = displayName.slice(0, 2).toUpperCase();
+      {/* Chips */}
+      <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-1">
+        {GENRE_LIST.map((genre) => {
+          const isSelected = selected.includes(genre);
+          return (
+            <button
+              key={genre}
+              onClick={() => {
+                setSelected((prev) =>
+                  isSelected ? prev.filter((g) => g !== genre) : [...prev, genre]
+                );
+              }}
+              className={`px-3 py-1 rounded-full text-xs font-semibold whitespace-nowrap transition-all duration-200 cursor-pointer border flex items-center gap-1 shrink-0 ${
+                isSelected
+                  ? "bg-primary/20 text-primary border-primary shadow-[0_0_10px_rgba(255,180,170,0.2)] font-bold"
+                  : "bg-white/5 text-on-surface-variant border-white/10 hover:border-white/20 hover:text-white"
+              }`}
+            >
+              {isSelected && <span className="material-symbols-outlined text-[13px]">check</span>}
+              {genre}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
 
   return (
-    <div className="font-body-md text-body-md bg-[#050505] text-[#e5e2e1] min-h-screen pb-32">
-      {/* Header */}
+    <div className="bg-[#050505] text-[#e5e2e1] font-body-md overflow-x-clip min-h-screen relative pb-32">
+      {/* Top App Bar */}
       <header
-        className={`fixed top-0 left-0 w-full z-50 flex justify-between items-center px-6 transition-all duration-300 ${
+        className={`fixed top-0 left-0 w-full z-50 flex justify-between items-center px-container-margin transition-all duration-300 ${
           scrolled
-            ? "py-3 bg-[#131313]/90 backdrop-blur-md border-b border-white/10 shadow-[0_8px_32px_0_rgba(0,0,0,0.5)]"
-            : "py-4 bg-gradient-to-b from-[#050505]/90 via-[#050505]/40 to-transparent border-none"
+            ? "py-stack-sm bg-[#131313]/90 backdrop-blur-md border-b border-white/10 shadow-[0_8px_32px_0_rgba(0,0,0,0.5)]"
+            : "py-stack-md bg-gradient-to-b from-[#050505]/90 via-[#050505]/40 to-transparent border-none"
         }`}
       >
-        <button
-          onClick={handleBack}
-          aria-label="Go back"
-          className="flex items-center gap-2 text-on-surface-variant hover:text-primary transition-colors drop-shadow-[0_1px_4px_rgba(0,0,0,0.8)] bg-transparent border-none p-0 cursor-pointer"
-        >
-          <span className="material-symbols-outlined text-sm">arrow_back</span>
-          <span className="text-sm font-semibold">Back</span>
-        </button>
-        <h1 className="font-serif text-lg text-primary tracking-tight font-bold drop-shadow-[0_2px_6px_rgba(0,0,0,0.8)]">{displayName}</h1>
-        <div className="flex items-center">
+        <div className="flex items-center gap-3">
+          <button
+            onClick={handleBack}
+            className="flex items-center gap-1.5 text-on-surface-variant hover:text-primary transition-colors text-sm font-semibold cursor-pointer border-none bg-transparent"
+          >
+            <span className="material-symbols-outlined text-sm">arrow_back</span>
+            Back
+          </button>
+        </div>
+
+        <Link href="/" className="hover:opacity-90 transition-all block">
+          <h1 className="font-display-md text-[24px] text-primary tracking-tighter uppercase select-none font-serif drop-shadow-[0_2px_6px_rgba(0,0,0,0.8)]">
+            CINE SOCIAL
+          </h1>
+        </Link>
+
+        <div className="flex items-center gap-3">
           <NotificationBell />
+          {currentUser && (
+            <Link
+              href="/profile"
+              className="w-8 h-8 rounded-full overflow-hidden border border-white/10 hover:opacity-80 transition-all flex items-center justify-center bg-white/5"
+            >
+              {currentUser.image ? (
+                <img alt={currentUser.name || "User"} className="w-full h-full object-cover" src={getSafeAvatarUrl(currentUser.image) || ""} />
+              ) : (
+                <span className="material-symbols-outlined text-on-surface-variant text-base">person</span>
+              )}
+            </Link>
+          )}
         </div>
       </header>
 
-      {/* Profile Banner */}
-      <div className="relative w-full h-[300px] sm:h-[380px] md:h-[460px] overflow-hidden bg-[#050505]">
-        {bannerBackdropUrl ? (
-          <>
-            <img
-              src={bannerBackdropUrl}
-              alt={bannerMovieTitle || "Profile Banner"}
-              className="w-full h-full object-cover scale-105 filter brightness-[0.9] transition-all duration-700 animate-fade-in"
-              style={{ objectPosition: 'center 35%' }}
-            />
-            {bannerMovieTitle && (
-              <div className="absolute top-20 right-6 z-20 text-right pointer-events-none hidden md:block">
-                <span className="text-[10px] uppercase tracking-widest text-white/50 block font-bold">Top Backdrop</span>
-                <span className="text-xs text-white/80 font-serif italic drop-shadow-md">{bannerMovieTitle}</span>
-              </div>
-            )}
-          </>
-        ) : (
-          <div className="w-full h-full bg-gradient-to-r from-[#0d0d14] via-[#1a0a14] to-[#0a121a] relative overflow-hidden">
-            <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,#e50914_0%,transparent_70%)] opacity-20" />
-            <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_bottom,#e9c349_0%,transparent_70%)] opacity-10" />
-            <div className="absolute inset-0 bg-[linear-gradient(to_right,rgba(255,255,255,0.02)_1px,transparent_1px),linear-gradient(to_bottom,rgba(255,255,255,0.02)_1px,transparent_1px)] bg-[size:4rem_4rem]" />
-          </div>
-        )}
-
-        <div className="absolute top-0 inset-x-0 h-28 bg-gradient-to-b from-[#050505]/90 via-[#050505]/40 to-transparent z-10 pointer-events-none" />
-        <div className="absolute inset-0 profile-banner-fade z-10 pointer-events-none" />
-      </div>
-
-      <main className="-mt-20 sm:-mt-24 md:-mt-32 relative z-20 px-6 max-w-2xl mx-auto">
-        {/* Profile Header */}
-        <section className="flex flex-col items-center text-center pb-8 pt-2 relative">
-          {/* Avatar */}
-          <button
-            className="w-28 h-28 md:w-36 md:h-36 rounded-full overflow-hidden border-4 border-[#050505] shadow-[0_12px_40px_rgba(0,0,0,0.85)] mb-4 relative z-10 bg-[#131313] cursor-pointer group focus:outline-none"
-            onClick={() => setAvatarModalOpen(true)}
-            aria-label="View profile picture"
-          >
-            {getSafeAvatarUrl(profile.avatar_url) ? (
-              <img src={getSafeAvatarUrl(profile.avatar_url)!} alt={displayName} className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105" />
-            ) : (
-              <div className="w-full h-full bg-primary/20 flex items-center justify-center">
-                <span className="text-primary font-bold text-3xl font-serif">{initials}</span>
-              </div>
-            )}
-            <div className="absolute inset-0 bg-black/30 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity rounded-full">
-              <span className="material-symbols-outlined text-white text-2xl">zoom_in</span>
-            </div>
-          </button>
-
-          <div className="flex flex-wrap items-center justify-center gap-3 mb-1">
-            <h2 className="font-serif text-2xl font-bold text-on-surface">{displayName}</h2>
-            <ProfileBadges
-              watchedCount={watchItems.length}
-              distinctGenresCount={distinctGenresCount}
-              reviewCount={reviews.length}
-            />
-          </div>
-          {profile.username && (
-            <p className="text-primary/70 text-sm mb-1">@{profile.username}</p>
-          )}
-          {profile.bio && (
-            <p className="text-on-surface-variant text-sm max-w-xs leading-relaxed mb-4">{profile.bio}</p>
-          )}
-
-          {/* Stats row with Breakdown (Film · TV) */}
-          <div className="flex flex-wrap gap-5 justify-center mb-5">
-            <div className="text-center">
-              <p className="font-bold text-lg text-on-surface">{watchItems.length}</p>
-              <p className="text-xs text-on-surface-variant uppercase tracking-wide">Watched</p>
-              <span className="text-[10px] text-white/50 block font-mono">{watchedMovies.length}m · {watchedTv.length}tv</span>
-            </div>
-            <div className="text-center">
-              <p className="font-bold text-lg text-on-surface">{watchlistItems.length}</p>
-              <p className="text-xs text-on-surface-variant uppercase tracking-wide">Watchlist</p>
-              <span className="text-[10px] text-white/50 block font-mono">{watchlistMovies.length}m · {watchlistTv.length}tv</span>
-            </div>
-            <div className="text-center">
-              <p className="font-bold text-lg text-on-surface">{reviews.length}</p>
-              <p className="text-xs text-on-surface-variant uppercase tracking-wide">Reviews</p>
-              <span className="text-[10px] text-white/50 block font-mono">{reviewsMovies.length}m · {reviewsTv.length}tv</span>
-            </div>
-            <button
-              onClick={() => openFollowList("followers")}
-              className="text-center cursor-pointer hover:opacity-80 transition-opacity bg-transparent border-none p-0"
-            >
-              <p className="font-bold text-lg text-on-surface">{followCounts.followers}</p>
-              <p className="text-xs text-on-surface-variant uppercase tracking-wide">Followers</p>
-            </button>
-            <button
-              onClick={() => openFollowList("following")}
-              className="text-center cursor-pointer hover:opacity-80 transition-opacity bg-transparent border-none p-0"
-            >
-              <p className="font-bold text-lg text-on-surface">{followCounts.following}</p>
-              <p className="text-xs text-on-surface-variant uppercase tracking-wide">Following</p>
-            </button>
-          </div>
-
-          {/* Follow button */}
-          {!isOwnProfile && currentUser && following !== null && (
-            <button
-              onClick={toggleFollow}
-              disabled={followLoading}
-              className={`px-8 py-2.5 rounded-full font-semibold text-sm transition-all duration-200 cursor-pointer border ${following
-                ? "border-white/20 text-on-surface-variant hover:border-red-400/40 hover:text-red-400"
-                : "bg-primary text-black border-primary hover:opacity-90 shadow-[0_0_20px_rgba(255,180,170,0.3)]"
-                } disabled:opacity-50`}
-            >
-              {followLoading ? "..." : following ? "Following ✓" : "Follow"}
-            </button>
-          )}
-          {isOwnProfile && (
-            <Link href="/profile" className="px-6 py-2 rounded-full border border-white/20 text-on-surface-variant text-sm hover:border-primary/40 transition-colors">
-              Edit Profile
-            </Link>
-          )}
-        </section>
-
-        {profile.is_private && !isOwnProfile && !following ? (
-          <div className="glass rounded-2xl border border-white/10 p-12 text-center my-8">
-            <div className="w-16 h-16 rounded-full bg-white/5 border border-white/10 flex items-center justify-center mx-auto mb-4 text-on-surface-variant">
-              <span className="material-symbols-outlined text-[32px]">lock</span>
-            </div>
-            <h3 className="font-serif text-xl font-bold text-on-surface mb-2">This Account is Private</h3>
-            <p className="text-on-surface-variant text-sm max-w-sm mx-auto">
-              Follow this account to see their watched films, reviews, ratings, and lists.
-            </p>
+      {/* Main Content */}
+      <main className="pt-[100px] px-container-margin max-w-screen-xl mx-auto w-full">
+        {loading ? (
+          <UserProfileSkeleton />
+        ) : !profile ? (
+          <div className="text-center py-20 text-on-surface-variant">
+            <span className="material-symbols-outlined text-5xl mb-3 opacity-30">person_off</span>
+            <p className="text-lg font-serif">User not found</p>
           </div>
         ) : (
           <>
-            {/* Taste Match */}
-            {!isOwnProfile && currentUser && (
-              <div className="mb-6">
+            {/* Banner Backdrop */}
+            {bannerBackdropUrl && (
+              <div className="relative w-full h-48 md:h-64 rounded-3xl overflow-hidden mb-6 border border-white/10 shadow-2xl">
+                <img src={bannerBackdropUrl} alt={bannerMovieTitle || "Profile Banner"} className="w-full h-full object-cover object-center filter brightness-[0.65]" />
+                <div className="absolute inset-0 bg-gradient-to-t from-[#050505] via-[#050505]/40 to-transparent" />
+                {bannerMovieTitle && (
+                  <div className="absolute bottom-3 right-4 px-3 py-1 rounded-full bg-black/60 backdrop-blur-md border border-white/10 text-[11px] font-mono text-white/70 flex items-center gap-1.5">
+                    <span className="material-symbols-outlined text-xs text-primary">movie</span>
+                    <span>{bannerMovieTitle}</span>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Profile Header */}
+            <div className="flex flex-col md:flex-row items-center md:items-start gap-6 mb-8 text-center md:text-left">
+              <div
+                onClick={() => profile.avatar_url && setAvatarModalOpen(true)}
+                className={`relative w-24 h-24 md:w-28 md:md:h-28 rounded-full overflow-hidden border-2 border-white/20 shadow-xl bg-white/5 flex-shrink-0 ${
+                  profile.avatar_url ? "cursor-pointer group" : ""
+                }`}
+              >
+                {profile.avatar_url ? (
+                  <img src={getSafeAvatarUrl(profile.avatar_url) || ""} alt={profile.display_name} className="w-full h-full object-cover group-hover:scale-105 transition-transform" />
+                ) : (
+                  <div className="w-full h-full flex items-center justify-center bg-primary/20 text-primary font-serif font-bold text-3xl">
+                    {(profile.display_name || "?").slice(0, 2).toUpperCase()}
+                  </div>
+                )}
+              </div>
+
+              <div className="flex-1 min-w-0">
+                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                  <div>
+                    <h2 className="font-serif text-2xl font-bold text-on-surface">{profile.display_name}</h2>
+                    {profile.username && <p className="text-sm font-mono text-primary/80">@{profile.username}</p>}
+                    {profile.bio && <p className="text-sm text-on-surface-variant mt-2 max-w-xl">{profile.bio}</p>}
+                  </div>
+
+                  {!isOwnProfile && currentUser && (
+                    <button
+                      onClick={toggleFollow}
+                      disabled={followLoading}
+                      className={`px-6 py-2 rounded-full font-bold text-sm transition-all duration-200 cursor-pointer border ${
+                        following
+                          ? "bg-white/10 text-white border-white/20 hover:border-red-500/50 hover:bg-red-500/10 hover:text-red-400"
+                          : "bg-primary text-black border-primary hover:brightness-110 shadow-[0_0_16px_rgba(255,180,170,0.3)]"
+                      } disabled:opacity-50`}
+                    >
+                      {followLoading ? "..." : following ? "Following" : "Follow"}
+                    </button>
+                  )}
+                </div>
+
+                {/* Follower Counts */}
+                <div className="flex items-center justify-center md:justify-start gap-6 mt-4 text-xs">
+                  <button onClick={() => openFollowList("followers")} className="hover:text-primary transition-colors cursor-pointer bg-transparent border-none">
+                    <span className="font-bold text-white text-sm">{followCounts.followers}</span> <span className="text-on-surface-variant">Followers</span>
+                  </button>
+                  <button onClick={() => openFollowList("following")} className="hover:text-primary transition-colors cursor-pointer bg-transparent border-none">
+                    <span className="font-bold text-white text-sm">{followCounts.following}</span> <span className="text-on-surface-variant">Following</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* Badges Showcase */}
+            <div className="mb-8">
+              <ProfileBadges
+                watchedCount={watchItems.length}
+                reviewCount={reviews.length}
+                distinctGenresCount={distinctGenresCount}
+              />
+            </div>
+
+            {/* Taste Match Widget (when viewing another user's profile) */}
+            {!isOwnProfile && currentUser?.id && (
+              <div className="mb-8">
                 <TasteMatchWidget userA={currentUser.id} userB={realUserId} />
               </div>
             )}
 
-        {/* Letterboxd-Style Rating Distribution Chart */}
-        <section className="mb-8">
-          <RatingDistributionChart ratings={ratings} mediaDetails={mediaDetails} posterPrefs={posterPrefs} />
-        </section>
-
-        {/* Top 5 Favourite Films */}
-        {favorites.filter(f => f.slot_type?.startsWith("movie_")).length > 0 && (
-          <section className="mb-8">
-            <h3 className="text-xs text-on-surface-variant uppercase tracking-widest mb-4 border-l-2 border-[#e50914] pl-2">
-              Top 5 Favourite Films
-            </h3>
-            <div className="grid grid-cols-5 gap-2">
-              {["movie_1", "movie_2", "movie_3", "movie_4", "movie_5"].map(slot => {
-                const fav = favorites.find(f => f.slot_type === slot);
-                if (!fav) return (
-                  <div key={slot} className="aspect-[2/3] rounded-xl bg-white/5 border border-white/5 flex items-center justify-center">
-                    <span className="material-symbols-outlined text-on-surface-variant/20 text-[20px]">movie</span>
-                  </div>
-                );
-                const posterUrl = getPosterUrl({ movieId: fav.tmdb_id, contentType: "movie", defaultPosterPath: fav.image_url, posterPrefs, size: "w342" });
-                return (
-                  <Link href={getMovieUrl(fav.tmdb_id, fav.name)} key={slot} className="aspect-[2/3] rounded-xl overflow-hidden border border-white/10 group relative block" title={fav.name}>
-                    <img
-                      src={posterUrl}
-                      alt={fav.name}
-                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
-                    />
-                    <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex items-end p-1.5">
-                      <p className="text-[9px] text-white font-bold line-clamp-2 leading-tight">{fav.name}</p>
-                    </div>
-                  </Link>
-                );
-              })}
-            </div>
-          </section>
-        )}
-
-        {/* Top 5 Favourite TV Shows */}
-        {favorites.filter(f => f.slot_type?.startsWith("tv_")).length > 0 && (
-          <section className="mb-8">
-            <h3 className="text-xs text-on-surface-variant uppercase tracking-widest mb-4 border-l-2 border-[#a855f7] pl-2">
-              Top 5 Favourite TV Shows
-            </h3>
-            <div className="grid grid-cols-5 gap-2">
-              {["tv_1", "tv_2", "tv_3", "tv_4", "tv_5"].map(slot => {
-                const fav = favorites.find(f => f.slot_type === slot);
-                if (!fav) return (
-                  <div key={slot} className="aspect-[2/3] rounded-xl bg-white/5 border border-white/5 flex items-center justify-center">
-                    <span className="material-symbols-outlined text-on-surface-variant/20 text-[20px]">tv</span>
-                  </div>
-                );
-                const posterUrl = getPosterUrl({ movieId: fav.tmdb_id, contentType: "tv", defaultPosterPath: fav.image_url, posterPrefs, size: "w342" });
-                return (
-                  <Link href={getTvUrl(fav.tmdb_id, fav.name)} key={slot} className="aspect-[2/3] rounded-xl overflow-hidden border border-white/10 group relative block" title={fav.name}>
-                    <img
-                      src={posterUrl}
-                      alt={fav.name}
-                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
-                    />
-                    <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex items-end p-1.5">
-                      <p className="text-[9px] text-white font-bold line-clamp-2 leading-tight">{fav.name}</p>
-                    </div>
-                  </Link>
-                );
-              })}
-            </div>
-          </section>
-        )}
-
-        {/* Favorite Creatives */}
-        {(() => {
-          const creativeSlots = ["director", "actor", "actress"] as const;
-          const slotLabels: Record<string, string> = { director: "Director", actor: "Actor", actress: "Actress" };
-          const creatives = creativeSlots
-            .map(slot => favorites.find((f: any) => f.slot_type === slot))
-            .filter(Boolean);
-          if (creatives.length === 0) return null;
-          return (
-            <section className="mb-8">
-              <h3 className="text-xs text-on-surface-variant uppercase tracking-widest mb-4 border-l-2 border-[#e9c349] pl-2">
-                Favourite Creatives
-              </h3>
-              <div className="flex gap-5 flex-wrap">
-                {creatives.map((fav: any) => (
-                  <div key={fav.slot_type} className="flex flex-col items-center gap-2 group">
-                    <div className="w-16 h-16 rounded-full overflow-hidden border-2 border-white/10 group-hover:border-primary/40 transition-colors shadow-md bg-white/5 flex-shrink-0">
-                      {fav.image_url ? (
-                        <img
-                          src={`https://image.tmdb.org/t/p/w185${fav.image_url}`}
-                          alt={fav.name}
-                          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
-                        />
-                      ) : (
-                        <div className="w-full h-full flex items-center justify-center">
-                          <span className="material-symbols-outlined text-on-surface-variant/40 text-2xl">person</span>
-                        </div>
-                      )}
-                    </div>
-                    <div className="text-center">
-                      <p className="text-[11px] font-semibold text-on-surface leading-tight max-w-[72px] truncate">{fav.name}</p>
-                      <p className="text-[9px] uppercase tracking-widest text-on-surface-variant/60 mt-0.5">{slotLabels[fav.slot_type] || fav.slot_type}</p>
-                    </div>
-                  </div>
-                ))}
+            {/* Rating Distribution Chart */}
+            {ratings.length > 0 && (
+              <div className="mb-8">
+                <RatingDistributionChart ratings={ratings} mediaDetails={mediaDetails} posterPrefs={posterPrefs} />
               </div>
-            </section>
-          );
-        })()}
+            )}
 
-        {/* Watchlist */}
-        {(watchlistMovies.length > 0 || watchlistTv.length > 0) && (
-          <WatchlistSection
-            watchlistMovies={watchlistMovies}
-            watchlistTv={watchlistTv}
-            getMovieUrl={getMovieUrl}
-            getTvUrl={getTvUrl}
-          />
-        )}
+            {/* Top 5 Films Showcase */}
+            {(() => {
+              const filmSlots = ["movie_1", "movie_2", "movie_3", "movie_4", "movie_5"] as const;
+              const topFilms = filmSlots.map((s) => favorites.find((f: any) => f.slot_type === s)).filter(Boolean);
+              if (topFilms.length === 0) return null;
+              return (
+                <section className="mb-8">
+                  <h3 className="text-xs text-on-surface-variant uppercase tracking-widest mb-4 border-l-2 border-primary pl-2">
+                    Favourite Films
+                  </h3>
+                  <div className="grid grid-cols-5 gap-2">
+                    {filmSlots.map((slot) => {
+                      const fav = favorites.find((f: any) => f.slot_type === slot);
+                      if (!fav) return (
+                        <div key={slot} className="aspect-[2/3] rounded-xl bg-white/5 border border-white/5 flex items-center justify-center">
+                          <span className="material-symbols-outlined text-on-surface-variant/20 text-[20px]">movie</span>
+                        </div>
+                      );
+                      const posterUrl = getPosterUrl({ movieId: fav.tmdb_id, contentType: "movie", defaultPosterPath: fav.image_url, posterPrefs, size: "w342" });
+                      return (
+                        <Link href={getMovieUrl(fav.tmdb_id, fav.name)} key={slot} className="aspect-[2/3] rounded-xl overflow-hidden border border-white/10 group relative block" title={fav.name}>
+                          <img src={posterUrl} alt={fav.name} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
+                          <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex items-end p-1.5">
+                            <p className="text-[9px] text-white font-bold line-clamp-2 leading-tight">{fav.name}</p>
+                          </div>
+                        </Link>
+                      );
+                    })}
+                  </div>
+                </section>
+              );
+            })()}
 
-        {/* Public Lists */}
-        {publicLists.length > 0 && (
-          <section className="mb-8">
-            <h3 className="text-xs text-on-surface-variant uppercase tracking-widest mb-4 border-l-2 border-primary/60 pl-2">
-              Lists ({publicLists.length})
-            </h3>
-            <div className="grid grid-cols-1 gap-3">
-              {publicLists.map((list) => {
-                const items = list.items || [];
-                const previewPosters = items.slice(0, 4);
-                return (
-                  <Link
-                    key={list.id}
-                    href={`/lists/${list.id}`}
-                    className="group flex items-center gap-4 glass-card rounded-xl border border-white/10 overflow-hidden hover:border-primary/30 transition-all duration-200 p-3"
-                  >
-                    {/* Mini poster collage */}
-                    <div className="flex-shrink-0 grid grid-cols-2 w-20 h-14 rounded-lg overflow-hidden gap-0.5">
-                      {previewPosters.length > 0 ? previewPosters.map((item: any, i: number) => (
-                        <div key={i} className="overflow-hidden bg-white/5">
-                          <img
-                            src={item.poster_path ? `https://image.tmdb.org/t/p/w92${item.poster_path}` : "https://images.unsplash.com/photo-1594909122845-11baa439b7bf?w=92"}
-                            alt={item.movie_title}
-                            className="w-full h-full object-cover"
-                          />
+            {/* Top 5 TV Shows Showcase */}
+            {(() => {
+              const tvSlots = ["tv_1", "tv_2", "tv_3", "tv_4", "tv_5"] as const;
+              const topTv = tvSlots.map((s) => favorites.find((f: any) => f.slot_type === s)).filter(Boolean);
+              if (topTv.length === 0) return null;
+              return (
+                <section className="mb-8">
+                  <h3 className="text-xs text-on-surface-variant uppercase tracking-widest mb-4 border-l-2 border-purple-500 pl-2">
+                    Favourite TV Shows
+                  </h3>
+                  <div className="grid grid-cols-5 gap-2">
+                    {tvSlots.map((slot) => {
+                      const fav = favorites.find((f: any) => f.slot_type === slot);
+                      if (!fav) return (
+                        <div key={slot} className="aspect-[2/3] rounded-xl bg-white/5 border border-white/5 flex items-center justify-center">
+                          <span className="material-symbols-outlined text-on-surface-variant/20 text-[20px]">tv</span>
                         </div>
-                      )) : (
-                        <div className="col-span-2 flex items-center justify-center bg-white/5">
-                          <span className="material-symbols-outlined text-white/20 text-xl">playlist_play</span>
+                      );
+                      const posterUrl = getPosterUrl({ movieId: fav.tmdb_id, contentType: "tv", defaultPosterPath: fav.image_url, posterPrefs, size: "w342" });
+                      return (
+                        <Link href={getTvUrl(fav.tmdb_id, fav.name)} key={slot} className="aspect-[2/3] rounded-xl overflow-hidden border border-white/10 group relative block" title={fav.name}>
+                          <img src={posterUrl} alt={fav.name} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
+                          <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex items-end p-1.5">
+                            <p className="text-[9px] text-white font-bold line-clamp-2 leading-tight">{fav.name}</p>
+                          </div>
+                        </Link>
+                      );
+                    })}
+                  </div>
+                </section>
+              );
+            })()}
+
+            {/* Favorite Creatives */}
+            {(() => {
+              const creativeSlots = ["director", "actor", "actress"] as const;
+              const slotLabels: Record<string, string> = { director: "Director", actor: "Actor", actress: "Actress" };
+              const creatives = creativeSlots.map((slot) => favorites.find((f: any) => f.slot_type === slot)).filter(Boolean);
+              if (creatives.length === 0) return null;
+              return (
+                <section className="mb-8">
+                  <h3 className="text-xs text-on-surface-variant uppercase tracking-widest mb-4 border-l-2 border-[#e9c349] pl-2">
+                    Favourite Creatives
+                  </h3>
+                  <div className="flex gap-5 flex-wrap">
+                    {creatives.map((fav: any) => (
+                      <div key={fav.slot_type} className="flex flex-col items-center gap-2 group">
+                        <div className="w-16 h-16 rounded-full overflow-hidden border-2 border-white/10 group-hover:border-primary/40 transition-colors shadow-md bg-white/5 flex-shrink-0">
+                          {fav.image_url ? (
+                            <img src={`https://image.tmdb.org/t/p/w185${fav.image_url}`} alt={fav.name} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
+                          ) : (
+                            <div className="w-full h-full flex items-center justify-center">
+                              <span className="material-symbols-outlined text-on-surface-variant/40 text-2xl">person</span>
+                            </div>
+                          )}
                         </div>
-                      )}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-1.5 mb-0.5">
-                        {list.is_ranked && (
-                          <span className="text-[8px] uppercase tracking-wider font-bold px-1 py-0.5 rounded bg-[#e9c349]/20 text-[#e9c349] border border-[#e9c349]/30">Ranked</span>
-                        )}
-                        <h4 className="font-serif font-bold text-sm text-on-surface group-hover:text-primary transition-colors truncate">{list.title}</h4>
+                        <div className="text-center">
+                          <p className="text-[11px] font-semibold text-on-surface leading-tight max-w-[72px] truncate">{fav.name}</p>
+                          <p className="text-[9px] uppercase tracking-widest text-on-surface-variant/60 mt-0.5">{slotLabels[fav.slot_type] || fav.slot_type}</p>
+                        </div>
                       </div>
-                      {list.description && <p className="text-[11px] text-on-surface-variant truncate">{list.description}</p>}
-                      <p className="text-[10px] text-on-surface-variant/50 mt-0.5">{list.item_count ?? items.length} item{(list.item_count ?? items.length) !== 1 ? "s" : ""}</p>
-                    </div>
-                    <span className="material-symbols-outlined text-on-surface-variant/40 text-sm flex-shrink-0">chevron_right</span>
-                  </Link>
-                );
-              })}
+                    ))}
+                  </div>
+                </section>
+              );
+            })()}
+
+            {/* ========================================================================= */}
+            {/* PROFILE TABS: Watched (Default), Watchlist, Reviews, Lists */}
+            {/* ========================================================================= */}
+            <div className="border-b border-white/10 mb-6 pt-4">
+              <div className="flex items-center gap-6 overflow-x-auto no-scrollbar">
+                <button
+                  onClick={() => setActiveProfileTab("watched")}
+                  className={`pb-3 font-serif text-sm font-bold uppercase tracking-wider relative transition-colors cursor-pointer bg-transparent border-none ${
+                    activeProfileTab === "watched" ? "text-primary" : "text-on-surface-variant hover:text-white"
+                  }`}
+                >
+                  Watched ({watchedMovies.length + watchedTv.length})
+                  {activeProfileTab === "watched" && (
+                    <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-primary shadow-[0_0_8px_rgba(255,180,170,0.8)]" />
+                  )}
+                </button>
+
+                <button
+                  onClick={() => setActiveProfileTab("watchlist")}
+                  className={`pb-3 font-serif text-sm font-bold uppercase tracking-wider relative transition-colors cursor-pointer bg-transparent border-none ${
+                    activeProfileTab === "watchlist" ? "text-primary" : "text-on-surface-variant hover:text-white"
+                  }`}
+                >
+                  Watchlist ({watchlistMovies.length + watchlistTv.length})
+                  {activeProfileTab === "watchlist" && (
+                    <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-primary shadow-[0_0_8px_rgba(255,180,170,0.8)]" />
+                  )}
+                </button>
+
+                <button
+                  onClick={() => setActiveProfileTab("reviews")}
+                  className={`pb-3 font-serif text-sm font-bold uppercase tracking-wider relative transition-colors cursor-pointer bg-transparent border-none ${
+                    activeProfileTab === "reviews" ? "text-primary" : "text-on-surface-variant hover:text-white"
+                  }`}
+                >
+                  Reviews ({reviews.length})
+                  {activeProfileTab === "reviews" && (
+                    <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-primary shadow-[0_0_8px_rgba(255,180,170,0.8)]" />
+                  )}
+                </button>
+
+                <button
+                  onClick={() => setActiveProfileTab("lists")}
+                  className={`pb-3 font-serif text-sm font-bold uppercase tracking-wider relative transition-colors cursor-pointer bg-transparent border-none ${
+                    activeProfileTab === "lists" ? "text-primary" : "text-on-surface-variant hover:text-white"
+                  }`}
+                >
+                  Lists ({publicLists.length})
+                  {activeProfileTab === "lists" && (
+                    <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-primary shadow-[0_0_8px_rgba(255,180,170,0.8)]" />
+                  )}
+                </button>
+              </div>
             </div>
-          </section>
-        )}
 
-        {/* Media Filter Tabs for Watched & Reviews */}
-        <div className="flex flex-wrap items-center gap-3 mb-6 pt-4 border-t border-white/10">
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => setMediaFilter("movie")}
-              className={`px-3.5 py-1.5 rounded-full text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer border ${
-                mediaFilter === "movie"
-                  ? "bg-[#e50914] text-white border-[#e50914] shadow-[0_0_12px_rgba(229,9,20,0.4)]"
-                  : "bg-white/5 text-on-surface-variant border-white/10 hover:bg-white/10 hover:text-white"
-              }`}
-            >
-              <span className="material-symbols-outlined text-[15px]">movie</span>
-              Movies ({watchedMovies.length})
-            </button>
-            <button
-              onClick={() => setMediaFilter("tv")}
-              className={`px-3.5 py-1.5 rounded-full text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer border ${
-                mediaFilter === "tv"
-                  ? "bg-[#a855f7] text-white border-[#a855f7] shadow-[0_0_12px_rgba(168,85,247,0.4)]"
-                  : "bg-white/5 text-on-surface-variant border-white/10 hover:bg-white/10 hover:text-white"
-              }`}
-            >
-              <span className="material-symbols-outlined text-[15px]">tv</span>
-              TV Shows ({watchedTv.length})
-            </button>
-          </div>
-
-          {/* Sub-filter for TV Shows: All vs Anime vs Others */}
-          {mediaFilter === "tv" && (
-            <div className="flex items-center gap-1.5 p-1 rounded-full bg-white/5 border border-white/10 backdrop-blur-md animate-fade-in">
-              <button
-                onClick={() => setTvSubFilter("all")}
-                className={`px-3 py-1 rounded-full text-[11px] font-bold transition-all cursor-pointer border flex items-center gap-1 select-none ${
-                  tvSubFilter === "all"
-                    ? "bg-[#a855f7] text-white border-[#a855f7] shadow-sm"
-                    : "bg-transparent text-on-surface-variant border-transparent hover:text-white"
-                }`}
-              >
-                All ({watchedTv.length})
-              </button>
-              <button
-                onClick={() => setTvSubFilter("anime")}
-                className={`px-3 py-1 rounded-full text-[11px] font-bold transition-all cursor-pointer border flex items-center gap-1 select-none ${
-                  tvSubFilter === "anime"
-                    ? "bg-gradient-to-r from-pink-500 to-purple-500 text-white border-pink-400 shadow-[0_0_10px_rgba(236,72,153,0.4)]"
-                    : "bg-transparent text-on-surface-variant border-transparent hover:text-white"
-                }`}
-              >
-                <span>⛩️</span>
-                Anime ({watchedTvAnime.length})
-              </button>
-              <button
-                onClick={() => setTvSubFilter("others")}
-                className={`px-3 py-1 rounded-full text-[11px] font-bold transition-all cursor-pointer border flex items-center gap-1 select-none ${
-                  tvSubFilter === "others"
-                    ? "bg-white/20 text-white border-white/40 shadow-sm"
-                    : "bg-transparent text-on-surface-variant border-transparent hover:text-white"
-                }`}
-              >
-                <span>📺</span>
-                Others ({watchedTvOthers.length})
-              </button>
-            </div>
-          )}
-        </div>
-
-        {/* Recent Reviews */}
-        {currentReviews.length > 0 && (
-          <section className="mb-8">
-            <h3 className="text-xs text-on-surface-variant uppercase tracking-widest mb-4">
-              Recent {mediaFilter === "tv" ? "TV Show" : "Movie"} Reviews
-            </h3>
-            <div className="space-y-4">
-              {currentReviews.map((rev: any) => {
-                const type = rev.content_type === "tv" ? "tv" : "movie";
-                const detail = mediaDetails[`${type}_${rev.movie_id}`] || mediaDetails[rev.movie_id];
-                const userRating = ratingsMap[`${type}_${rev.movie_id}`] ?? ratingsMap[rev.movie_id];
-                const displayTitle = detail?.title || detail?.name || rev.movie_title || "Untitled";
-
-                return (
-                  <ReviewCard
-                    key={rev.id}
-                    review={rev}
-                    userRating={userRating}
-                    movieTitle={displayTitle}
-                    posterPath={detail?.poster_path || rev.poster_path}
-                    avatarUrl={profile.avatar_url}
-                    currentUserId={currentUser?.id}
-                    currentUserName={currentUser?.name || currentUser?.email || undefined}
-                    currentUserAvatar={currentUser?.image || undefined}
-                  />
-                );
-              })}
-            </div>
-          </section>
-        )}
-
-        {/* Recently Watched */}
-        {currentWatched.length > 0 ? (
-          <section className="mt-8">
-            <h3 className="text-xs text-on-surface-variant uppercase tracking-widest mb-3">
-              Recently Watched {mediaFilter === "tv" ? "TV Shows" : "Films"}
-            </h3>
-
-            {/* Sort Bar */}
-            <div className="flex items-center gap-2 overflow-x-auto pb-3 mb-4 no-scrollbar scroll-smooth">
-              <span className="text-xs text-on-surface-variant uppercase tracking-widest font-semibold flex items-center gap-1 shrink-0 mr-1 opacity-70">
-                <span className="material-symbols-outlined text-[15px]">sort</span>
-                Sort:
-              </span>
-              {SORT_OPTIONS.map(option => {
-                const isActive = watchedSort === option.id;
-                return (
-                  <button
-                    key={option.id}
-                    onClick={() => setWatchedSort(option.id)}
-                    className={`px-3 py-1 rounded-full text-xs font-semibold whitespace-nowrap transition-all duration-200 cursor-pointer border flex items-center gap-1.5 select-none shrink-0 ${isActive
-                      ? (mediaFilter === "tv" ? "bg-[#a855f7] text-white border-[#a855f7] shadow-[0_0_12px_rgba(168,85,247,0.4)] font-bold scale-[1.02]" : "bg-[#e50914] text-white border-[#e50914] shadow-[0_0_12px_rgba(229,9,20,0.4)] font-bold scale-[1.02]")
-                      : "bg-white/5 text-on-surface-variant border-white/10 hover:bg-white/10 hover:text-white hover:border-white/20"
+            {/* TAB 1: WATCHED */}
+            {activeProfileTab === "watched" && (
+              <section className="animate-fade-in">
+                {/* Media Switcher: Movies vs TV Shows */}
+                <div className="flex flex-wrap items-center gap-3 mb-5">
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => setMediaFilter("movie")}
+                      className={`px-4 py-1.5 rounded-full text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer border ${
+                        mediaFilter === "movie"
+                          ? "bg-[#e50914] text-white border-[#e50914] shadow-[0_0_12px_rgba(229,9,20,0.4)]"
+                          : "bg-white/5 text-on-surface-variant border-white/10 hover:bg-white/10 hover:text-white"
                       }`}
-                  >
-                    {isActive && <span className="material-symbols-outlined text-[13px] font-bold">check</span>}
-                    {option.label}
-                  </button>
-                );
-              })}
-            </div>
+                    >
+                      <span className="material-symbols-outlined text-[15px]">movie</span>
+                      Movies ({watchedMovies.length})
+                    </button>
+                    <button
+                      onClick={() => setMediaFilter("tv")}
+                      className={`px-4 py-1.5 rounded-full text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer border ${
+                        mediaFilter === "tv"
+                          ? "bg-[#a855f7] text-white border-[#a855f7] shadow-[0_0_12px_rgba(168,85,247,0.4)]"
+                          : "bg-white/5 text-on-surface-variant border-white/10 hover:bg-white/10 hover:text-white"
+                      }`}
+                    >
+                      <span className="material-symbols-outlined text-[15px]">tv</span>
+                      TV Shows ({watchedTv.length})
+                    </button>
+                  </div>
 
-            <div key={`${mediaFilter}_${watchedSort}`} className="grid grid-cols-3 gap-2 animate-fade-in">
-              {sortedWatched.map(item => {
-                const type = item.content_type === "tv" ? "tv" : "movie";
-                const detail = mediaDetails[`${type}_${item.movie_id}`] || mediaDetails[item.movie_id];
-                const poster = detail?.poster_path || item.poster_path;
-                const userRating = ratingsMap[`${type}_${item.movie_id}`] ?? ratingsMap[item.movie_id];
-                const displayTitle = detail?.title || detail?.name || item.movie_title || "";
-                const linkHref = type === "tv" ? getTvUrl(item.movie_id, displayTitle) : getMovieUrl(item.movie_id, displayTitle);
-
-                return (
-                  <Link key={item.id ? `${type}_${item.id}` : `${type}_${item.movie_id}_${item.watched_at || ""}`} href={linkHref} className="group aspect-[2/3] rounded-xl overflow-hidden border border-white/10 relative bg-white/5 block">
-                    <img
-                      src={poster ? `https://image.tmdb.org/t/p/w342${poster}` : "https://images.unsplash.com/photo-1594909122845-11baa439b7bf?w=342"}
-                      alt={displayTitle}
-                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
-                    />
-                    {userRating !== undefined && (
-                      <div className="absolute top-2 right-2 flex items-center gap-0.5 bg-black/75 backdrop-blur-md px-1.5 py-0.5 rounded-md border border-[#e9c349]/40 shadow-md z-10">
-                        <span className="text-[#e9c349] text-[11px] leading-none">★</span>
-                        <span className="text-[#e9c349] text-[11px] font-bold leading-none">
-                          {userRating % 1 === 0 ? userRating : userRating.toFixed(1)}
-                        </span>
-                      </div>
-                    )}
-                    <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex items-end p-2">
-                      <p className="text-[10px] text-white font-bold line-clamp-2 leading-tight">{displayTitle}</p>
+                  {/* Sub-filter for TV */}
+                  {mediaFilter === "tv" && (
+                    <div className="flex items-center gap-1.5 p-1 rounded-full bg-white/5 border border-white/10 backdrop-blur-md animate-fade-in">
+                      <button
+                        onClick={() => setTvSubFilter("all")}
+                        className={`px-3 py-0.5 rounded-full text-[11px] font-bold transition-all cursor-pointer border flex items-center gap-1 ${
+                          tvSubFilter === "all"
+                            ? "bg-[#a855f7] text-white border-[#a855f7]"
+                            : "bg-transparent text-on-surface-variant border-transparent hover:text-white"
+                        }`}
+                      >
+                        All ({watchedTv.length})
+                      </button>
+                      <button
+                        onClick={() => setTvSubFilter("anime")}
+                        className={`px-3 py-0.5 rounded-full text-[11px] font-bold transition-all cursor-pointer border flex items-center gap-1 ${
+                          tvSubFilter === "anime"
+                            ? "bg-gradient-to-r from-pink-500 to-purple-500 text-white border-pink-400"
+                            : "bg-transparent text-on-surface-variant border-transparent hover:text-white"
+                        }`}
+                      >
+                        Anime ({watchedTvAnime.length})
+                      </button>
+                      <button
+                        onClick={() => setTvSubFilter("others")}
+                        className={`px-3 py-0.5 rounded-full text-[11px] font-bold transition-all cursor-pointer border flex items-center gap-1 ${
+                          tvSubFilter === "others"
+                            ? "bg-white/20 text-white border-white/40"
+                            : "bg-transparent text-on-surface-variant border-transparent hover:text-white"
+                        }`}
+                      >
+                        Others ({watchedTvOthers.length})
+                      </button>
                     </div>
-                  </Link>
-                );
-              })}
-            </div>
-          </section>
-        ) : (
-          <div className="text-center py-8 text-on-surface-variant">
-            <span className="material-symbols-outlined text-[36px] opacity-30 mb-2">{mediaFilter === "tv" ? "tv_off" : "movie"}</span>
-            <p className="text-sm">No {mediaFilter === "tv" ? "TV shows" : "movies"} marked as watched yet.</p>
-          </div>
-        )}
+                  )}
+                </div>
+
+                {/* Genre Filter Row */}
+                {renderGenreChips(selectedWatchedGenres, setSelectedWatchedGenres, watchedGenreMode, setWatchedGenreMode)}
+
+                {/* Sort Bar */}
+                <div className="flex items-center gap-2 overflow-x-auto pb-3 mb-5 no-scrollbar scroll-smooth">
+                  <span className="text-xs text-on-surface-variant uppercase tracking-widest font-semibold flex items-center gap-1 shrink-0 mr-1 opacity-70">
+                    <span className="material-symbols-outlined text-[15px]">sort</span>
+                    Sort:
+                  </span>
+                  {sortOptions.map((option) => {
+                    const isActive = watchedSort === option.id;
+                    return (
+                      <button
+                        key={option.id}
+                        onClick={() => setWatchedSort(option.id)}
+                        className={`px-3 py-1 rounded-full text-xs font-semibold whitespace-nowrap transition-all duration-200 cursor-pointer border flex items-center gap-1.5 select-none shrink-0 ${
+                          isActive
+                            ? mediaFilter === "tv"
+                              ? "bg-[#a855f7] text-white border-[#a855f7] shadow-[0_0_12px_rgba(168,85,247,0.4)] font-bold scale-[1.02]"
+                              : "bg-[#e50914] text-white border-[#e50914] shadow-[0_0_12px_rgba(229,9,20,0.4)] font-bold scale-[1.02]"
+                            : "bg-white/5 text-on-surface-variant border-white/10 hover:bg-white/10 hover:text-white hover:border-white/20"
+                        }`}
+                      >
+                        {isActive && <span className="material-symbols-outlined text-[13px] font-bold">check</span>}
+                        {option.label}
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {/* Watched Grid */}
+                {sortedWatched.length > 0 ? (
+                  <div key={`${mediaFilter}_${watchedSort}`} className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 gap-3 animate-fade-in">
+                    {sortedWatched.map((item) => {
+                      const type = item.content_type === "tv" ? "tv" : "movie";
+                      const detail = mediaDetails[`${type}_${item.movie_id}`] || mediaDetails[item.movie_id];
+                      const posterUrl = getPosterUrl({
+                        movieId: item.movie_id,
+                        contentType: type,
+                        defaultPosterPath: item.poster_path || detail?.poster_path,
+                        posterPrefs,
+                        size: "w342",
+                      });
+                      const friendRating = ratingsMap[`${type}_${item.movie_id}`] ?? ratingsMap[item.movie_id];
+                      const myRating = myRatingsMap[`${type}_${item.movie_id}`] ?? myRatingsMap[item.movie_id];
+                      const displayTitle = detail?.title || detail?.name || item.movie_title || "";
+                      const linkHref = type === "tv" ? getTvUrl(item.movie_id, displayTitle) : getMovieUrl(item.movie_id, displayTitle);
+
+                      return (
+                        <Link
+                          key={item.id ? `${type}_${item.id}` : `${type}_${item.movie_id}_${item.watched_at || ""}`}
+                          href={linkHref}
+                          className="group aspect-[2/3] rounded-xl overflow-hidden border border-white/10 relative bg-white/5 block shadow-md hover:border-primary/40 transition-all"
+                        >
+                          <img
+                            src={posterUrl}
+                            alt={displayTitle}
+                            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                          />
+
+                          {/* Top-Right: Friend's Rating Badge */}
+                          {friendRating !== undefined && (
+                            <div
+                              className="absolute top-2 right-2 flex items-center gap-0.5 bg-black/80 backdrop-blur-md px-1.5 py-0.5 rounded-md border border-[#e9c349]/40 shadow-md z-10"
+                              title={`${profile.display_name}'s rating: ${friendRating}/10`}
+                            >
+                              <span className="text-[#e9c349] text-[11px] leading-none">★</span>
+                              <span className="text-[#e9c349] text-[11px] font-bold leading-none">
+                                {friendRating % 1 === 0 ? friendRating : friendRating.toFixed(1)}
+                              </span>
+                            </div>
+                          )}
+
+                          {/* Top-Left: Viewer's (My) Rating Badge */}
+                          {myRating !== undefined && !isOwnProfile && (
+                            <div
+                              className="absolute top-2 left-2 flex items-center gap-1 bg-primary text-black backdrop-blur-md px-1.5 py-0.5 rounded-md shadow-md z-10 text-[9px] font-extrabold border border-black/20"
+                              title={`Your rating: ${myRating}/10`}
+                            >
+                              <span className="leading-none tracking-tight">YOU</span>
+                              <span className="leading-none font-bold">★{myRating}</span>
+                            </div>
+                          )}
+
+                          <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex items-end p-2">
+                            <p className="text-[10px] text-white font-bold line-clamp-2 leading-tight">{displayTitle}</p>
+                          </div>
+                        </Link>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <div className="text-center py-12 text-on-surface-variant glass-card rounded-2xl border border-white/5 p-8">
+                    <span className="material-symbols-outlined text-[36px] opacity-30 mb-2">{mediaFilter === "tv" ? "tv_off" : "movie"}</span>
+                    <p className="text-sm">
+                      {selectedWatchedGenres.length > 0
+                        ? "No titles match the selected genre filters."
+                        : `No ${mediaFilter === "tv" ? "TV shows" : "movies"} marked as watched yet.`}
+                    </p>
+                  </div>
+                )}
+              </section>
+            )}
+
+            {/* TAB 2: WATCHLIST */}
+            {activeProfileTab === "watchlist" && (
+              <section className="animate-fade-in">
+                {/* Media Switcher: Movies vs TV Shows */}
+                <div className="flex flex-wrap items-center gap-3 mb-5">
+                  <button
+                    onClick={() => setWatchlistMediaFilter("movie")}
+                    className={`px-4 py-1.5 rounded-full text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer border ${
+                      watchlistMediaFilter === "movie"
+                        ? "bg-[#e50914] text-white border-[#e50914] shadow-[0_0_12px_rgba(229,9,20,0.4)]"
+                        : "bg-white/5 text-on-surface-variant border-white/10 hover:bg-white/10 hover:text-white"
+                    }`}
+                  >
+                    <span className="material-symbols-outlined text-[15px]">movie</span>
+                    Movies ({watchlistMovies.length})
+                  </button>
+                  <button
+                    onClick={() => setWatchlistMediaFilter("tv")}
+                    className={`px-4 py-1.5 rounded-full text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer border ${
+                      watchlistMediaFilter === "tv"
+                        ? "bg-[#a855f7] text-white border-[#a855f7] shadow-[0_0_12px_rgba(168,85,247,0.4)]"
+                        : "bg-white/5 text-on-surface-variant border-white/10 hover:bg-white/10 hover:text-white"
+                    }`}
+                  >
+                    <span className="material-symbols-outlined text-[15px]">tv</span>
+                    TV Shows ({watchlistTv.length})
+                  </button>
+                </div>
+
+                {/* Genre Filter Row */}
+                {renderGenreChips(selectedWatchlistGenres, setSelectedWatchlistGenres, watchlistGenreMode, setWatchlistGenreMode)}
+
+                {/* Sort Bar */}
+                <div className="flex items-center gap-2 overflow-x-auto pb-3 mb-5 no-scrollbar scroll-smooth">
+                  <span className="text-xs text-on-surface-variant uppercase tracking-widest font-semibold flex items-center gap-1 shrink-0 mr-1 opacity-70">
+                    <span className="material-symbols-outlined text-[15px]">sort</span>
+                    Sort:
+                  </span>
+                  {sortOptions.map((option) => {
+                    const isActive = watchlistSort === option.id;
+                    return (
+                      <button
+                        key={option.id}
+                        onClick={() => setWatchlistSort(option.id)}
+                        className={`px-3 py-1 rounded-full text-xs font-semibold whitespace-nowrap transition-all duration-200 cursor-pointer border flex items-center gap-1.5 select-none shrink-0 ${
+                          isActive
+                            ? watchlistMediaFilter === "tv"
+                              ? "bg-[#a855f7] text-white border-[#a855f7] shadow-[0_0_12px_rgba(168,85,247,0.4)] font-bold scale-[1.02]"
+                              : "bg-[#e50914] text-white border-[#e50914] shadow-[0_0_12px_rgba(229,9,20,0.4)] font-bold scale-[1.02]"
+                            : "bg-white/5 text-on-surface-variant border-white/10 hover:bg-white/10 hover:text-white hover:border-white/20"
+                        }`}
+                      >
+                        {isActive && <span className="material-symbols-outlined text-[13px] font-bold">check</span>}
+                        {option.label}
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {/* Watchlist Grid */}
+                {sortedWatchlist.length > 0 ? (
+                  <div key={`watchlist_${watchlistMediaFilter}_${watchlistSort}`} className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 gap-3 animate-fade-in">
+                    {sortedWatchlist.map((item) => {
+                      const type = item.content_type === "tv" ? "tv" : "movie";
+                      const detail = mediaDetails[`${type}_${item.movie_id}`] || mediaDetails[item.movie_id];
+                      const posterUrl = getPosterUrl({
+                        movieId: item.movie_id,
+                        contentType: type,
+                        defaultPosterPath: item.poster_path || detail?.poster_path,
+                        posterPrefs,
+                        size: "w342",
+                      });
+                      const myRating = myRatingsMap[`${type}_${item.movie_id}`] ?? myRatingsMap[item.movie_id];
+                      const displayTitle = detail?.title || detail?.name || item.movie_title || "";
+                      const linkHref = type === "tv" ? getTvUrl(item.movie_id, displayTitle) : getMovieUrl(item.movie_id, displayTitle);
+
+                      return (
+                        <Link
+                          key={item.id ? `wl_${type}_${item.id}` : `wl_${type}_${item.movie_id}_${item.created_at || ""}`}
+                          href={linkHref}
+                          className="group aspect-[2/3] rounded-xl overflow-hidden border border-white/10 relative bg-white/5 block shadow-md hover:border-primary/40 transition-all"
+                        >
+                          <img
+                            src={posterUrl}
+                            alt={displayTitle}
+                            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                          />
+
+                          {/* Top-Left: Viewer's (My) Rating Badge if I already rated it */}
+                          {myRating !== undefined && !isOwnProfile && (
+                            <div
+                              className="absolute top-2 left-2 flex items-center gap-1 bg-primary text-black backdrop-blur-md px-1.5 py-0.5 rounded-md shadow-md z-10 text-[9px] font-extrabold border border-black/20"
+                              title={`Your rating: ${myRating}/10`}
+                            >
+                              <span className="leading-none tracking-tight">YOU</span>
+                              <span className="leading-none font-bold">★{myRating}</span>
+                            </div>
+                          )}
+
+                          <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex items-end p-2">
+                            <p className="text-[10px] text-white font-bold line-clamp-2 leading-tight">{displayTitle}</p>
+                          </div>
+                        </Link>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <div className="text-center py-12 text-on-surface-variant glass-card rounded-2xl border border-white/5 p-8">
+                    <span className="material-symbols-outlined text-[36px] opacity-30 mb-2">bookmark_border</span>
+                    <p className="text-sm">
+                      {selectedWatchlistGenres.length > 0
+                        ? "No titles match the selected genre filters."
+                        : `No ${watchlistMediaFilter === "tv" ? "TV shows" : "movies"} in the watchlist.`}
+                    </p>
+                  </div>
+                )}
+              </section>
+            )}
+
+            {/* TAB 3: REVIEWS */}
+            {activeProfileTab === "reviews" && (
+              <section className="animate-fade-in space-y-6">
+                {/* Media Switcher: Movies vs TV Shows */}
+                <div className="flex items-center gap-2 mb-4">
+                  <button
+                    onClick={() => setMediaFilter("movie")}
+                    className={`px-4 py-1.5 rounded-full text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer border ${
+                      mediaFilter === "movie"
+                        ? "bg-[#e50914] text-white border-[#e50914] shadow-[0_0_12px_rgba(229,9,20,0.4)]"
+                        : "bg-white/5 text-on-surface-variant border-white/10 hover:bg-white/10 hover:text-white"
+                    }`}
+                  >
+                    <span className="material-symbols-outlined text-[15px]">movie</span>
+                    Movies ({reviewsMovies.length})
+                  </button>
+                  <button
+                    onClick={() => setMediaFilter("tv")}
+                    className={`px-4 py-1.5 rounded-full text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer border ${
+                      mediaFilter === "tv"
+                        ? "bg-[#a855f7] text-white border-[#a855f7] shadow-[0_0_12px_rgba(168,85,247,0.4)]"
+                        : "bg-white/5 text-on-surface-variant border-white/10 hover:bg-white/10 hover:text-white"
+                    }`}
+                  >
+                    <span className="material-symbols-outlined text-[15px]">tv</span>
+                    TV Shows ({reviewsTv.length})
+                  </button>
+                </div>
+
+                {currentReviews.length > 0 ? (
+                  <div className="space-y-4">
+                    {currentReviews.map((rev: any) => {
+                      const type = rev.content_type === "tv" ? "tv" : "movie";
+                      const detail = mediaDetails[`${type}_${rev.movie_id}`] || mediaDetails[rev.movie_id];
+                      const userRating = ratingsMap[`${type}_${rev.movie_id}`] ?? ratingsMap[rev.movie_id];
+                      const displayTitle = detail?.title || detail?.name || rev.movie_title || "Untitled";
+                      const posterUrl = getPosterUrl({
+                        movieId: rev.movie_id,
+                        contentType: type,
+                        defaultPosterPath: rev.poster_path || detail?.poster_path,
+                        posterPrefs,
+                        size: "w185",
+                      });
+
+                      return (
+                        <ReviewCard
+                          key={rev.id}
+                          review={rev}
+                          userRating={userRating}
+                          movieTitle={displayTitle}
+                          posterPath={posterUrl}
+                          avatarUrl={profile.avatar_url}
+                          currentUserId={currentUser?.id}
+                          currentUserName={currentUser?.name || currentUser?.email || undefined}
+                          currentUserAvatar={currentUser?.image || undefined}
+                        />
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <div className="text-center py-12 text-on-surface-variant glass-card rounded-2xl border border-white/5 p-8">
+                    <span className="material-symbols-outlined text-[36px] opacity-30 mb-2">rate_review</span>
+                    <p className="text-sm">No reviews written for {mediaFilter === "tv" ? "TV shows" : "movies"} yet.</p>
+                  </div>
+                )}
+              </section>
+            )}
+
+            {/* TAB 4: LISTS */}
+            {activeProfileTab === "lists" && (
+              <section className="animate-fade-in">
+                {publicLists.length > 0 ? (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {publicLists.map((list) => {
+                      const items = list.items || [];
+                      const previewPosters = items.slice(0, 4);
+                      return (
+                        <Link
+                          key={list.id}
+                          href={`/lists/${list.id}`}
+                          className="group flex items-center gap-4 glass-card rounded-2xl border border-white/10 overflow-hidden hover:border-primary/40 transition-all duration-300 p-4"
+                        >
+                          <div className="flex-shrink-0 grid grid-cols-2 w-24 h-16 rounded-xl overflow-hidden gap-0.5 bg-black/40">
+                            {previewPosters.length > 0 ? (
+                              previewPosters.map((item: any, i: number) => (
+                                <div key={i} className="overflow-hidden bg-white/5">
+                                  <img
+                                    src={item.poster_path ? `https://image.tmdb.org/t/p/w92${item.poster_path}` : "https://images.unsplash.com/photo-1594909122845-11baa439b7bf?w=92"}
+                                    alt={item.movie_title}
+                                    className="w-full h-full object-cover"
+                                  />
+                                </div>
+                              ))
+                            ) : (
+                              <div className="col-span-2 flex items-center justify-center bg-white/5">
+                                <span className="material-symbols-outlined text-white/20 text-xl">playlist_play</span>
+                              </div>
+                            )}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-1.5 mb-1">
+                              {list.is_ranked && (
+                                <span className="text-[8px] uppercase tracking-wider font-bold px-1.5 py-0.5 rounded bg-[#e9c349]/20 text-[#e9c349] border border-[#e9c349]/30">
+                                  Ranked
+                                </span>
+                              )}
+                              <h4 className="font-serif font-bold text-base text-on-surface group-hover:text-primary transition-colors truncate">
+                                {list.title}
+                              </h4>
+                            </div>
+                            {list.description && <p className="text-xs text-on-surface-variant truncate">{list.description}</p>}
+                            <p className="text-[11px] text-on-surface-variant/60 mt-1 font-mono">
+                              {list.item_count ?? items.length} {((list.item_count ?? items.length) === 1 ? "entry" : "entries")}
+                            </p>
+                          </div>
+                          <span className="material-symbols-outlined text-on-surface-variant/40 text-base flex-shrink-0">chevron_right</span>
+                        </Link>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <div className="text-center py-12 text-on-surface-variant glass-card rounded-2xl border border-white/5 p-8">
+                    <span className="material-symbols-outlined text-[36px] opacity-30 mb-2">playlist_add</span>
+                    <p className="text-sm">No public lists created yet.</p>
+                  </div>
+                )}
+              </section>
+            )}
           </>
         )}
       </main>
@@ -1225,7 +1571,7 @@ export default function PublicProfilePage() {
         <Link className="flex items-center justify-center text-on-surface-variant opacity-60 hover:text-primary transition-colors active:scale-90" href="/recommendations"><span className="material-symbols-outlined">search</span></Link>
         <Link className="flex items-center justify-center text-on-surface-variant opacity-60 hover:text-primary transition-colors active:scale-90" href="/movies"><span className="material-symbols-outlined">bookmark</span></Link>
         <Link className="flex items-center justify-center text-on-surface-variant opacity-60 hover:text-primary transition-colors active:scale-90" href="/community"><span className="material-symbols-outlined">group</span></Link>
-        <Link className="flex items-center justify-center text-on-surface-variant opacity-60 hover:text-primary transition-colors active:scale-90" href="/profile"><span className="material-symbols-outlined">person</span></Link>
+        <Link className="flex items-center justify-center text-primary relative after:content-[''] after:absolute after:-bottom-2 after:w-1 after:h-1 after:bg-primary after:rounded-full after:shadow-[0_0_8px_#ffb4aa] active:scale-90" href="/profile"><span className="material-symbols-outlined" style={{ fontVariationSettings: "'FILL' 1" }}>person</span></Link>
       </nav>
 
       {/* Follow List Modal */}
@@ -1236,48 +1582,44 @@ export default function PublicProfilePage() {
         >
           <div
             className="bg-[#131313] border border-white/10 rounded-t-3xl w-full max-w-md max-h-[75vh] overflow-hidden flex flex-col shadow-[0_-8px_40px_rgba(0,0,0,0.6)]"
-            onClick={e => e.stopPropagation()}
+            onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center justify-between px-6 py-4 border-b border-white/10">
               <h3 className="font-serif text-lg text-on-surface capitalize">
                 {followListModal.type === "followers" ? `${followCounts.followers} Followers` : `${followCounts.following} Following`}
               </h3>
-              <button onClick={() => setFollowListModal(null)} className="text-on-surface-variant hover:text-white transition-colors cursor-pointer">
+              <button onClick={() => setFollowListModal(null)} className="text-on-surface-variant hover:text-white transition-colors cursor-pointer bg-transparent border-none">
                 <span className="material-symbols-outlined">close</span>
               </button>
             </div>
             <div className="overflow-y-auto flex-1 py-2">
               {followListModal.loading ? (
-                <div className="flex justify-center py-12">
-                  <div className="h-8 w-8 border-4 border-primary border-t-transparent rounded-full animate-spin"></div>
+                <div className="flex justify-center py-8">
+                  <div className="w-6 h-6 border-2 border-primary border-t-transparent rounded-full animate-spin"></div>
                 </div>
               ) : followListModal.users.length === 0 ? (
-                <div className="text-center py-12">
-                  <span className="material-symbols-outlined text-[40px] text-on-surface-variant/30 mb-3">{followListModal.type === "followers" ? "group" : "person_add"}</span>
-                  <p className="text-on-surface-variant text-sm">
-                    {followListModal.type === "followers" ? "No followers yet" : "Not following anyone yet"}
-                  </p>
-                </div>
+                <p className="text-center text-on-surface-variant text-sm py-8">No users found.</p>
               ) : (
                 followListModal.users.map((u: any) => (
                   <Link
                     key={u.user_id}
                     href={`/profile/${u.user_id}`}
                     onClick={() => setFollowListModal(null)}
-                    className="flex items-center gap-4 px-6 py-3 hover:bg-white/5 transition-colors"
+                    className="flex items-center gap-3 px-6 py-3 hover:bg-white/5 transition-colors"
                   >
-                    {getSafeAvatarUrl(u.avatar_url) ? (
-                      <img src={getSafeAvatarUrl(u.avatar_url)!} alt={u.display_name} className="w-11 h-11 rounded-full object-cover border border-white/10 flex-shrink-0" />
-                    ) : (
-                      <div className="w-11 h-11 rounded-full bg-primary/20 border border-primary/20 flex items-center justify-center flex-shrink-0">
-                        <span className="text-primary font-bold text-sm">{(u.display_name || u.username || "?").slice(0, 2).toUpperCase()}</span>
-                      </div>
-                    )}
-                    <div className="min-w-0 flex-1">
-                      <p className="font-semibold text-on-surface truncate">{u.display_name || u.username || "Cine Member"}</p>
-                      {u.username && <p className="text-xs text-on-surface-variant truncate">@{u.username}</p>}
+                    <div className="w-9 h-9 rounded-full overflow-hidden border border-white/10 bg-white/5 flex-shrink-0">
+                      {u.avatar_url ? (
+                        <img src={getSafeAvatarUrl(u.avatar_url) || ""} alt={u.display_name} className="w-full h-full object-cover" />
+                      ) : (
+                        <div className="w-full h-full flex items-center justify-center text-primary font-bold text-xs uppercase bg-primary/20">
+                          {(u.display_name || "?").slice(0, 2)}
+                        </div>
+                      )}
                     </div>
-                    <span className="material-symbols-outlined text-on-surface-variant/40 text-sm flex-shrink-0">chevron_right</span>
+                    <div>
+                      <p className="font-semibold text-sm text-on-surface">{u.display_name}</p>
+                      {u.username && <p className="text-xs text-on-surface-variant font-mono">@{u.username}</p>}
+                    </div>
                   </Link>
                 ))
               )}
@@ -1286,35 +1628,26 @@ export default function PublicProfilePage() {
         </div>
       )}
 
-      {/* Avatar Full-Screen Modal */}
-      {avatarModalOpen && (
+      {/* Avatar Enlarged Modal */}
+      {avatarModalOpen && profile?.avatar_url && (
         <div
-          className="fixed inset-0 z-[300] flex flex-col items-center justify-center bg-black/95 backdrop-blur-xl animate-fade-in"
+          className="fixed inset-0 z-[200] flex items-center justify-center bg-black/90 backdrop-blur-md p-4 animate-fade-in"
           onClick={() => setAvatarModalOpen(false)}
         >
-          <button
-            className="absolute top-5 right-5 text-white/60 hover:text-white transition-colors"
-            onClick={() => setAvatarModalOpen(false)}
-            aria-label="Close"
-          >
-            <span className="material-symbols-outlined text-[32px]">close</span>
-          </button>
-
-          <div
-            className="w-64 h-64 md:w-80 md:h-80 rounded-full overflow-hidden border-4 border-white/10 shadow-[0_0_80px_rgba(0,0,0,0.9)] mb-8"
-            onClick={e => e.stopPropagation()}
-          >
-            {getSafeAvatarUrl(profile?.avatar_url) ? (
-              <img src={getSafeAvatarUrl(profile.avatar_url)!} alt={displayName} className="w-full h-full object-cover" />
-            ) : (
-              <div className="w-full h-full bg-primary/20 flex items-center justify-center">
-                <span className="text-primary font-bold text-5xl font-serif">{initials}</span>
-              </div>
-            )}
+          <div className="relative max-w-sm w-full flex flex-col items-center gap-4" onClick={(e) => e.stopPropagation()}>
+            <div className="w-64 h-64 md:w-80 md:h-80 rounded-full overflow-hidden border-4 border-white/20 shadow-2xl bg-white/5">
+              <img src={getSafeAvatarUrl(profile.avatar_url) || ""} alt={profile.display_name} className="w-full h-full object-cover" />
+            </div>
+            <p className="text-sm font-serif font-bold text-white">{profile.display_name}</p>
+            <button
+              onClick={() => setAvatarModalOpen(false)}
+              className="px-6 py-2 rounded-full bg-white/10 hover:bg-white/20 text-white text-xs font-semibold transition-all cursor-pointer border border-white/10"
+            >
+              Close
+            </button>
           </div>
         </div>
       )}
     </div>
   );
 }
-

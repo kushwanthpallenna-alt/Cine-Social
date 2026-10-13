@@ -10,6 +10,7 @@ import { useToast } from "@/components/ToastProvider";
 import { useAuthPrompt } from "@/components/AuthPromptProvider";
 import { getSafeAvatarUrl } from "@/lib/avatar";
 import { getMovieUrl, getTvUrl } from "@/lib/slug";
+import PosterPickerModal from "@/components/PosterPickerModal";
 
 const NotificationBell = dynamic(() => import("@/components/NotificationBell"), { ssr: false });
 const Carousel = dynamic(() => import("@/components/Carousel"));
@@ -107,6 +108,13 @@ export default function Home() {
   const [logLiked, setLogLiked] = useState<boolean>(false);
   const [logWatchedDate, setLogWatchedDate] = useState<string>(new Date().toISOString().split("T")[0]);
   const [isLogSubmitting, setIsLogSubmitting] = useState(false);
+
+  // Prefill / Rewatch / Poster picker states for Log modal (Req 6, 7, 8)
+  const [isExistingLog, setIsExistingLog] = useState(false);
+  const [logRewatchMode, setLogRewatchMode] = useState(false);
+  const [logRewatchCount, setLogRewatchCount] = useState(0);
+  const [showLogPosterPicker, setShowLogPosterPicker] = useState(false);
+  const [logPosterPath, setLogPosterPath] = useState<string | null>(null);
 
   // Friends activity states
   const [friendsActivity, setFriendsActivity] = useState<any[]>([]);
@@ -470,12 +478,57 @@ export default function Home() {
   }, [quickLogQuery]);
 
   // Select an item from search to proceed to rating & review step
-  const handleSelectLogItem = (item: any) => {
+  // Req 6: Prefill from existing watched/rating/review data
+  const handleSelectLogItem = async (item: any) => {
     setSelectedLogItem(item);
     setLogRating(null);
     setLogHoverRating(5);
     setLogReviewText("");
     setLogLiked(false);
+    setLogWatchedDate(new Date().toISOString().split("T")[0]);
+    setIsExistingLog(false);
+    setLogRewatchMode(false);
+    setLogRewatchCount(0);
+    setLogPosterPath(item.poster_path || null);
+
+    if (!user?.id) return;
+    const movieIdStr = String(item.id);
+    const isTv = item.media_type === "tv" || (item.name && !item.title);
+    const contentType = isTv ? "tv" : "movie";
+
+    try {
+      // Fetch existing rating, watched date, review in parallel
+      const [ratingRes, watchedRes, reviewRes, rewatchRes] = await Promise.all([
+        supabase.from("ratings").select("rating, liked").eq("user_id", user.id).eq("movie_id", movieIdStr).eq("content_type", contentType).maybeSingle(),
+        fetch(`/api/watched?userId=${user.id}&movieId=${movieIdStr}&contentType=${contentType}`).then(r => r.ok ? r.json() : null),
+        supabase.from("reviews").select("review_text").eq("user_id", user.id).eq("movie_id", movieIdStr).eq("content_type", contentType).order("created_at", { ascending: false }).limit(1),
+        fetch(`/api/watch-log?userId=${user.id}&contentId=${movieIdStr}&contentType=${contentType}`).then(r => r.ok ? r.json() : []),
+      ]);
+
+      let hasExisting = false;
+
+      if (ratingRes.data) {
+        setLogRating(ratingRes.data.rating);
+        setLogHoverRating(ratingRes.data.rating || 5);
+        setLogLiked(ratingRes.data.liked || false);
+        hasExisting = true;
+      }
+      if (watchedRes?.watched_at) {
+        setLogWatchedDate(new Date(watchedRes.watched_at).toISOString().split("T")[0]);
+        hasExisting = true;
+      }
+      if (reviewRes.data && reviewRes.data.length > 0) {
+        setLogReviewText(reviewRes.data[0].review_text || "");
+        hasExisting = true;
+      }
+      if (Array.isArray(rewatchRes) && rewatchRes.length > 0) {
+        setLogRewatchCount(rewatchRes.length);
+      }
+
+      setIsExistingLog(hasExisting);
+    } catch (err) {
+      console.error("Error prefilling log data:", err);
+    }
   };
 
   // Save Log Entry (Watched + Optional Rating + Optional Review)
@@ -548,13 +601,36 @@ export default function Home() {
 
       await Promise.all(promises);
 
-      let toastMsg = `Logged "${title}" as watched!`;
-      if (includeRatingAndReview && logRating !== null && logReviewText.trim()) {
-        toastMsg = `Logged, rated ${logRating}/10, & reviewed "${title}"!`;
-      } else if (includeRatingAndReview && logRating !== null) {
-        toastMsg = `Logged & rated ${logRating}/10 "${title}"!`;
-      } else if (includeRatingAndReview && logReviewText.trim()) {
-        toastMsg = `Logged & reviewed "${title}"!`;
+      // Req 7: Also log to watch_log table
+      try {
+        await fetch("/api/watch-log", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            user_id: userId,
+            content_id: movieIdStr,
+            content_type: contentType,
+            title,
+            poster_path: logPosterPath || posterPath,
+            watched_at: logWatchedDate ? new Date(logWatchedDate).toISOString() : undefined,
+            rating: includeRatingAndReview ? logRating : null,
+            review: includeRatingAndReview ? logReviewText.trim() || null : null,
+            is_rewatch: logRewatchMode,
+          }),
+        });
+      } catch (e) {
+        console.error("watch_log insert error (non-blocking):", e);
+      }
+
+      let toastMsg = logRewatchMode
+        ? `Rewatched "${title}" logged!`
+        : isExistingLog
+          ? `Updated "${title}"!`
+          : `Logged "${title}" as watched!`;
+      if (!logRewatchMode && includeRatingAndReview && logRating !== null && logReviewText.trim()) {
+        toastMsg = isExistingLog ? `Updated rating & review for "${title}"!` : `Logged, rated ${logRating}/10, & reviewed "${title}"!`;
+      } else if (!logRewatchMode && includeRatingAndReview && logRating !== null) {
+        toastMsg = isExistingLog ? `Updated rating for "${title}"!` : `Logged & rated ${logRating}/10 "${title}"!`;
       }
 
       showToast(toastMsg);
@@ -566,6 +642,10 @@ export default function Home() {
       setLogReviewText("");
       setLogLiked(false);
       setLogWatchedDate(new Date().toISOString().split("T")[0]);
+      setIsExistingLog(false);
+      setLogRewatchMode(false);
+      setLogRewatchCount(0);
+      setLogPosterPath(null);
     } catch (err) {
       console.error("Error saving log entry:", err);
       showToast("Failed to save entry");
@@ -1703,7 +1783,7 @@ export default function Home() {
                     <span className="material-symbols-outlined text-sm">arrow_back</span>
                     Back
                   </button>
-                  <h3 className="font-serif text-lg text-on-surface font-bold">Log Your Watch</h3>
+                  <h3 className="font-serif text-lg text-on-surface font-bold">{logRewatchMode ? "Log a Rewatch" : isExistingLog ? "Update Your Log" : "Log Your Watch"}</h3>
                   <button
                     onClick={() => {
                       setShowQuickLogModal(false);
@@ -1849,6 +1929,22 @@ export default function Home() {
                     />
                   </div>
 
+                  {/* Req 8: Change Poster button */}
+                  {user?.id && selectedLogItem && (
+                    <div className="flex items-center gap-3">
+                      <button
+                        onClick={() => setShowLogPosterPicker(true)}
+                        className="flex items-center gap-2 px-4 py-2 rounded-full border border-white/10 bg-white/5 hover:bg-white/10 text-on-surface-variant hover:text-on-surface text-xs font-semibold transition-all cursor-pointer"
+                      >
+                        <span className="material-symbols-outlined text-[16px]">image</span>
+                        Change Poster
+                      </button>
+                      {logRewatchCount > 0 && !logRewatchMode && (
+                        <span className="text-[10px] text-on-surface-variant/60 font-mono">Watched {logRewatchCount + 1}×</span>
+                      )}
+                    </div>
+                  )}
+
                   {/* Buttons */}
                   <div className="space-y-2 pt-2">
                     <button
@@ -1861,26 +1957,74 @@ export default function Home() {
                       ) : (
                         <>
                           <span className="material-symbols-outlined text-[18px]" style={{ fontVariationSettings: "'FILL' 1" }}>
-                            check_circle
+                            {logRewatchMode ? "replay" : "check_circle"}
                           </span>
-                          Save Entry
+                          {logRewatchMode ? "Log Rewatch" : isExistingLog ? "Update Entry" : "Save Entry"}
                         </>
                       )}
                     </button>
 
-                    <button
-                      onClick={() => handleSaveLogEntry(false)}
-                      disabled={isLogSubmitting}
-                      className="w-full py-2.5 rounded-full border border-white/10 bg-white/5 hover:bg-white/10 text-on-surface-variant hover:text-on-surface text-xs font-semibold transition-all cursor-pointer flex items-center justify-center gap-1.5"
-                    >
-                      Skip Rating & Review (Watched Only)
-                    </button>
+                    {/* Req 7: Rewatch toggle */}
+                    {isExistingLog && !logRewatchMode && (
+                      <button
+                        onClick={() => {
+                          setLogRewatchMode(true);
+                          setLogRating(null);
+                          setLogHoverRating(5);
+                          setLogReviewText("");
+                          setLogWatchedDate(new Date().toISOString().split("T")[0]);
+                        }}
+                        className="w-full py-2.5 rounded-full border border-purple-500/30 bg-purple-500/10 hover:bg-purple-500/20 text-purple-300 text-xs font-semibold transition-all cursor-pointer flex items-center justify-center gap-1.5"
+                      >
+                        <span className="material-symbols-outlined text-[16px]">replay</span>
+                        Log a Rewatch
+                      </button>
+                    )}
+                    {logRewatchMode && (
+                      <button
+                        onClick={() => {
+                          setLogRewatchMode(false);
+                          // Re-trigger prefill
+                          handleSelectLogItem(selectedLogItem);
+                        }}
+                        className="w-full py-2.5 rounded-full border border-white/10 bg-white/5 hover:bg-white/10 text-on-surface-variant hover:text-on-surface text-xs font-semibold transition-all cursor-pointer flex items-center justify-center gap-1.5"
+                      >
+                        Cancel Rewatch
+                      </button>
+                    )}
+
+                    {!logRewatchMode && (
+                      <button
+                        onClick={() => handleSaveLogEntry(false)}
+                        disabled={isLogSubmitting}
+                        className="w-full py-2.5 rounded-full border border-white/10 bg-white/5 hover:bg-white/10 text-on-surface-variant hover:text-on-surface text-xs font-semibold transition-all cursor-pointer flex items-center justify-center gap-1.5"
+                      >
+                        Skip Rating & Review (Watched Only)
+                      </button>
+                    )}
                   </div>
                 </div>
               </>
             )}
           </div>
         </div>
+      )}
+
+      {/* Req 8: Poster Picker Modal for Log modal */}
+      {showLogPosterPicker && selectedLogItem && user?.id && (
+        <PosterPickerModal
+          movieId={String(selectedLogItem.id)}
+          movieTitle={selectedLogItem.title || selectedLogItem.name || ""}
+          currentPosterPath={logPosterPath}
+          defaultPosterPath={selectedLogItem.poster_path || null}
+          userId={user.id}
+          contentType={selectedLogItem.media_type === "tv" || (selectedLogItem.name && !selectedLogItem.title) ? "tv" : "movie"}
+          onClose={() => setShowLogPosterPicker(false)}
+          onSelect={(posterPath) => {
+            setLogPosterPath(posterPath);
+            setShowLogPosterPicker(false);
+          }}
+        />
       )}
       <nav className="fixed bottom-0 left-0 right-0 h-[60px] z-50 mb-container-margin mx-container-margin rounded-full bg-surface/40 backdrop-blur-[100px] border border-white/10 shadow-[0_0_20px_rgba(255,180,170,0.1)] flex justify-around items-center w-full max-w-md md:left-1/2 md:-translate-x-1/2">
         <Link

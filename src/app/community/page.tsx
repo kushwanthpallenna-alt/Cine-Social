@@ -363,6 +363,8 @@ export default function CommunityFeed() {
     if (item.type === "rating") return <><span className="text-on-surface-variant">rated </span><span className="text-primary font-medium">{title}</span> <StarRating rating={item.rating} /></>;
     if (item.type === "watchlist") return <><span className="text-on-surface-variant">added </span><span className="text-primary font-medium">{title}</span><span className="text-on-surface-variant"> to watchlist</span></>;
     if (item.type === "watched") return <><span className="text-on-surface-variant">watched </span><span className="text-primary font-medium">{title}</span></>;
+    if (item.type === "rewatch") return <><span className="text-on-surface-variant">rewatched </span><span className="text-primary font-medium">{title}</span>{item.rating ? <> <StarRating rating={item.rating} /></> : null}</>;
+    if (item.type === "season_review") return <><span className="text-on-surface-variant">reviewed Season {item.season} of </span><span className="text-primary font-medium">{title}</span>{item.rating ? <> <StarRating rating={item.rating} /></> : null}</>;
     if (item.type === "review") return <><span className="text-on-surface-variant">reviewed </span><span className="text-primary font-medium">{title}</span></>;
   };
 
@@ -370,7 +372,8 @@ export default function CommunityFeed() {
     if (type === "rating") return "star";
     if (type === "watchlist") return "bookmark_add";
     if (type === "watched") return "visibility";
-    if (type === "review") return "rate_review";
+    if (type === "rewatch") return "replay";
+    if (type === "season_review") return "rate_review";
     return "movie";
   };
 
@@ -615,7 +618,7 @@ export default function CommunityFeed() {
                       </div>
 
                       {/* Review text preview */}
-                      {item.type === "review" && item.review_text && (
+                      {(item.type === "review" || item.type === "season_review") && item.review_text && (
                         <div className="mt-2 p-3 bg-white/5 rounded-lg border border-white/5 relative">
                           <span className="material-symbols-outlined absolute -top-2 -left-1 text-primary opacity-30 text-xl">format_quote</span>
                           <p className="text-body-md text-on-surface-variant italic text-sm line-clamp-3">

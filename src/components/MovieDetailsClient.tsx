@@ -10,6 +10,7 @@ import ReviewCard from "@/components/ReviewCard";
 import Carousel from "@/components/Carousel";
 import PosterPickerModal from "@/components/PosterPickerModal";
 import AddToListModal from "@/components/AddToListModal";
+import RewatchModal from "@/components/RewatchModal";
 import { useAuthPrompt } from "@/components/AuthPromptProvider";
 import { getAvatarUrlOrDefault } from "@/lib/avatar";
 import { getMovieUrl } from "@/lib/slug";
@@ -178,6 +179,10 @@ export default function MovieDetailsClient({ movieId, initialSlug }: { movieId: 
   // Poster preference
   const [preferredPoster, setPreferredPoster] = useState<string | null>(null);
   const [showPosterPicker, setShowPosterPicker] = useState(false);
+
+  // Req 7: Rewatches
+  const [showRewatchModal, setShowRewatchModal] = useState(false);
+  const [rewatchCount, setRewatchCount] = useState<number>(0);
   // Mobile bottom-sheet confirmation before opening the full poster picker
   const [showPosterConfirm, setShowPosterConfirm] = useState(false);
 
@@ -234,6 +239,20 @@ export default function MovieDetailsClient({ movieId, initialSlug }: { movieId: 
       }
     }
     checkWatchlist();
+  }, [user, movieId]);
+
+  // Req 7: Fetch rewatches for this user and movie
+  useEffect(() => {
+    if (!user?.id || !movieId) return;
+    fetch(`/api/watch-log?userId=${user.id}&contentId=${movieId}&contentType=movie`)
+      .then((r) => (r.ok ? r.json() : []))
+      .then((data: any[]) => {
+        if (Array.isArray(data)) {
+          const rewatches = data.filter((d: any) => d.is_rewatch);
+          setRewatchCount(rewatches.length);
+        }
+      })
+      .catch(() => {});
   }, [user, movieId]);
 
   // Toggle watchlist status
@@ -992,6 +1011,23 @@ export default function MovieDetailsClient({ movieId, initialSlug }: { movieId: 
                       <span className="material-symbols-outlined text-sm">calendar_month</span>
                     </button>
                   )}
+
+                  {/* Req 7: Rewatch button on watched items */}
+                  {isWatched && user?.id && (
+                    <button
+                      onClick={() => setShowRewatchModal(true)}
+                      title="Log a rewatch"
+                      className="px-5 py-3 rounded-full font-title-lg flex items-center gap-2 active:scale-95 transition-all duration-200 glass-card cursor-pointer border border-purple-500/40 text-purple-300 hover:bg-purple-500/10 hover:border-purple-400"
+                    >
+                      <span className="material-symbols-outlined text-[18px]">replay</span>
+                      <span>Rewatch</span>
+                      {rewatchCount > 0 && (
+                        <span className="text-[10px] bg-purple-500/30 text-purple-200 px-1.5 py-0.5 rounded-full font-bold ml-0.5">
+                          {rewatchCount + 1}×
+                        </span>
+                      )}
+                    </button>
+                  )}
                 </div>
 
                 <button
@@ -1595,6 +1631,21 @@ export default function MovieDetailsClient({ movieId, initialSlug }: { movieId: 
             </div>
           </div>
         </div>
+      )}
+
+      {/* Req 7: Rewatch Modal */}
+      {showRewatchModal && user?.id && (
+        <RewatchModal
+          isOpen={showRewatchModal}
+          onClose={() => setShowRewatchModal(false)}
+          userId={user.id}
+          contentId={movieId}
+          contentType="movie"
+          title={movie?.title || movie?.name || "Movie"}
+          posterPath={preferredPoster ?? movie?.poster_path}
+          defaultRating={userRating}
+          onSuccess={() => setRewatchCount((prev) => prev + 1)}
+        />
       )}
 
       {/* Toast Notification */}

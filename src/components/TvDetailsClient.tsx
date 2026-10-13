@@ -10,6 +10,7 @@ import ReviewCard from "@/components/ReviewCard";
 import Carousel from "@/components/Carousel";
 import PosterPickerModal from "@/components/PosterPickerModal";
 import AddToListModal from "@/components/AddToListModal";
+import RewatchModal from "@/components/RewatchModal";
 import { useAuthPrompt } from "@/components/AuthPromptProvider";
 import { getAvatarUrlOrDefault } from "@/lib/avatar";
 import { getTvUrl } from "@/lib/slug";
@@ -124,6 +125,18 @@ export default function TvDetailsClient({ tvId, initialSlug }: { tvId: string; i
   const [watchedDate, setWatchedDate] = useState<string>(new Date().toISOString().split("T")[0]);
   const [watchedAtTimestamp, setWatchedAtTimestamp] = useState<string | null>(null);
 
+  // Req 9: Episode ratings & season reviews
+  const [episodeRatings, setEpisodeRatings] = useState<Record<string, number>>({}); // key: "season_episode"
+  const [episodeRatingSubmitting, setEpisodeRatingSubmitting] = useState<string | null>(null);
+  const [seasonReviews, setSeasonReviews] = useState<any[]>([]);
+  const [seasonReviewText, setSeasonReviewText] = useState<Record<number, string>>({});
+  const [seasonReviewRating, setSeasonReviewRating] = useState<Record<number, number | null>>({});
+  const [seasonReviewSubmitting, setSeasonReviewSubmitting] = useState<number | null>(null);
+
+  // Req 7: Rewatches
+  const [showRewatchModal, setShowRewatchModal] = useState(false);
+  const [rewatchCount, setRewatchCount] = useState<number>(0);
+
   const showToast = useCallback((message: string) => {
     setToast({ message, visible: true });
     setTimeout(() => setToast(prev => ({ ...prev, visible: false })), 3000);
@@ -205,6 +218,125 @@ export default function TvDetailsClient({ tvId, initialSlug }: { tvId: string; i
     }
     fetchTvDetails();
   }, [tvId]);
+
+  // Req 9: Fetch episode ratings & season reviews for this user & show
+  useEffect(() => {
+    if (!user?.id || !tvId) return;
+    // Episode ratings
+    fetch(`/api/tv/episode-ratings?userId=${user.id}&showId=${tvId}`)
+      .then(r => r.ok ? r.json() : [])
+      .then((data: any[]) => {
+        const map: Record<string, number> = {};
+        data.forEach(er => { map[`${er.season}_${er.episode}`] = er.rating; });
+        setEpisodeRatings(map);
+      })
+      .catch(() => {});
+    // Season reviews
+    fetch(`/api/tv/season-reviews?showId=${tvId}`)
+      .then(r => r.ok ? r.json() : [])
+      .then(setSeasonReviews)
+      .catch(() => {});
+
+    // Req 7: Rewatches for TV show
+    fetch(`/api/watch-log?userId=${user.id}&contentId=${tvId}&contentType=tv`)
+      .then(r => r.ok ? r.json() : [])
+      .then((data: any[]) => {
+        if (Array.isArray(data)) {
+          const rewatches = data.filter((d: any) => d.is_rewatch);
+          setRewatchCount(rewatches.length);
+        }
+      })
+      .catch(() => {});
+  }, [user, tvId]);
+
+  // Req 9: Submit episode rating (supports toggle unrate)
+  const handleEpisodeRating = async (seasonNum: number, episodeNum: number, rating: number) => {
+    if (!user?.id) return;
+    const key = `${seasonNum}_${episodeNum}`;
+    const currentRating = episodeRatings[key];
+    const isUnrate = currentRating === rating;
+    setEpisodeRatingSubmitting(key);
+    try {
+      if (isUnrate) {
+        const res = await fetch(`/api/tv/episode-ratings?userId=${user.id}&showId=${tvId}&season=${seasonNum}&episode=${episodeNum}`, {
+          method: "DELETE",
+        });
+        if (res.ok) {
+          setEpisodeRatings(prev => {
+            const next = { ...prev };
+            delete next[key];
+            return next;
+          });
+          showToast(`Removed rating for Episode ${episodeNum}`);
+        }
+      } else {
+        const res = await fetch("/api/tv/episode-ratings", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            user_id: user.id,
+            show_id: tvId,
+            season: seasonNum,
+            episode: episodeNum,
+            rating,
+          }),
+        });
+        if (res.ok) {
+          setEpisodeRatings(prev => ({ ...prev, [key]: rating }));
+          showToast(`Rated Episode ${episodeNum}: ${rating}/10`);
+        }
+      }
+    } catch (err) {
+      console.error("Error rating episode:", err);
+    } finally {
+      setEpisodeRatingSubmitting(null);
+    }
+  };
+
+  // Req 9: Submit season review
+  const handleSeasonReviewSubmit = async (seasonNum: number) => {
+    if (!user?.id) return;
+    const text = seasonReviewText[seasonNum];
+    if (!text?.trim()) return;
+    setSeasonReviewSubmitting(seasonNum);
+    try {
+      const res = await fetch("/api/tv/season-reviews", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          user_id: user.id,
+          user_name: user.name || "Cine Member",
+          user_avatar: user.image || null,
+          show_id: tvId,
+          season: seasonNum,
+          review_text: text.trim(),
+          rating: seasonReviewRating[seasonNum] || null,
+        }),
+      });
+      if (res.ok) {
+        const newReview = await res.json();
+        setSeasonReviews(prev => [newReview, ...prev]);
+        setSeasonReviewText(prev => ({ ...prev, [seasonNum]: "" }));
+        setSeasonReviewRating(prev => ({ ...prev, [seasonNum]: null }));
+        showToast(`Season ${seasonNum} review posted!`);
+      }
+    } catch (err) {
+      console.error("Error posting season review:", err);
+    } finally {
+      setSeasonReviewSubmitting(null);
+    }
+  };
+
+  // Req 9: Compute average episode rating per season
+  const getSeasonAvgRating = (seasonNum: number, episodeCount: number): string | null => {
+    const ratings: number[] = [];
+    for (let ep = 1; ep <= episodeCount; ep++) {
+      const r = episodeRatings[`${seasonNum}_${ep}`];
+      if (r != null) ratings.push(r);
+    }
+    if (ratings.length === 0) return null;
+    return (ratings.reduce((a, b) => a + b, 0) / ratings.length).toFixed(1);
+  };
 
   // Load season episodes on expand
   const toggleSeason = async (seasonNumber: number) => {
@@ -830,6 +962,23 @@ export default function TvDetailsClient({ tvId, initialSlug }: { tvId: string; i
                       <span className="material-symbols-outlined text-sm">calendar_month</span>
                     </button>
                   )}
+
+                  {/* Req 7: Rewatch button on watched items */}
+                  {isWatched && user?.id && (
+                    <button
+                      onClick={() => setShowRewatchModal(true)}
+                      title="Log a rewatch"
+                      className="px-5 py-3 rounded-full font-title-lg flex items-center gap-2 active:scale-95 transition-all duration-200 glass-card cursor-pointer border border-purple-500/40 text-purple-300 hover:bg-purple-500/10 hover:border-purple-400"
+                    >
+                      <span className="material-symbols-outlined text-[18px]">replay</span>
+                      <span>Rewatch</span>
+                      {rewatchCount > 0 && (
+                        <span className="text-[10px] bg-purple-500/30 text-purple-200 px-1.5 py-0.5 rounded-full font-bold ml-0.5">
+                          {rewatchCount + 1}×
+                        </span>
+                      )}
+                    </button>
+                  )}
                 </div>
 
                 <button
@@ -994,6 +1143,10 @@ export default function TvDetailsClient({ tvId, initialSlug }: { tvId: string; i
                             <h4 className="font-bold text-on-surface text-base">{season.name}</h4>
                             <p className="text-on-surface-variant text-xs mt-0.5">
                               {season.episode_count} Episodes {season.air_date ? `• ${new Date(season.air_date).getFullYear()}` : ""}
+                              {(() => {
+                                const avg = getSeasonAvgRating(season.season_number, season.episode_count);
+                                return avg ? <span className="text-purple-300 font-bold ml-2">★ Avg {avg}</span> : null;
+                              })()}
                             </p>
                           </div>
                         </div>
@@ -1007,41 +1160,123 @@ export default function TvDetailsClient({ tvId, initialSlug }: { tvId: string; i
                           {season.overview && (
                             <p className="text-on-surface-variant text-xs italic mb-3 opacity-80">{season.overview}</p>
                           )}
+
+                          {/* Req 9: Season Review Form */}
+                          {user?.id && (
+                            <div className="mb-4 p-3 rounded-xl bg-white/5 border border-white/10">
+                              <label className="text-[10px] text-purple-300 uppercase tracking-widest font-bold mb-2 block">
+                                Review Season {season.season_number}
+                              </label>
+                              <textarea
+                                rows={2}
+                                placeholder={`Your thoughts on Season ${season.season_number}...`}
+                                value={seasonReviewText[season.season_number] || ""}
+                                onChange={(e) => setSeasonReviewText(prev => ({ ...prev, [season.season_number]: e.target.value }))}
+                                className="w-full bg-white/5 border border-white/10 rounded-lg p-2.5 text-on-surface placeholder-on-surface-variant/40 focus:outline-none focus:border-purple-400 text-xs resize-none mb-2"
+                              />
+                              <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-2">
+                                  <span className="text-[10px] text-on-surface-variant/60">Rating:</span>
+                                  <select
+                                    value={seasonReviewRating[season.season_number] ?? ""}
+                                    onChange={(e) => setSeasonReviewRating(prev => ({ ...prev, [season.season_number]: e.target.value ? parseFloat(e.target.value) : null }))}
+                                    className="bg-white/10 border border-white/10 rounded-lg px-2 py-1 text-xs text-on-surface focus:outline-none cursor-pointer [color-scheme:dark]"
+                                  >
+                                    <option value="">None</option>
+                                    {Array.from({ length: 19 }, (_, i) => ((i + 2) * 0.5)).map(v => (
+                                      <option key={v} value={v}>{v.toFixed(1)}</option>
+                                    ))}
+                                  </select>
+                                </div>
+                                <button
+                                  onClick={() => handleSeasonReviewSubmit(season.season_number)}
+                                  disabled={seasonReviewSubmitting === season.season_number || !(seasonReviewText[season.season_number] || "").trim()}
+                                  className="bg-purple-600 text-white px-4 py-1.5 rounded-full text-[10px] font-bold hover:bg-purple-500 active:scale-95 transition-all disabled:opacity-50 cursor-pointer border-none flex items-center gap-1"
+                                >
+                                  {seasonReviewSubmitting === season.season_number
+                                    ? <div className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                                    : <span className="material-symbols-outlined text-[12px]">send</span>
+                                  }
+                                  Post
+                                </button>
+                              </div>
+                            </div>
+                          )}
+
                           {isLoading ? (
                             <div className="flex justify-center py-6">
                               <div className="w-5 h-5 border-2 border-purple-400 border-t-transparent rounded-full animate-spin"></div>
                             </div>
                           ) : episodes.length > 0 ? (
-                            episodes.map((ep: any) => (
-                              <div key={ep.id} className="flex gap-3 items-start p-2.5 rounded-lg hover:bg-white/5 transition-colors">
-                                <span className="text-purple-400 font-mono text-xs font-bold pt-0.5 w-6 flex-shrink-0">
-                                  {ep.episode_number}
-                                </span>
-                                {ep.still_path && (
-                                  <img
-                                    src={`https://image.tmdb.org/t/p/w185${ep.still_path}`}
-                                    alt={ep.name}
-                                    className="w-20 aspect-video object-cover rounded flex-shrink-0 bg-white/5"
-                                  />
-                                )}
-                                <div className="min-w-0 flex-grow">
-                                  <div className="flex items-center gap-2 flex-wrap">
-                                    <p className="font-semibold text-xs text-on-surface">{ep.name}</p>
-                                    {ep.runtime && <span className="text-[10px] text-on-surface-variant opacity-50">{ep.runtime}m</span>}
-                                    {ep.vote_average > 0 && (
-                                      <span className="text-[10px] text-secondary font-bold flex items-center gap-0.5">
-                                        ★ {ep.vote_average.toFixed(1)}
-                                      </span>
+                            episodes.map((ep: any) => {
+                              const epKey = `${season.season_number}_${ep.episode_number}`;
+                              const myRating = episodeRatings[epKey];
+                              const isSubmitting = episodeRatingSubmitting === epKey;
+
+                              return (
+                                <div key={ep.id} className="flex gap-3 items-start p-2.5 rounded-lg hover:bg-white/5 transition-colors">
+                                  <span className="text-purple-400 font-mono text-xs font-bold pt-0.5 w-6 flex-shrink-0">
+                                    {ep.episode_number}
+                                  </span>
+                                  {ep.still_path && (
+                                    <img
+                                      src={`https://image.tmdb.org/t/p/w185${ep.still_path}`}
+                                      alt={ep.name}
+                                      className="w-20 aspect-video object-cover rounded flex-shrink-0 bg-white/5"
+                                    />
+                                  )}
+                                  <div className="min-w-0 flex-grow">
+                                    <div className="flex items-center gap-2 flex-wrap">
+                                      <p className="font-semibold text-xs text-on-surface">{ep.name}</p>
+                                      {ep.runtime && <span className="text-[10px] text-on-surface-variant opacity-50">{ep.runtime}m</span>}
+                                      {ep.vote_average > 0 && (
+                                        <span className="text-[10px] text-secondary font-bold flex items-center gap-0.5">
+                                          ★ {ep.vote_average.toFixed(1)}
+                                        </span>
+                                      )}
+                                    </div>
+                                    {ep.overview && (
+                                      <p className="text-on-surface-variant text-xs mt-1 line-clamp-2 opacity-70 leading-relaxed">
+                                        {ep.overview}
+                                      </p>
+                                    )}
+
+                                    {/* Req 9: Episode rating control */}
+                                    {user?.id && (
+                                      <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
+                                        <span className="text-[9px] text-on-surface-variant/50 uppercase font-bold">My:</span>
+                                        {isSubmitting ? (
+                                          <div className="w-3 h-3 border border-purple-400 border-t-transparent rounded-full animate-spin"></div>
+                                        ) : (
+                                          <div className="flex items-center gap-0.5">
+                                            {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(v => (
+                                              <button
+                                                key={v}
+                                                type="button"
+                                                title={`Rate ${v}/10${myRating === v ? " (Click to remove)" : ""}`}
+                                                onClick={() => handleEpisodeRating(season.season_number, ep.episode_number, v)}
+                                                className={`w-5 h-5 rounded text-[9px] font-bold transition-all cursor-pointer border-none ${
+                                                  myRating === v
+                                                    ? "bg-purple-500 text-white shadow-[0_0_8px_rgba(168,85,247,0.4)] scale-105"
+                                                    : myRating != null && myRating >= v
+                                                      ? "bg-purple-500/30 text-purple-200"
+                                                      : "bg-white/5 text-on-surface-variant/40 hover:bg-white/10 hover:text-on-surface-variant"
+                                                }`}
+                                              >
+                                                {v}
+                                              </button>
+                                            ))}
+                                          </div>
+                                        )}
+                                        {myRating != null && (
+                                          <span className="text-[9px] text-purple-300 font-bold ml-1">★ {myRating}</span>
+                                        )}
+                                      </div>
                                     )}
                                   </div>
-                                  {ep.overview && (
-                                    <p className="text-on-surface-variant text-xs mt-1 line-clamp-2 opacity-70 leading-relaxed">
-                                      {ep.overview}
-                                    </p>
-                                  )}
                                 </div>
-                              </div>
-                            ))
+                              );
+                            })
                           ) : (
                             <p className="text-on-surface-variant text-xs opacity-50 text-center py-2">Episode details unavailable.</p>
                           )}
@@ -1116,6 +1351,33 @@ export default function TvDetailsClient({ tvId, initialSlug }: { tvId: string; i
                 <p className="text-on-surface-variant opacity-80 text-body-md font-medium">
                   No reviews yet — be the first to review this show!
                 </p>
+              </div>
+            )}
+            {/* Season Reviews in Community Reviews section */}
+            {seasonReviews.length > 0 && (
+              <div className="mt-6">
+                <h4 className="font-title-lg text-purple-300 mb-3 font-serif uppercase tracking-widest text-sm">Season Reviews</h4>
+                <div className="space-y-3">
+                  {seasonReviews.map((sr: any) => (
+                    <div key={sr.id} className="glass-card p-4 rounded-xl border border-white/10">
+                      <div className="flex items-center gap-2 mb-2">
+                        <span className="text-[9px] font-bold uppercase tracking-wider px-2 py-0.5 rounded bg-purple-500/20 text-purple-300 border border-purple-500/30">
+                          Season {sr.season}
+                        </span>
+                        <span className="text-xs text-on-surface font-semibold">{sr.user_name || "Cine Member"}</span>
+                        {sr.rating && (
+                          <span className="text-[10px] text-secondary font-bold flex items-center gap-0.5">
+                            ★ {parseFloat(sr.rating).toFixed(1)}
+                          </span>
+                        )}
+                        <span className="text-[10px] text-on-surface-variant/50 ml-auto">
+                          {new Date(sr.created_at).toLocaleDateString()}
+                        </span>
+                      </div>
+                      <p className="text-on-surface-variant text-xs leading-relaxed">{sr.review_text}</p>
+                    </div>
+                  ))}
+                </div>
               </div>
             )}
           </section>
@@ -1319,6 +1581,20 @@ export default function TvDetailsClient({ tvId, initialSlug }: { tvId: string; i
             />
           </div>
         </div>
+      )}
+      {/* Req 7: Rewatch Modal */}
+      {showRewatchModal && user?.id && (
+        <RewatchModal
+          isOpen={showRewatchModal}
+          onClose={() => setShowRewatchModal(false)}
+          userId={user.id}
+          contentId={tvId}
+          contentType="tv"
+          title={tvShow?.name || "TV Show"}
+          posterPath={preferredPoster ?? tvShow?.poster_path}
+          defaultRating={userRating}
+          onSuccess={() => setRewatchCount((prev) => prev + 1)}
+        />
       )}
     </div>
   );

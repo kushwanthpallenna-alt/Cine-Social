@@ -277,6 +277,7 @@ export default function PublicProfilePage() {
   const [bannerMovieTitle, setBannerMovieTitle] = useState<string | null>(null);
   const [publicLists, setPublicLists] = useState<any[]>([]);
   const [posterPrefs, setPosterPrefs] = useState<Record<string, string>>({});
+  const [rewatchCounts, setRewatchCounts] = useState<Record<string, number>>({});
 
   // Tab State: default to "watched"
   const [activeProfileTab, setActiveProfileTab] = useState<"watched" | "watchlist" | "reviews" | "lists">("watched");
@@ -417,6 +418,7 @@ export default function PublicProfilePage() {
           currentUser?.id && currentUser.id !== activeId
             ? supabase.from("ratings").select("*").eq("user_id", currentUser.id)
             : Promise.resolve({ data: [] }),
+          fetch(`/api/watch-log?userId=${activeId}`).then((r) => (r.ok ? r.json() : [])).catch(() => []),
         ]);
 
         if (followStatusRes) setFollowing(followStatusRes.isFollowing);
@@ -426,12 +428,31 @@ export default function PublicProfilePage() {
         const rats = ratingsRes.data || [];
         const watchedList = watchedRes.data || [];
         const watchlistList = watchlistRes.data || [];
+        const watchLogList = Array.isArray(arguments?.[0]) ? [] : (arguments as any);
 
         setReviews(revs);
         setRatings(rats);
         setWatchItems(watchedList);
         setWatchlistItems(watchlistList);
         setMyRatings(myRatingsRes.data || []);
+
+        // Compute rewatch counts from watch_log
+        fetch(`/api/watch-log?userId=${activeId}`)
+          .then((r) => (r.ok ? r.json() : []))
+          .then((wLogs: any[]) => {
+            if (Array.isArray(wLogs)) {
+              const rwMap: Record<string, number> = {};
+              wLogs.forEach((wl: any) => {
+                if (wl.is_rewatch) {
+                  const key = `${wl.content_type || "movie"}_${wl.content_id}`;
+                  rwMap[key] = (rwMap[key] || 0) + 1;
+                  rwMap[wl.content_id] = (rwMap[wl.content_id] || 0) + 1;
+                }
+              });
+              setRewatchCounts(rwMap);
+            }
+          })
+          .catch(() => {});
 
         const favsArray = Array.isArray(favoritesRes) ? favoritesRes : [];
         setFavorites(favsArray);
@@ -1293,6 +1314,21 @@ export default function PublicProfilePage() {
                               <span className="leading-none font-bold">★{myRating}</span>
                             </div>
                           )}
+
+                          {/* Watched 2x badge */}
+                          {(() => {
+                            const rwCount = rewatchCounts[`${type}_${item.movie_id}`] || rewatchCounts[String(item.movie_id)] || 0;
+                            if (rwCount > 0) {
+                              return (
+                                <div className="absolute bottom-2 left-2 z-10">
+                                  <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-purple-600/90 text-white backdrop-blur-md shadow-md border border-purple-400/40">
+                                    Watched {rwCount + 1}×
+                                  </span>
+                                </div>
+                              );
+                            }
+                            return null;
+                          })()}
 
                           <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex items-end p-2">
                             <p className="text-[10px] text-white font-bold line-clamp-2 leading-tight">{displayTitle}</p>

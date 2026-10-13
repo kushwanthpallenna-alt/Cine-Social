@@ -447,18 +447,14 @@ export default function ListDetailPage() {
                       </div>
                     )}
 
-                    {/* Content Type pill */}
-                    <div className="absolute bottom-2 left-2 z-10">
-                      <span
-                        className={`text-[9px] uppercase tracking-wider font-bold px-1.5 py-0.5 rounded backdrop-blur-md border ${
-                          isTv
-                            ? "bg-purple-900/80 text-purple-200 border-purple-500/40"
-                            : "bg-red-950/80 text-red-200 border-red-500/40"
-                        }`}
-                      >
-                        {isTv ? "TV" : "Film"}
-                      </span>
-                    </div>
+                    {/* Content Type pill (only TV shows get marked, movies are default) */}
+                    {isTv && (
+                      <div className="absolute bottom-2 left-2 z-10">
+                        <span className="text-[9px] uppercase tracking-wider font-bold px-1.5 py-0.5 rounded backdrop-blur-md border bg-purple-900/80 text-purple-200 border-purple-500/40">
+                          TV
+                        </span>
+                      </div>
+                    )}
 
                     <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-0 group-hover/item:opacity-100 transition-opacity" />
                   </Link>

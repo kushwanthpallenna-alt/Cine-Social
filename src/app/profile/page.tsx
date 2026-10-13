@@ -16,6 +16,7 @@ import { getPosterUrl } from "@/lib/poster";
 import { getMovieUrl, getTvUrl } from "@/lib/slug";
 import { isAnimeShow } from "@/lib/anime";
 import WatchlistSearchToAdd from "@/components/WatchlistSearchToAdd";
+import RewatchModal from "@/components/RewatchModal";
 
 type SortOption =
   | "default"
@@ -279,6 +280,15 @@ export default function ProfilePage() {
   // Poster preferences map: movie_id -> preferred poster_path
   const [posterPrefs, setPosterPrefs] = useState<Record<string, string>>({});
 
+  // Req 7: Rewatches state
+  const [rewatchCounts, setRewatchCounts] = useState<Record<string, number>>({});
+  const [rewatchModalItem, setRewatchModalItem] = useState<{
+    id: string;
+    type: "movie" | "tv";
+    title: string;
+    poster: string | null;
+  } | null>(null);
+
   // Fetch TMDB backdrop_path for Film 1 or TV 1 in Top 5
   useEffect(() => {
     const film1 = favorites["movie_1"];
@@ -357,13 +367,14 @@ export default function ProfilePage() {
           console.error("Failed to fetch profile via API", e);
         }
 
-        const [watchlistRes, ratingsRes, reviewsRes, followCountsRes, watchedData, favoritesData] = await Promise.all([
+        const [watchlistRes, ratingsRes, reviewsRes, followCountsRes, watchedData, favoritesData, watchLogData] = await Promise.all([
           supabase.from("watchlist").select("*").eq("user_id", realUserId),
           supabase.from("ratings").select("*").eq("user_id", realUserId).order("created_at", { ascending: false }),
           supabase.from("reviews").select("*").eq("user_id", realUserId).order("created_at", { ascending: false }),
           fetch(`/api/follows?userId=${realUserId}`).then(r => r.ok ? r.json() : null).catch(() => null),
           fetch(`/api/watched?userId=${realUserId}`).then(r => r.ok ? r.json() : []).catch(() => []),
           fetch(`/api/favorites?userId=${realUserId}`).then(r => r.ok ? r.json() : []).catch(() => []),
+          fetch(`/api/watch-log?userId=${realUserId}`).then(r => r.ok ? r.json() : []).catch(() => []),
         ]);
 
         // Fetch custom lists
@@ -393,6 +404,17 @@ export default function ProfilePage() {
         setWatched(watchedData || []);
         setRatings(ratingsData);
         setReviews(reviewsData);
+
+        // Compute rewatch counts
+        const rwMap: Record<string, number> = {};
+        (watchLogData || []).forEach((wl: any) => {
+          if (wl.is_rewatch) {
+            const key = `${wl.content_type || "movie"}_${wl.content_id}`;
+            rwMap[key] = (rwMap[key] || 0) + 1;
+            rwMap[wl.content_id] = (rwMap[wl.content_id] || 0) + 1;
+          }
+        });
+        setRewatchCounts(rwMap);
 
         // Fetch TMDB details for rated, watched, reviews and watchlist items (movies + tv)
         const uniqueMedia = new Map<string, { id: string; type: "movie" | "tv" }>();
@@ -2019,12 +2041,18 @@ export default function ProfilePage() {
                                     </div>
                                   )}
 
-                                  {/* Media Badge */}
-                                  <div className="absolute top-2 left-2">
-                                    <span className={`text-[9px] uppercase tracking-wider font-bold px-1.5 py-0.5 rounded backdrop-blur-md ${itemType === "tv" ? "bg-purple-900/70 text-purple-200 border border-purple-500/30" : "bg-red-950/70 text-red-200 border border-red-500/30"
-                                      }`}>
-                                      {itemType === "tv" ? "TV" : "Movie"}
-                                    </span>
+                                  {/* Media Badge & Watched 2x Badge */}
+                                  <div className="absolute top-2 left-2 flex flex-col gap-1 z-10">
+                                    {itemType === "tv" && (
+                                      <span className="text-[9px] uppercase tracking-wider font-bold px-1.5 py-0.5 rounded backdrop-blur-md bg-purple-900/70 text-purple-200 border border-purple-500/30">
+                                        TV
+                                      </span>
+                                    )}
+                                    {(rewatchCounts[itemKey] || rewatchCounts[item.movie_id]) ? (
+                                      <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-purple-600/90 text-white backdrop-blur-md shadow-md border border-purple-400/40">
+                                        Watched {(rewatchCounts[itemKey] || rewatchCounts[item.movie_id]) + 1}×
+                                      </span>
+                                    ) : null}
                                   </div>
 
                                   <div className="absolute bottom-2 left-0 right-0 flex justify-center text-[10px] text-white bg-black/60 backdrop-blur-md px-2 py-1 rounded mx-2 shadow border border-white/10" suppressHydrationWarning>
@@ -2282,12 +2310,13 @@ export default function ProfilePage() {
                                     </div>
                                   </div>
 
-                                  <div className="absolute top-2 left-2">
-                                    <span className={`text-[9px] uppercase tracking-wider font-bold px-1.5 py-0.5 rounded backdrop-blur-md ${itemType === "tv" ? "bg-purple-900/70 text-purple-200 border border-purple-500/30" : "bg-red-950/70 text-red-200 border border-red-500/30"
-                                      }`}>
-                                      {itemType === "tv" ? "TV" : "Movie"}
-                                    </span>
-                                  </div>
+                                  {itemType === "tv" && (
+                                    <div className="absolute top-2 left-2">
+                                      <span className="text-[9px] uppercase tracking-wider font-bold px-1.5 py-0.5 rounded backdrop-blur-md bg-purple-900/70 text-purple-200 border border-purple-500/30">
+                                        TV
+                                      </span>
+                                    </div>
+                                  )}
                                 </div>
                                 <h4 className="text-body-md font-bold truncate group-hover:text-primary transition-colors">{displayTitle}</h4>
                               </div>
@@ -2301,12 +2330,13 @@ export default function ProfilePage() {
                                       src={poster ? `https://image.tmdb.org/t/p/w500${poster}` : "https://images.unsplash.com/photo-1594909122845-11baa439b7bf?w=500"}
                                     />
                                     <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/20 to-transparent"></div>
-                                    <div className="absolute top-2 left-2">
-                                      <span className={`text-[9px] uppercase tracking-wider font-bold px-1.5 py-0.5 rounded backdrop-blur-md ${itemType === "tv" ? "bg-purple-900/70 text-purple-200 border border-purple-500/30" : "bg-red-950/70 text-red-200 border border-red-500/30"
-                                        }`}>
-                                        {itemType === "tv" ? "TV" : "Movie"}
-                                      </span>
-                                    </div>
+                                    {itemType === "tv" && (
+                                      <div className="absolute top-2 left-2">
+                                        <span className="text-[9px] uppercase tracking-wider font-bold px-1.5 py-0.5 rounded backdrop-blur-md bg-purple-900/70 text-purple-200 border border-purple-500/30">
+                                          TV
+                                        </span>
+                                      </div>
+                                    )}
                                   </div>
                                   <h4 className="text-body-md font-bold truncate group-hover:text-primary transition-colors">{displayTitle}</h4>
                                 </Link>
@@ -3114,6 +3144,27 @@ export default function ProfilePage() {
           </div>
         </div>,
         document.body
+      )}
+      {/* Req 7: Rewatch Modal */}
+      {rewatchModalItem && user?.id && (
+        <RewatchModal
+          isOpen={!!rewatchModalItem}
+          onClose={() => setRewatchModalItem(null)}
+          userId={user.id}
+          contentId={rewatchModalItem.id}
+          contentType={rewatchModalItem.type}
+          title={rewatchModalItem.title}
+          posterPath={rewatchModalItem.poster}
+          defaultRating={ratingsMap[`${rewatchModalItem.type}_${rewatchModalItem.id}`] ?? ratingsMap[rewatchModalItem.id] ?? null}
+          onSuccess={() => {
+            const key = `${rewatchModalItem.type}_${rewatchModalItem.id}`;
+            setRewatchCounts((prev) => ({
+              ...prev,
+              [key]: (prev[key] || 0) + 1,
+              [rewatchModalItem.id]: (prev[rewatchModalItem.id] || 0) + 1,
+            }));
+          }}
+        />
       )}
     </div>
   );

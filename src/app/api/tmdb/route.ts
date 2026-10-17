@@ -1,6 +1,40 @@
 import { NextResponse } from "next/server";
 
-async function fetchWithRetry(url: string, options: RequestInit, retries = 3, delay = 500): Promise<Response> {
+// In-memory cache for TMDB API proxy to drastically speed up app response times
+interface CacheEntry {
+  data: any;
+  status: number;
+  expiresAt: number;
+}
+
+const memoryCache = new Map<string, CacheEntry>();
+const MAX_CACHE_SIZE = 1200;
+const DEFAULT_TTL_MS = 1000 * 60 * 30; // 30 minutes cache
+
+function getFromCache(key: string): { data: any; status: number } | null {
+  const entry = memoryCache.get(key);
+  if (!entry) return null;
+  if (Date.now() > entry.expiresAt) {
+    memoryCache.delete(key);
+    return null;
+  }
+  return { data: entry.data, status: entry.status };
+}
+
+function setInCache(key: string, data: any, status = 200, ttlMs = DEFAULT_TTL_MS) {
+  if (memoryCache.size >= MAX_CACHE_SIZE) {
+    // Evict oldest 20% entries
+    const iter = memoryCache.keys();
+    for (let i = 0; i < 200; i++) {
+      const nextKey = iter.next().value;
+      if (nextKey) memoryCache.delete(nextKey);
+      else break;
+    }
+  }
+  memoryCache.set(key, { data, status, expiresAt: Date.now() + ttlMs });
+}
+
+async function fetchWithRetry(url: string, options: RequestInit, retries = 2, delay = 350): Promise<Response> {
   for (let i = 0; i < retries; i++) {
     try {
       const response = await fetch(url, options);
@@ -33,7 +67,6 @@ function getSearchQueryVariants(rawQuery: string): string[] {
   };
 
   // 1. Interpunct middle-dot variant (TMDB quirk for titles like WALL·E)
-  // Replaces hyphens, dots, or spaces between words/letters with middle dot '·'
   const interpunct = q.replace(/([a-zA-Z0-9]+)[-.\s]+([a-zA-Z0-9])\b/gi, "$1·$2");
   if (interpunct !== q) {
     add(interpunct);
@@ -76,7 +109,23 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "TMDB API key is not configured" }, { status: 500 });
   }
 
-  // Handle searches with query normalization and variant merging
+  // Construct cache key from search params (ignoring apiKey)
+  const sortedParams = Array.from(searchParams.entries()).sort(([a], [b]) => a.localeCompare(b));
+  const cacheKey = sortedParams.map(([k, v]) => `${k}=${v}`).join("&");
+
+  // Check in-memory server cache for instantaneous response
+  const cached = getFromCache(cacheKey);
+  if (cached) {
+    return NextResponse.json(cached.data, {
+      status: cached.status,
+      headers: {
+        "Cache-Control": "public, max-age=3600, s-maxage=3600, stale-while-revalidate=86400",
+        "X-Cache": "HIT",
+      },
+    });
+  }
+
+  // Handle searches with query normalization and parallel variant merging
   if ((endpoint === "search/movie" || endpoint === "search/tv" || endpoint === "search/multi") && searchParams.has("query")) {
     const rawQuery = searchParams.get("query") || "";
     const queryVariants = getSearchQueryVariants(rawQuery);
@@ -93,7 +142,8 @@ export async function GET(request: Request) {
       const mergedResults: any[] = [];
       const seenIds = new Set<number>();
 
-      for (const variant of queryVariants) {
+      // Run all search variants concurrently in parallel
+      const variantPromises = queryVariants.map(async (variant) => {
         const variantParams = new URLSearchParams(tmdbBaseParams);
         variantParams.set("query", variant);
         const targetUrl = `https://api.themoviedb.org/3/${endpoint}?${variantParams.toString()}`;
@@ -101,18 +151,23 @@ export async function GET(request: Request) {
         try {
           const res = await fetchWithRetry(targetUrl, { next: { revalidate: 3600 } });
           if (res.ok) {
-            const data = await res.json();
-            if (data?.results && Array.isArray(data.results)) {
-              for (const item of data.results) {
-                if (!seenIds.has(item.id)) {
-                  seenIds.add(item.id);
-                  mergedResults.push(item);
-                }
-              }
-            }
+            return await res.json();
           }
         } catch (e) {
           console.warn(`Variant fetch failed for query "${variant}":`, e);
+        }
+        return null;
+      });
+
+      const responses = await Promise.all(variantPromises);
+      for (const data of responses) {
+        if (data?.results && Array.isArray(data.results)) {
+          for (const item of data.results) {
+            if (!seenIds.has(item.id)) {
+              seenIds.add(item.id);
+              mergedResults.push(item);
+            }
+          }
         }
       }
 
@@ -141,14 +196,19 @@ export async function GET(request: Request) {
         return (b.popularity || 0) - (a.popularity || 0);
       });
 
-      return NextResponse.json({
+      const responsePayload = {
         page: 1,
         results: mergedResults,
         total_results: mergedResults.length,
         total_pages: 1,
-      }, {
+      };
+
+      setInCache(cacheKey, responsePayload, 200, 1000 * 60 * 15); // Cache searches for 15 mins
+
+      return NextResponse.json(responsePayload, {
         headers: {
           "Cache-Control": "public, max-age=3600, s-maxage=3600, stale-while-revalidate=86400",
+          "X-Cache": "MISS",
         },
       });
     } catch (error: any) {
@@ -184,9 +244,12 @@ export async function GET(request: Request) {
     }
 
     const data = await response.json();
+    setInCache(cacheKey, data, 200);
+
     return NextResponse.json(data, {
       headers: {
         "Cache-Control": "public, max-age=3600, s-maxage=3600, stale-while-revalidate=86400",
+        "X-Cache": "MISS",
       },
     });
   } catch (error: any) {

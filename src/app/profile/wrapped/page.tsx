@@ -5,6 +5,8 @@ import Link from "next/link";
 import { useSession } from "next-auth/react";
 import { supabase } from "@/lib/supabase";
 
+import { useRouter } from "next/navigation";
+
 const GENRE_MAP: { [key: number]: string } = {
   28: "Action", 12: "Adventure", 16: "Animation", 35: "Comedy", 80: "Crime",
   99: "Documentary", 18: "Drama", 10751: "Family", 14: "Fantasy", 36: "History",
@@ -13,6 +15,7 @@ const GENRE_MAP: { [key: number]: string } = {
 };
 
 export default function YearlyWrappedPage() {
+  const router = useRouter();
   const { data: session } = useSession();
   const user = session?.user as any;
   const currentYear = new Date().getFullYear();
@@ -184,30 +187,48 @@ export default function YearlyWrappedPage() {
         <p className="text-xl text-on-surface-variant uppercase tracking-widest mb-4">Longest Marathon</p>
         <h1 className="text-8xl font-serif text-[#e9c349] text-shadow-glow">{stats.longestMarathon}</h1>
         <p className="text-2xl text-white font-bold mt-4">Movies in a single day.</p>
-        <Link href="/profile" className="mt-12 px-8 py-3 rounded-full bg-[#e9c349] text-black font-bold uppercase tracking-wider shadow-[0_0_20px_rgba(233,195,73,0.4)] hover:scale-105 transition-transform">
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            router.push("/profile");
+          }}
+          className="mt-12 px-8 py-3.5 rounded-full bg-[#e9c349] text-black font-bold uppercase tracking-wider shadow-[0_0_25px_rgba(233,195,73,0.5)] hover:scale-105 active:scale-95 transition-all cursor-pointer pointer-events-auto relative z-30"
+        >
           Back to Profile
-        </Link>
+        </button>
       </div>
     )
   ];
 
   return (
     <div className="fixed inset-0 bg-[#050505] z-[9999] text-[#e5e2e1] overflow-hidden">
-      {/* Progress Bars */}
-      <div className="absolute top-4 left-4 right-4 flex gap-2 z-10">
-        {slides.map((_, i) => (
-          <div key={i} className="h-1 flex-1 bg-white/20 rounded-full overflow-hidden">
-            <div className={`h-full bg-white transition-all duration-300 ${i <= slide ? 'w-full' : 'w-0'}`}></div>
-          </div>
-        ))}
+      {/* Top Controls: Progress Bars & Exit Button */}
+      <div className="absolute top-4 left-4 right-4 flex items-center gap-3 z-30">
+        <div className="flex-1 flex gap-2">
+          {slides.map((_, i) => (
+            <div key={i} className="h-1 flex-1 bg-white/20 rounded-full overflow-hidden">
+              <div className={`h-full bg-white transition-all duration-300 ${i <= slide ? 'w-full' : 'w-0'}`}></div>
+            </div>
+          ))}
+        </div>
+        <button
+          type="button"
+          onClick={() => router.push("/profile")}
+          className="pointer-events-auto px-2.5 py-1 rounded-full bg-white/10 hover:bg-white/20 text-white text-xs font-semibold backdrop-blur-md transition-all border border-white/10 cursor-pointer flex items-center gap-1"
+        >
+          <span className="material-symbols-outlined text-[15px]">close</span>
+          Exit
+        </button>
       </div>
 
-      {/* Navigation Areas */}
+      {/* Navigation Click Areas */}
       <div className="absolute inset-0 z-0 flex">
         <div className="flex-1 cursor-pointer" onClick={() => setSlide(Math.max(0, slide - 1))}></div>
         <div className="flex-1 cursor-pointer" onClick={() => setSlide(Math.min(slides.length - 1, slide + 1))}></div>
       </div>
 
+      {/* Slide Display with pointer-events-none on backdrop but child elements can be interactive */}
       <div className="absolute inset-0 pointer-events-none transition-opacity duration-500 flex items-center justify-center">
         {slides[slide]}
       </div>

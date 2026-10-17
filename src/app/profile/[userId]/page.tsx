@@ -480,20 +480,44 @@ export default function PublicProfilePage() {
           }
         });
 
-        const det: Record<string, any> = {};
-        await Promise.all(
-          Array.from(uniqueMedia.values()).map(async ({ id, type }) => {
-            try {
-              const r = await fetch(`/api/tmdb?endpoint=${type}/${id}`);
-              if (r.ok) {
-                const d = await r.json();
-                det[`${type}_${id}`] = d;
-                if (!det[id]) det[id] = d;
-              }
-            } catch {}
-          })
-        );
-        setMediaDetails(det);
+        // Seed initial mediaDetails immediately from DB stored titles/posters
+        const initialDet: Record<string, any> = {};
+        [...watchedList, ...watchlistList].forEach((item: any) => {
+          if (item?.movie_id) {
+            const id = String(item.movie_id);
+            const type = item.content_type || "movie";
+            const seed = {
+              id: item.movie_id,
+              title: item.movie_title,
+              name: item.movie_title,
+              poster_path: item.poster_path,
+            };
+            initialDet[`${type}_${id}`] = seed;
+            if (!initialDet[id]) initialDet[id] = seed;
+          }
+        });
+        setMediaDetails(initialDet);
+        setLoading(false); // Unblock profile display immediately!
+
+        const det: Record<string, any> = { ...initialDet };
+        const mediaList = Array.from(uniqueMedia.values());
+        const CHUNK_SIZE = 8;
+        for (let i = 0; i < mediaList.length; i += CHUNK_SIZE) {
+          const chunk = mediaList.slice(i, i + CHUNK_SIZE);
+          await Promise.all(
+            chunk.map(async ({ id, type }) => {
+              try {
+                const r = await fetch(`/api/tmdb?endpoint=${type}/${id}`);
+                if (r.ok) {
+                  const d = await r.json();
+                  det[`${type}_${id}`] = d;
+                  if (!det[id]) det[id] = d;
+                }
+              } catch {}
+            })
+          );
+          setMediaDetails({ ...det });
+        }
 
         // Batch-fetch custom poster preferences for profile owner (activeId)
         const mediaItems = Array.from(uniqueMedia.values()).map((m) => ({

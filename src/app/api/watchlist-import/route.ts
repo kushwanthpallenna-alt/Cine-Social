@@ -11,8 +11,10 @@ const TMDB_BASE = "https://api.themoviedb.org/3";
 interface CsvRow {
   Date?: string;
   Name?: string;
+  Title?: string;
   Year?: string;
   Rating?: string;
+  Review?: string;
   "Letterboxd URI"?: string;
   TMDB_ID?: string;
   Content_Type?: string;
@@ -81,14 +83,14 @@ async function searchTmdb(title: string, year?: string): Promise<{ id: number; t
 
 // POST /api/watchlist-import
 // Body: FormData with file (CSV) + userId + mode/importType
-// Supports Letterboxd watchlist and diary export formats
-// Also supports Letterboxd ratings export (Rating column: 0.5–5) → ×2 → 10-point scale
+// Supports Letterboxd watchlist, diary, ratings, and reviews CSV exports
+// Converts Letterboxd 0.5–5★ scale to CineSocial 1–10 scale, or accepts native 1–10 scale
 export async function POST(request: Request) {
   try {
     const formData = await request.formData();
     const userId = formData.get("userId") as string;
     const file = formData.get("file") as File;
-    const importType = ((formData.get("mode") as string) || (formData.get("importType") as string) || "watchlist").toLowerCase(); // "watchlist" | "watched" | "ratings" | "both"
+    const importType = ((formData.get("mode") as string) || (formData.get("importType") as string) || "watchlist").toLowerCase(); // "watchlist" | "watched" | "ratings" | "reviews" | "both"
 
     if (!userId || !file) {
       return NextResponse.json({ error: "Missing userId or file" }, { status: 400 });
@@ -101,16 +103,20 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "CSV is empty or could not be parsed" }, { status: 400 });
     }
 
-    // Prefetch existing records for duplicate detection
-    const [watchlistRes, watchedRes, ratingsRes] = await Promise.all([
+    // Prefetch user profile name + existing records for duplicate detection
+    const [profileRes, watchlistRes, watchedRes, ratingsRes, reviewsRes] = await Promise.all([
+      supabaseAdmin.from("profiles").select("username").eq("user_id", userId).maybeSingle(),
       supabaseAdmin.from("watchlist").select("movie_id").eq("user_id", userId),
       supabaseAdmin.from("watched").select("movie_id").eq("user_id", userId),
       supabaseAdmin.from("ratings").select("movie_id").eq("user_id", userId),
+      supabaseAdmin.from("reviews").select("movie_id, review_text").eq("user_id", userId),
     ]);
 
+    const userName = profileRes.data?.username || "Cine Member";
     const existingWatchlist = new Set((watchlistRes.data || []).map((r: any) => String(r.movie_id)));
     const existingWatched = new Set((watchedRes.data || []).map((r: any) => String(r.movie_id)));
     const existingRatings = new Set((ratingsRes.data || []).map((r: any) => String(r.movie_id)));
+    const existingReviews = new Set((reviewsRes.data || []).map((r: any) => `${r.movie_id}_${(r.review_text || "").trim().slice(0, 40)}`));
 
     let importedCount = 0;
     let skippedCount = 0;
@@ -118,6 +124,7 @@ export async function POST(request: Request) {
     const matched: string[] = [];
     const unmatched: string[] = [];
     const ratingsAdded: string[] = [];
+    const reviewsAdded: string[] = [];
 
     // Process rows in batches of 5 to avoid rate limiting
     const BATCH_SIZE = 5;
@@ -128,10 +135,11 @@ export async function POST(request: Request) {
           const title = row["Name"] || row["Title"] || row["name"] || "";
           const year = row["Year"] || row["year"] || "";
           const rawRating = row["Rating"] || row["rating"] || "";
+          const reviewText = (row["Review"] || row["review"] || row["Review Text"] || row["review_text"] || row["Notes"] || "").trim();
 
           // Check if TMDB_ID is directly present (from our own export)
-          const directTmdbId = row["TMDB_ID"] || "";
-          const directContentType = row["Content_Type"] || "";
+          const directTmdbId = row["TMDB_ID"] || row["tmdb_id"] || "";
+          const directContentType = row["Content_Type"] || row["content_type"] || "";
 
           if (!title && !directTmdbId) {
             return;
@@ -140,10 +148,10 @@ export async function POST(request: Request) {
           let result: { id: number; title: string; content_type: string; poster_path: string } | null = null;
 
           if (directTmdbId) {
-            // Fast path: direct TMDB ID from our own export
+            // Direct TMDB ID from export
             result = {
               id: parseInt(directTmdbId),
-              title,
+              title: title || `Item ${directTmdbId}`,
               content_type: directContentType || "movie",
               poster_path: "",
             };
@@ -161,6 +169,10 @@ export async function POST(request: Request) {
           let wasImported = false;
           let wasSkipped = false;
 
+          const dateStr = row["Date"] || row["Watched Date"] || row["date"] || "";
+          const recordDate = dateStr && !isNaN(Date.parse(dateStr)) ? new Date(dateStr).toISOString() : new Date().toISOString();
+
+          // Watchlist import
           if (importType === "watchlist" || importType === "both") {
             if (existingWatchlist.has(movieIdStr)) {
               wasSkipped = true;
@@ -172,6 +184,7 @@ export async function POST(request: Request) {
                   movie_title: result.title,
                   poster_path: result.poster_path,
                   content_type: result.content_type,
+                  created_at: recordDate,
                 });
                 if (!error) {
                   existingWatchlist.add(movieIdStr);
@@ -186,24 +199,26 @@ export async function POST(request: Request) {
             }
           }
 
-          if (importType === "watched") {
+          // Watched import (also added automatically when importing reviews)
+          if (importType === "watched" || importType === "reviews") {
             if (existingWatched.has(movieIdStr)) {
-              wasSkipped = true;
+              if (importType === "watched") wasSkipped = true;
             } else {
               try {
-                const watchedAt = row["Date"] ? new Date(row["Date"]).toISOString() : new Date().toISOString();
                 const { error } = await supabaseAdmin.from("watched").insert({
                   user_id: userId,
                   movie_id: movieIdStr,
                   movie_title: result.title,
                   poster_path: result.poster_path,
                   content_type: result.content_type,
-                  watched_at: watchedAt,
+                  watched_at: recordDate,
                 });
                 if (!error) {
                   existingWatched.add(movieIdStr);
-                  matched.push(result.title);
-                  wasImported = true;
+                  if (importType === "watched") {
+                    matched.push(result.title);
+                    wasImported = true;
+                  }
                 } else {
                   errors.push(`Failed to add "${result.title}" to watched: ${error.message}`);
                 }
@@ -213,11 +228,44 @@ export async function POST(request: Request) {
             }
           }
 
-          // Handle ratings import with scale conversion (0.5–5★ to 1–10)
-          if ((importType === "ratings" || importType === "both" || importType === "watched") && rawRating) {
-            const starRating = parseFloat(rawRating);
-            if (!isNaN(starRating) && starRating > 0) {
-              const convertedRating = Math.min(10, Math.max(1, Math.round(starRating * 2 * 2) / 2));
+          // Reviews import: either explicit mode or row contains non-empty review text
+          if ((importType === "reviews" || reviewText.length > 0) && reviewText.length > 0) {
+            const reviewKey = `${movieIdStr}_${reviewText.slice(0, 40)}`;
+            if (existingReviews.has(reviewKey)) {
+              wasSkipped = true;
+            } else {
+              try {
+                const { error } = await supabaseAdmin.from("reviews").insert({
+                  user_id: userId,
+                  user_name: userName,
+                  movie_id: movieIdStr,
+                  review_text: reviewText,
+                  content_type: result.content_type,
+                  created_at: recordDate,
+                });
+                if (!error) {
+                  existingReviews.add(reviewKey);
+                  reviewsAdded.push(result.title);
+                  matched.push(result.title);
+                  wasImported = true;
+                } else {
+                  errors.push(`Failed to import review for "${result.title}": ${error.message}`);
+                }
+              } catch (err: any) {
+                errors.push(`Error importing review for "${result.title}": ${err.message}`);
+              }
+            }
+          }
+
+          // Ratings import: handles 0.5–5★ (Letterboxd) or 1–10 (IMDb / CineSocial)
+          if ((importType === "ratings" || importType === "both" || importType === "watched" || importType === "reviews") && rawRating) {
+            const numRating = parseFloat(rawRating);
+            if (!isNaN(numRating) && numRating > 0) {
+              // If <= 5, assume 5-star scale and multiply by 2; otherwise already 10-scale
+              const convertedRating = numRating <= 5
+                ? Math.min(10, Math.max(1, Math.round(numRating * 2 * 2) / 2))
+                : Math.min(10, Math.max(1, Math.round(numRating * 2) / 2));
+
               try {
                 const { error } = await supabaseAdmin.from("ratings").upsert(
                   {
@@ -226,12 +274,12 @@ export async function POST(request: Request) {
                     rating: convertedRating,
                     liked: convertedRating >= 7,
                     content_type: result.content_type,
-                    created_at: new Date().toISOString(),
+                    created_at: recordDate,
                   },
                   { onConflict: "user_id,movie_id,content_type" }
                 );
                 if (!error) {
-                  ratingsAdded.push(`${result.title} (${starRating}★ → ${convertedRating}/10)`);
+                  ratingsAdded.push(`${result.title} (${numRating}★ → ${convertedRating}/10)`);
                   if (importType === "ratings") {
                     if (existingRatings.has(movieIdStr)) {
                       wasSkipped = true;
@@ -250,7 +298,7 @@ export async function POST(request: Request) {
 
           if (wasImported) {
             importedCount++;
-          } else if (wasSkipped) {
+          } else if (wasSkipped && !wasImported) {
             skippedCount++;
           }
         })
@@ -266,8 +314,10 @@ export async function POST(request: Request) {
       matched: matched.length,
       unmatched: unmatched.length,
       ratingsAdded: ratingsAdded.length,
+      reviewsAdded: reviewsAdded.length,
       unmatchedTitles: unmatched,
       ratingsAddedList: ratingsAdded,
+      reviewsAddedList: reviewsAdded,
     });
   } catch (err: any) {
     return NextResponse.json(

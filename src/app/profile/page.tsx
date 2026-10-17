@@ -6,6 +6,7 @@ import Link from "next/link";
 import { supabase } from "@/lib/supabase";
 import { useSession, signOut } from "next-auth/react";
 import { useAuthPrompt } from "@/components/AuthPromptProvider";
+import { useToast } from "@/components/ToastProvider";
 import ReviewCard from "@/components/ReviewCard";
 import { getSafeAvatarUrl, getAvatarUrlOrDefault } from "@/lib/avatar";
 import AvatarCropperModal from "@/components/AvatarCropperModal";
@@ -191,6 +192,7 @@ export default function ProfilePage() {
     return () => window.removeEventListener("scroll", handleScroll);
   }, []);
 
+  const { showToast } = useToast();
   const [loading, setLoading] = useState(true);
   const [mounted, setMounted] = useState(false);
 
@@ -238,10 +240,11 @@ export default function ProfilePage() {
   // Import/Export state
   const [importModalOpen, setImportModalOpen] = useState(false);
   const [importFile, setImportFile] = useState<File | null>(null);
-  const [importMode, setImportMode] = useState<"watchlist" | "watched">("watchlist");
+  const [importMode, setImportMode] = useState<"watchlist" | "watched" | "ratings" | "reviews">("watchlist");
   const [importing, setImporting] = useState(false);
   const [importResult, setImportResult] = useState<{ imported: number; skipped: number; errors: string[] } | null>(null);
   const [exporting, setExporting] = useState(false);
+  const [showExportMenu, setShowExportMenu] = useState(false);
   const [mediaType, setMediaType] = useState<"movie" | "tv">("movie");
   const [tvSubFilter, setTvSubFilter] = useState<"all" | "anime" | "others">("all");
   const [watchedSort, setWatchedSort] = useState<SortOption>("default");
@@ -272,6 +275,29 @@ export default function ProfilePage() {
   const [profileUserId, setProfileUserId] = useState<string | null>(null);
   const [followCounts, setFollowCounts] = useState({ followers: 0, following: 0 });
   const [followListModal, setFollowListModal] = useState<{ type: "followers" | "following"; users: any[]; loading: boolean } | null>(null);
+  const [profileRefreshKey, setProfileRefreshKey] = useState(0);
+
+  const handleExport = async (type: "watchlist" | "ratings" | "reviews" | "all") => {
+    setExporting(true);
+    setShowExportMenu(false);
+    try {
+      const res = await fetch(`/api/watchlist-export?userId=${encodeURIComponent(profileUserId || user?.id)}&type=${type}`);
+      if (!res.ok) throw new Error("Export failed");
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `cinesocial-${type === "all" ? "complete-backup" : type}.csv`;
+      a.click();
+      URL.revokeObjectURL(url);
+      showToast(`Exported ${type} successfully!`);
+    } catch (e) {
+      console.error(e);
+      showToast("Export failed. Please try again.");
+    } finally {
+      setExporting(false);
+    }
+  };
 
   // Cinematic Profile Banner State
   const [bannerBackdropUrl, setBannerBackdropUrl] = useState<string | null>(null);
@@ -437,25 +463,49 @@ export default function ProfilePage() {
           }
         });
 
-        const details: Record<string, any> = {};
-        await Promise.all(
-          Array.from(uniqueMedia.values()).map(async ({ id, type }) => {
-            try {
-              const res = await fetch(`/api/tmdb?endpoint=${type}/${id}&append_to_response=credits`);
-              if (res.ok) {
-                const data = await res.json();
-                details[`${type}_${id}`] = data;
-                if (!details[id]) {
-                  details[id] = data;
-                }
-              }
-            } catch (e) {
-              console.error(`Failed to fetch TMDB for ${type} ${id}`, e);
-            }
-          })
-        );
+        // Seed initial mediaDetails immediately from DB stored titles/posters
+        const initialDetails: Record<string, any> = {};
+        [...(watchedData || []), ...(watchlistData || [])].forEach((item: any) => {
+          if (item?.movie_id) {
+            const id = String(item.movie_id);
+            const type = item.content_type || "movie";
+            const seed = {
+              id: item.movie_id,
+              title: item.movie_title,
+              name: item.movie_title,
+              poster_path: item.poster_path,
+            };
+            initialDetails[`${type}_${id}`] = seed;
+            if (!initialDetails[id]) initialDetails[id] = seed;
+          }
+        });
+        setMediaDetails(initialDetails);
+        setLoading(false); // Unblock UI render immediately!
 
-        setMediaDetails(details);
+        // Fetch detailed TMDB metadata progressively in chunks
+        const details: Record<string, any> = { ...initialDetails };
+        const mediaList = Array.from(uniqueMedia.values());
+        const CHUNK_SIZE = 8;
+        for (let i = 0; i < mediaList.length; i += CHUNK_SIZE) {
+          const chunk = mediaList.slice(i, i + CHUNK_SIZE);
+          await Promise.all(
+            chunk.map(async ({ id, type }) => {
+              try {
+                const res = await fetch(`/api/tmdb?endpoint=${type}/${id}&append_to_response=credits`);
+                if (res.ok) {
+                  const data = await res.json();
+                  details[`${type}_${id}`] = data;
+                  if (!details[id]) {
+                    details[id] = data;
+                  }
+                }
+              } catch (e) {
+                console.error(`Failed to fetch TMDB for ${type} ${id}`, e);
+              }
+            })
+          );
+          setMediaDetails({ ...details });
+        }
 
         // Batch-fetch poster preferences for movies & TV shows
         const mediaItems = Array.from(uniqueMedia.values()).map(m => ({
@@ -490,7 +540,7 @@ export default function ProfilePage() {
     }
 
     fetchUserData();
-  }, [user]);
+  }, [user, profileRefreshKey]);
 
   const handleAvatarFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
     if (!event.target.files || event.target.files.length === 0) return;
@@ -2409,32 +2459,51 @@ export default function ProfilePage() {
               <section className="animate-fade-in">
                 {/* Import / Export row */}
                 <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
-                  <div className="flex flex-wrap gap-2">
-                    <button
-                      onClick={async () => {
-                        setExporting(true);
-                        try {
-                          const res = await fetch(`/api/watchlist-export?userId=${encodeURIComponent(profileUserId || user?.id)}`);
-                          if (!res.ok) throw new Error("Export failed");
-                          const blob = await res.blob();
-                          const url = URL.createObjectURL(blob);
-                          const a = document.createElement("a");
-                          a.href = url;
-                          a.download = "cinesocial_watchlist.csv";
-                          a.click();
-                          URL.revokeObjectURL(url);
-                        } catch (e) {
-                          console.error(e);
-                        } finally {
-                          setExporting(false);
-                        }
-                      }}
-                      disabled={exporting}
-                      className="flex items-center gap-2 px-4 py-2 rounded-full text-xs font-bold bg-white/5 border border-white/10 text-on-surface-variant hover:bg-white/10 hover:text-white transition-all cursor-pointer disabled:opacity-50"
-                    >
-                      <span className="material-symbols-outlined text-[15px]">download</span>
-                      {exporting ? "Exporting..." : "Export Watchlist CSV"}
-                    </button>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <div className="relative">
+                      <button
+                        onClick={() => setShowExportMenu(!showExportMenu)}
+                        disabled={exporting}
+                        className="flex items-center gap-2 px-4 py-2 rounded-full text-xs font-bold bg-white/5 border border-white/10 text-on-surface-variant hover:bg-white/10 hover:text-white transition-all cursor-pointer disabled:opacity-50"
+                      >
+                        <span className="material-symbols-outlined text-[15px]">download</span>
+                        {exporting ? "Exporting..." : "Export"}
+                        <span className="material-symbols-outlined text-[14px]">expand_more</span>
+                      </button>
+                      {showExportMenu && (
+                        <div className="absolute left-0 mt-2 w-52 bg-[#141414] border border-white/15 rounded-xl shadow-[0_10px_40px_rgba(0,0,0,0.8)] py-1.5 z-40 animate-fade-in backdrop-blur-md">
+                          <button
+                            onClick={() => handleExport("watchlist")}
+                            className="w-full text-left px-4 py-2 text-xs font-semibold text-white/90 hover:bg-white/10 flex items-center gap-2.5 transition-colors cursor-pointer"
+                          >
+                            <span className="material-symbols-outlined text-[16px] text-primary">bookmark</span>
+                            Export Watchlist (CSV)
+                          </button>
+                          <button
+                            onClick={() => handleExport("ratings")}
+                            className="w-full text-left px-4 py-2 text-xs font-semibold text-white/90 hover:bg-white/10 flex items-center gap-2.5 transition-colors cursor-pointer"
+                          >
+                            <span className="material-symbols-outlined text-[16px] text-[#e9c349]">star</span>
+                            Export Ratings (CSV)
+                          </button>
+                          <button
+                            onClick={() => handleExport("reviews")}
+                            className="w-full text-left px-4 py-2 text-xs font-semibold text-white/90 hover:bg-white/10 flex items-center gap-2.5 transition-colors cursor-pointer"
+                          >
+                            <span className="material-symbols-outlined text-[16px] text-primary">rate_review</span>
+                            Export Reviews (CSV)
+                          </button>
+                          <div className="my-1 border-t border-white/10"></div>
+                          <button
+                            onClick={() => handleExport("all")}
+                            className="w-full text-left px-4 py-2 text-xs font-semibold text-white/90 hover:bg-white/10 flex items-center gap-2.5 transition-colors cursor-pointer"
+                          >
+                            <span className="material-symbols-outlined text-[16px] text-white/60">inventory_2</span>
+                            Export Complete Backup
+                          </button>
+                        </div>
+                      )}
+                    </div>
                     <button
                       onClick={() => { setImportModalOpen(true); setImportResult(null); }}
                       className="flex items-center gap-2 px-4 py-2 rounded-full text-xs font-bold bg-white/5 border border-white/10 text-on-surface-variant hover:bg-white/10 hover:text-white transition-all cursor-pointer"
@@ -2819,7 +2888,12 @@ export default function ProfilePage() {
                   )}
                 </div>
                 <button
-                  onClick={() => { setImportModalOpen(false); setImportResult(null); setImportFile(null); }}
+                  onClick={() => {
+                    setImportModalOpen(false);
+                    setImportResult(null);
+                    setImportFile(null);
+                    setProfileRefreshKey((k) => k + 1);
+                  }}
                   className="w-full bg-primary text-black font-bold py-3 rounded-full hover:opacity-90 transition-all cursor-pointer"
                 >
                   Done
@@ -2844,6 +2918,8 @@ export default function ProfilePage() {
                       skipped: typeof data.skipped === "number" ? data.skipped : 0,
                       errors: Array.isArray(data.errors) ? data.errors : (Array.isArray(data.unmatchedTitles) ? data.unmatchedTitles : []),
                     });
+                    // Refresh data in background
+                    setProfileRefreshKey((k) => k + 1);
                   } catch (err: any) {
                     setImportResult({ imported: 0, skipped: 0, errors: [err.message || "Import failed"] });
                   } finally {
@@ -2853,24 +2929,24 @@ export default function ProfilePage() {
                 className="space-y-4"
               >
                 <p className="text-sm text-on-surface-variant leading-relaxed">
-                  Export your Letterboxd watchlist or diary as a CSV and upload it here. Ratings (0.5–5★) will be converted to CineSocial's 1–10 scale automatically.
+                  Export your Letterboxd watchlist, diary, ratings, or reviews as a CSV and upload it here. Reviews, ratings (converted to 1–10 scale), and dates will be imported automatically.
                 </p>
 
                 <div>
                   <label className="block text-xs text-on-surface-variant uppercase tracking-wider font-bold mb-2">Import as</label>
-                  <div className="flex gap-3">
-                    {(["watchlist", "watched"] as const).map(mode => (
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                    {(["watchlist", "watched", "ratings", "reviews"] as const).map(mode => (
                       <button
                         key={mode}
                         type="button"
                         onClick={() => setImportMode(mode)}
-                        className={`flex-1 py-2.5 rounded-full text-xs font-bold transition-all border cursor-pointer ${
+                        className={`py-2 px-1 rounded-full text-xs font-bold transition-all border cursor-pointer capitalize text-center ${
                           importMode === mode
-                            ? "bg-primary text-black border-primary"
+                            ? "bg-primary text-black border-primary shadow-[0_0_12px_rgba(233,195,73,0.3)]"
                             : "bg-white/5 text-on-surface-variant border-white/10 hover:bg-white/10"
                         }`}
                       >
-                        {mode === "watchlist" ? "Watchlist" : "Watched"}
+                        {mode}
                       </button>
                     ))}
                   </div>

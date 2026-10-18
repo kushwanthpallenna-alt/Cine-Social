@@ -304,7 +304,15 @@ export default function ProfilePage() {
   const [bannerMovieTitle, setBannerMovieTitle] = useState<string | null>(null);
 
   // Poster preferences map: movie_id -> preferred poster_path
-  const [posterPrefs, setPosterPrefs] = useState<Record<string, string>>({});
+  const [posterPrefs, setPosterPrefs] = useState<Record<string, string>>(() => {
+    if (typeof window !== "undefined") {
+      try {
+        const cached = localStorage.getItem("cinesocial_my_poster_prefs");
+        if (cached) return JSON.parse(cached);
+      } catch {}
+    }
+    return {};
+  });
 
   // Req 7: Rewatches state
   const [rewatchCounts, setRewatchCounts] = useState<Record<string, number>>({});
@@ -393,7 +401,16 @@ export default function ProfilePage() {
           console.error("Failed to fetch profile via API", e);
         }
 
-        const [watchlistRes, ratingsRes, reviewsRes, followCountsRes, watchedData, favoritesData, watchLogData] = await Promise.all([
+        const [
+          watchlistRes,
+          ratingsRes,
+          reviewsRes,
+          followCountsRes,
+          watchedData,
+          favoritesData,
+          watchLogData,
+          posterPrefsRes,
+        ] = await Promise.all([
           supabase.from("watchlist").select("*").eq("user_id", realUserId),
           supabase.from("ratings").select("*").eq("user_id", realUserId).order("created_at", { ascending: false }),
           supabase.from("reviews").select("*").eq("user_id", realUserId).order("created_at", { ascending: false }),
@@ -401,6 +418,7 @@ export default function ProfilePage() {
           fetch(`/api/watched?userId=${realUserId}`).then(r => r.ok ? r.json() : []).catch(() => []),
           fetch(`/api/favorites?userId=${realUserId}`).then(r => r.ok ? r.json() : []).catch(() => []),
           fetch(`/api/watch-log?userId=${realUserId}`).then(r => r.ok ? r.json() : []).catch(() => []),
+          supabase.from("user_poster_preferences").select("movie_id, poster_path, content_type").eq("user_id", realUserId),
         ]);
 
         // Fetch custom lists
@@ -419,6 +437,38 @@ export default function ProfilePage() {
         const watchlistData = watchlistRes.data || [];
         const ratingsData = ratingsRes.data || [];
         const reviewsData = reviewsRes.data || [];
+
+        // Build and set poster preferences IMMEDIATELY (no waiting!)
+        const prefsMap: Record<string, string> = {};
+        (posterPrefsRes.data || []).forEach((p: any) => {
+          if (p.movie_id && p.poster_path) {
+            const type = p.content_type || "movie";
+            prefsMap[`${type}_${p.movie_id}`] = p.poster_path;
+            prefsMap[p.movie_id] = p.poster_path;
+          }
+        });
+        (watchedData || []).forEach((w: any) => {
+          if (w.movie_id && w.poster_path) {
+            const type = w.content_type || "movie";
+            if (!prefsMap[`${type}_${w.movie_id}`]) prefsMap[`${type}_${w.movie_id}`] = w.poster_path;
+            if (!prefsMap[w.movie_id]) prefsMap[w.movie_id] = w.poster_path;
+          }
+        });
+        (watchlistData || []).forEach((wl: any) => {
+          if (wl.movie_id && wl.poster_path) {
+            const type = wl.content_type || "movie";
+            if (!prefsMap[`${type}_${wl.movie_id}`]) prefsMap[`${type}_${wl.movie_id}`] = wl.poster_path;
+            if (!prefsMap[wl.movie_id]) prefsMap[wl.movie_id] = wl.poster_path;
+          }
+        });
+
+        setPosterPrefs(prefsMap);
+        if (typeof window !== "undefined") {
+          try {
+            localStorage.setItem("cinesocial_my_poster_prefs", JSON.stringify(prefsMap));
+            localStorage.setItem(`cinesocial_poster_prefs_${realUserId}`, JSON.stringify(prefsMap));
+          } catch {}
+        }
 
         const favsMap: Record<string, any> = {};
         (favoritesData || []).forEach((fav: any) => {
@@ -463,26 +513,27 @@ export default function ProfilePage() {
           }
         });
 
-        // Seed initial mediaDetails immediately from DB stored titles/posters
+        // Seed initial mediaDetails immediately with CUSTOM POSTERS
         const initialDetails: Record<string, any> = {};
         [...(watchedData || []), ...(watchlistData || [])].forEach((item: any) => {
           if (item?.movie_id) {
             const id = String(item.movie_id);
             const type = item.content_type || "movie";
+            const customPoster = prefsMap[`${type}_${id}`] || prefsMap[id] || item.poster_path;
             const seed = {
               id: item.movie_id,
               title: item.movie_title,
               name: item.movie_title,
-              poster_path: item.poster_path,
+              poster_path: customPoster,
             };
             initialDetails[`${type}_${id}`] = seed;
             if (!initialDetails[id]) initialDetails[id] = seed;
           }
         });
         setMediaDetails(initialDetails);
-        setLoading(false); // Unblock UI render immediately!
+        setLoading(false); // Unblock UI render immediately with user's customized posters!
 
-        // Fetch detailed TMDB metadata progressively in chunks
+        // Fetch detailed TMDB metadata progressively in background without overriding custom posters
         const details: Record<string, any> = { ...initialDetails };
         const mediaList = Array.from(uniqueMedia.values());
         const CHUNK_SIZE = 8;
@@ -494,6 +545,10 @@ export default function ProfilePage() {
                 const res = await fetch(`/api/tmdb?endpoint=${type}/${id}&append_to_response=credits`);
                 if (res.ok) {
                   const data = await res.json();
+                  const customPoster = prefsMap[`${type}_${id}`] || prefsMap[id];
+                  if (customPoster) {
+                    data.poster_path = customPoster;
+                  }
                   details[`${type}_${id}`] = data;
                   if (!details[id]) {
                     details[id] = data;
@@ -505,32 +560,6 @@ export default function ProfilePage() {
             })
           );
           setMediaDetails({ ...details });
-        }
-
-        // Batch-fetch poster preferences for movies & TV shows
-        const mediaItems = Array.from(uniqueMedia.values()).map(m => ({
-          movie_id: m.id,
-          content_type: m.type,
-        }));
-        if (mediaItems.length > 0) {
-          fetch("/api/poster-preference/batch", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ user_id: user.id, items: mediaItems }),
-          })
-            .then((r) => r.json())
-            .then((prefs: { movie_id: string; content_type?: string; poster_path: string }[]) => {
-              if (Array.isArray(prefs)) {
-                const map: Record<string, string> = {};
-                prefs.forEach((p) => {
-                  const type = p.content_type || "movie";
-                  map[`${type}_${p.movie_id}`] = p.poster_path;
-                  map[p.movie_id] = p.poster_path;
-                });
-                setPosterPrefs(map);
-              }
-            })
-            .catch(() => { });
         }
       } catch (err) {
         console.error("Error fetching user data:", err);
@@ -2422,7 +2451,8 @@ export default function ProfilePage() {
                     const itemType = review.content_type === "tv" ? "tv" : "movie";
                     const detail = getItemDetails(review);
                     const rating = ratings.find(r => r.movie_id === review.movie_id && (r.content_type || "movie") === itemType)?.rating;
-                    const poster = detail?.poster_path || review.poster_path;
+                    const customPoster = posterPrefs[`${itemType}_${review.movie_id}`] || posterPrefs[review.movie_id];
+                    const poster = customPoster || detail?.poster_path || review.poster_path;
                     const isEditing = profileEditReviewId === review.id;
                     const displayTitle = detail?.title || detail?.name || review.movie_title || "Untitled";
 

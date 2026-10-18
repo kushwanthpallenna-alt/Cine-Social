@@ -276,7 +276,15 @@ export default function PublicProfilePage() {
   const [bannerBackdropUrl, setBannerBackdropUrl] = useState<string | null>(null);
   const [bannerMovieTitle, setBannerMovieTitle] = useState<string | null>(null);
   const [publicLists, setPublicLists] = useState<any[]>([]);
-  const [posterPrefs, setPosterPrefs] = useState<Record<string, string>>({});
+  const [posterPrefs, setPosterPrefs] = useState<Record<string, string>>(() => {
+    if (typeof window !== "undefined") {
+      try {
+        const cached = localStorage.getItem(`cinesocial_poster_prefs_${targetUserId}`);
+        if (cached) return JSON.parse(cached);
+      } catch {}
+    }
+    return {};
+  });
   const [rewatchCounts, setRewatchCounts] = useState<Record<string, number>>({});
 
   // Tab State: default to "watched"
@@ -404,6 +412,7 @@ export default function PublicProfilePage() {
           favoritesRes,
           publicListsRes,
           myRatingsRes,
+          posterPrefsRes,
         ] = await Promise.all([
           currentUser?.id && currentUser?.id !== activeId
             ? fetch(`/api/follows?followerId=${currentUser.id}&followingId=${activeId}`).then((r) => r.json())
@@ -419,6 +428,7 @@ export default function PublicProfilePage() {
             ? supabase.from("ratings").select("*").eq("user_id", currentUser.id)
             : Promise.resolve({ data: [] }),
           fetch(`/api/watch-log?userId=${activeId}`).then((r) => (r.ok ? r.json() : [])).catch(() => []),
+          supabase.from("user_poster_preferences").select("movie_id, poster_path, content_type").eq("user_id", activeId),
         ]);
 
         if (followStatusRes) setFollowing(followStatusRes.isFollowing);
@@ -429,6 +439,36 @@ export default function PublicProfilePage() {
         const watchedList = watchedRes.data || [];
         const watchlistList = watchlistRes.data || [];
         const watchLogList = Array.isArray(arguments?.[0]) ? [] : (arguments as any);
+
+        // Build and set poster preferences IMMEDIATELY
+        const prefsMap: Record<string, string> = {};
+        (posterPrefsRes.data || []).forEach((p: any) => {
+          if (p.movie_id && p.poster_path) {
+            const type = p.content_type || "movie";
+            prefsMap[`${type}_${p.movie_id}`] = p.poster_path;
+            prefsMap[p.movie_id] = p.poster_path;
+          }
+        });
+        watchedList.forEach((w: any) => {
+          if (w.movie_id && w.poster_path) {
+            const type = w.content_type || "movie";
+            if (!prefsMap[`${type}_${w.movie_id}`]) prefsMap[`${type}_${w.movie_id}`] = w.poster_path;
+            if (!prefsMap[w.movie_id]) prefsMap[w.movie_id] = w.poster_path;
+          }
+        });
+        watchlistList.forEach((wl: any) => {
+          if (wl.movie_id && wl.poster_path) {
+            const type = wl.content_type || "movie";
+            if (!prefsMap[`${type}_${wl.movie_id}`]) prefsMap[`${type}_${wl.movie_id}`] = wl.poster_path;
+            if (!prefsMap[wl.movie_id]) prefsMap[wl.movie_id] = wl.poster_path;
+          }
+        });
+        setPosterPrefs(prefsMap);
+        if (typeof window !== "undefined") {
+          try {
+            localStorage.setItem(`cinesocial_poster_prefs_${activeId}`, JSON.stringify(prefsMap));
+          } catch {}
+        }
 
         setReviews(revs);
         setRatings(rats);
@@ -480,24 +520,25 @@ export default function PublicProfilePage() {
           }
         });
 
-        // Seed initial mediaDetails immediately from DB stored titles/posters
+        // Seed initial mediaDetails immediately with CUSTOM POSTERS
         const initialDet: Record<string, any> = {};
         [...watchedList, ...watchlistList].forEach((item: any) => {
           if (item?.movie_id) {
             const id = String(item.movie_id);
             const type = item.content_type || "movie";
+            const customPoster = prefsMap[`${type}_${id}`] || prefsMap[id] || item.poster_path;
             const seed = {
               id: item.movie_id,
               title: item.movie_title,
               name: item.movie_title,
-              poster_path: item.poster_path,
+              poster_path: customPoster,
             };
             initialDet[`${type}_${id}`] = seed;
             if (!initialDet[id]) initialDet[id] = seed;
           }
         });
         setMediaDetails(initialDet);
-        setLoading(false); // Unblock profile display immediately!
+        setLoading(false); // Unblock profile display immediately with custom posters!
 
         const det: Record<string, any> = { ...initialDet };
         const mediaList = Array.from(uniqueMedia.values());
@@ -510,6 +551,10 @@ export default function PublicProfilePage() {
                 const r = await fetch(`/api/tmdb?endpoint=${type}/${id}`);
                 if (r.ok) {
                   const d = await r.json();
+                  const customPoster = prefsMap[`${type}_${id}`] || prefsMap[id];
+                  if (customPoster) {
+                    d.poster_path = customPoster;
+                  }
                   det[`${type}_${id}`] = d;
                   if (!det[id]) det[id] = d;
                 }
@@ -517,32 +562,6 @@ export default function PublicProfilePage() {
             })
           );
           setMediaDetails({ ...det });
-        }
-
-        // Batch-fetch custom poster preferences for profile owner (activeId)
-        const mediaItems = Array.from(uniqueMedia.values()).map((m) => ({
-          movie_id: m.id,
-          content_type: m.type,
-        }));
-        if (mediaItems.length > 0) {
-          fetch("/api/poster-preference/batch", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ user_id: activeId, items: mediaItems }),
-          })
-            .then((r) => r.json())
-            .then((prefs: { movie_id: string; content_type?: string; poster_path: string }[]) => {
-              if (Array.isArray(prefs)) {
-                const map: Record<string, string> = {};
-                prefs.forEach((p) => {
-                  const t = p.content_type || "movie";
-                  map[`${t}_${p.movie_id}`] = p.poster_path;
-                  map[p.movie_id] = p.poster_path;
-                });
-                setPosterPrefs(map);
-              }
-            })
-            .catch(() => {});
         }
       } catch (err) {
         console.error("PublicProfilePage loadAll error:", err);

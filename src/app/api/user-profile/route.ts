@@ -19,7 +19,7 @@ export async function GET(request: Request) {
 
   let query = supabaseAdmin
     .from("profiles")
-    .select("user_id, username, display_name, avatar_url, bio, updated_at");
+    .select("user_id, username, display_name, avatar_url, bio, is_private, updated_at");
 
   if (userId) {
     query = query.eq("user_id", userId);
@@ -39,5 +39,6 @@ export async function GET(request: Request) {
     display_name: data.display_name,
     avatar_url: data.avatar_url,
     bio: data.bio ?? null,
+    is_private: !!data.is_private,
   });
 }

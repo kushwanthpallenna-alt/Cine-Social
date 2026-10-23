@@ -229,7 +229,10 @@ function UserProfileSkeleton() {
 export default function PublicProfilePage() {
   const router = useRouter();
   const routeParams = useParams();
-  const targetUserId = (routeParams?.userId as string) || "";
+  const targetUserId =
+    (routeParams?.username as string) ||
+    (routeParams?.userId as string) ||
+    "";
 
   const { data: session } = useSession();
   const currentUser = session?.user as any;
@@ -399,6 +402,15 @@ export default function PublicProfilePage() {
         if (!pRes.ok) { setProfile(null); setLoading(false); return; }
         const profileData = await pRes.json();
         setProfile(profileData);
+
+        // Redirect old /profile/[userId] URLs to /u/[username]
+        if (profileData?.username && typeof window !== "undefined") {
+          const path = window.location.pathname;
+          if (path.startsWith("/profile/")) {
+            router.replace(`/u/${profileData.username}`);
+            return;
+          }
+        }
 
         const activeId = profileData.user_id;
 
@@ -816,6 +828,36 @@ export default function PublicProfilePage() {
     }
   };
 
+  const handleShareProfile = async () => {
+    const url = profile?.username
+      ? `${window.location.origin}/u/${profile.username}`
+      : window.location.href;
+
+    if (
+      typeof navigator !== "undefined" &&
+      typeof navigator.share === "function" &&
+      /mobile|android|iphone|ipad/i.test(navigator.userAgent)
+    ) {
+      try {
+        await navigator.share({
+          title: `${profile?.display_name || "Cine Social"} on Cine Social`,
+          text: `Check out ${profile?.display_name || "my"} profile on Cine Social!`,
+          url,
+        });
+        return;
+      } catch (err: any) {
+        if (err?.name === "AbortError") return;
+      }
+    }
+
+    try {
+      await navigator.clipboard.writeText(url);
+      showToast("Profile link copied to clipboard!");
+    } catch {
+      showToast("Failed to copy link.");
+    }
+  };
+
   const openFollowList = async (type: "followers" | "following") => {
     const activeUserId = profile?.user_id || targetUserId;
     setFollowListModal({ type, users: [], loading: true });
@@ -963,8 +1005,8 @@ export default function PublicProfilePage() {
           </div>
         ) : (
           <>
-            {/* Banner Backdrop */}
-            {bannerBackdropUrl && (
+            {/* Banner Backdrop (hidden if private and not owner) */}
+            {bannerBackdropUrl && (!profile?.is_private || isOwnProfile) && (
               <div className="relative w-full h-48 md:h-64 rounded-3xl overflow-hidden mb-6 border border-white/10 shadow-2xl">
                 <img src={bannerBackdropUrl} alt={bannerMovieTitle || "Profile Banner"} className="w-full h-full object-cover object-center filter brightness-[0.65]" />
                 <div className="absolute inset-0 bg-gradient-to-t from-[#050505] via-[#050505]/40 to-transparent" />
@@ -1002,33 +1044,60 @@ export default function PublicProfilePage() {
                     {profile.bio && <p className="text-sm text-on-surface-variant mt-2 max-w-xl">{profile.bio}</p>}
                   </div>
 
-                  {!isOwnProfile && currentUser && (
-                    <button
-                      onClick={toggleFollow}
-                      disabled={followLoading}
-                      className={`px-6 py-2 rounded-full font-bold text-sm transition-all duration-200 cursor-pointer border ${
-                        following
-                          ? "bg-white/10 text-white border-white/20 hover:border-red-500/50 hover:bg-red-500/10 hover:text-red-400"
-                          : "bg-primary text-black border-primary hover:brightness-110 shadow-[0_0_16px_rgba(255,180,170,0.3)]"
-                      } disabled:opacity-50`}
-                    >
-                      {followLoading ? "..." : following ? "Following" : "Follow"}
-                    </button>
-                  )}
+                  <div className="flex items-center gap-3 flex-wrap justify-center md:justify-start">
+                    {isOwnProfile && (
+                      <button
+                        onClick={handleShareProfile}
+                        className="px-5 py-2 rounded-full font-bold text-sm bg-white/10 hover:bg-white/15 text-white border border-white/20 transition-all cursor-pointer flex items-center justify-center gap-2 active:scale-95"
+                      >
+                        <span className="material-symbols-outlined text-base">share</span>
+                        Share
+                      </button>
+                    )}
+
+                    {!isOwnProfile && (
+                      <button
+                        onClick={toggleFollow}
+                        disabled={followLoading}
+                        className={`px-6 py-2 rounded-full font-bold text-sm transition-all duration-200 cursor-pointer border ${
+                          following
+                            ? "bg-white/10 text-white border-white/20 hover:border-red-500/50 hover:bg-red-500/10 hover:text-red-400"
+                            : "bg-primary text-black border-primary hover:brightness-110 shadow-[0_0_16px_rgba(255,180,170,0.3)]"
+                        } disabled:opacity-50`}
+                      >
+                        {followLoading ? "..." : following ? "Following" : "Follow"}
+                      </button>
+                    )}
+                  </div>
                 </div>
 
-                {/* Follower Counts */}
-                <div className="flex items-center justify-center md:justify-start gap-6 mt-4 text-xs">
-                  <button onClick={() => openFollowList("followers")} className="hover:text-primary transition-colors cursor-pointer bg-transparent border-none">
-                    <span className="font-bold text-white text-sm">{followCounts.followers}</span> <span className="text-on-surface-variant">Followers</span>
-                  </button>
-                  <button onClick={() => openFollowList("following")} className="hover:text-primary transition-colors cursor-pointer bg-transparent border-none">
-                    <span className="font-bold text-white text-sm">{followCounts.following}</span> <span className="text-on-surface-variant">Following</span>
-                  </button>
-                </div>
+                {/* Follower Counts (only if public or own profile) */}
+                {(!profile?.is_private || isOwnProfile) && (
+                  <div className="flex items-center justify-center md:justify-start gap-6 mt-4 text-xs">
+                    <button onClick={() => openFollowList("followers")} className="hover:text-primary transition-colors cursor-pointer bg-transparent border-none">
+                      <span className="font-bold text-white text-sm">{followCounts.followers}</span> <span className="text-on-surface-variant">Followers</span>
+                    </button>
+                    <button onClick={() => openFollowList("following")} className="hover:text-primary transition-colors cursor-pointer bg-transparent border-none">
+                      <span className="font-bold text-white text-sm">{followCounts.following}</span> <span className="text-on-surface-variant">Following</span>
+                    </button>
+                  </div>
+                )}
               </div>
             </div>
 
+            {/* If private and visitor is not owner, show restricted view */}
+            {profile?.is_private && !isOwnProfile ? (
+              <div className="w-full max-w-md mx-auto my-12 p-8 rounded-2xl bg-white/[0.03] border border-white/10 text-center flex flex-col items-center gap-3 animate-fade-in shadow-xl">
+                <div className="w-14 h-14 rounded-full bg-white/5 border border-white/10 flex items-center justify-center text-primary mb-1">
+                  <span className="material-symbols-outlined text-3xl">lock</span>
+                </div>
+                <h3 className="font-serif text-xl font-bold text-white">This Account is Private</h3>
+                <p className="text-xs text-on-surface-variant max-w-xs leading-relaxed">
+                  Follow this account to see their watched films, reviews, ratings, and lists.
+                </p>
+              </div>
+            ) : (
+              <>
             {/* Badges Showcase */}
             <div className="mb-8">
               <ProfileBadges
@@ -1639,6 +1708,8 @@ export default function PublicProfilePage() {
                   </div>
                 )}
               </section>
+            )}
+              </>
             )}
           </>
         )}

@@ -104,23 +104,36 @@ export default function SettingsPage() {
     if (!user?.id) return;
     setUsernameError(null);
     const clean = usernameDraft.toLowerCase().trim();
-    if (isCredentialsUser) {
-      if (clean.length < 3 || clean.length > 30) {
-        setUsernameError("Username must be 3–30 characters.");
-        return;
-      }
-      if (!/^[a-z0-9_]+$/.test(clean)) {
-        setUsernameError("Only letters, numbers, and underscores.");
-        return;
-      }
+    if (clean.length < 3 || clean.length > 30) {
+      setUsernameError("Username must be 3–30 characters.");
+      return;
     }
+    if (!/^[a-z0-9_]+$/.test(clean)) {
+      setUsernameError("Only lowercase letters, numbers, and underscores allowed.");
+      return;
+    }
+
     setSavingAccount(true);
     try {
+      // Check if username is already taken by another account
+      const { data: existingUser, error: checkError } = await supabase
+        .from("profiles")
+        .select("user_id")
+        .eq("username", clean)
+        .neq("user_id", user.id)
+        .maybeSingle();
+
+      if (existingUser) {
+        setUsernameError("That username is already taken.");
+        setSavingAccount(false);
+        return;
+      }
+
       const updateData: Record<string, string> = {
-        display_name: displayNameDraft.trim() || usernameDraft,
+        display_name: displayNameDraft.trim() || clean,
+        username: clean,
         updated_at: new Date().toISOString(),
       };
-      if (isCredentialsUser) updateData.username = clean;
 
       const { error } = await supabase
         .from("profiles")
@@ -322,27 +335,32 @@ export default function SettingsPage() {
                   />
                 </div>
 
-                {/* Username — credentials only */}
-                {isCredentialsUser && (
-                  <div>
-                    <label className="block text-xs font-bold uppercase tracking-widest text-white/40 mb-1.5">
-                      Username
-                    </label>
-                    <div className="flex items-center bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 focus-within:border-primary/50 transition-all">
-                      <span className="text-white/30 text-sm mr-1">@</span>
-                      <input
-                        type="text"
-                        value={usernameDraft}
-                        onChange={(e) => { setUsernameDraft(e.target.value); setUsernameError(null); }}
-                        maxLength={30}
-                        className="flex-1 bg-transparent text-sm text-white placeholder-white/30 focus:outline-none"
-                      />
-                    </div>
-                    {usernameError && (
-                      <p className="text-xs text-red-400 mt-1">{usernameError}</p>
-                    )}
+                {/* Username for all users */}
+                <div>
+                  <label className="block text-xs font-bold uppercase tracking-widest text-white/40 mb-1.5">
+                    Username
+                  </label>
+                  <div className="flex items-center bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 focus-within:border-primary/50 transition-all">
+                    <span className="text-white/30 text-sm mr-1">@</span>
+                    <input
+                      type="text"
+                      value={usernameDraft}
+                      onChange={(e) => {
+                        setUsernameDraft(e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, ""));
+                        setUsernameError(null);
+                      }}
+                      maxLength={30}
+                      placeholder="username"
+                      className="flex-1 bg-transparent text-sm text-white placeholder-white/30 focus:outline-none"
+                    />
                   </div>
-                )}
+                  <p className="text-[11px] text-white/40 mt-1">
+                    Your public link: /u/{usernameDraft || "username"}
+                  </p>
+                  {usernameError && (
+                    <p className="text-xs text-red-400 mt-1">{usernameError}</p>
+                  )}
+                </div>
 
                 <button
                   onClick={handleSaveAccount}

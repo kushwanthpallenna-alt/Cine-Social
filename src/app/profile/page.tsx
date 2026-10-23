@@ -663,6 +663,37 @@ export default function ProfilePage() {
     }
   };
 
+  const handleShareProfile = async () => {
+    const publicUsername = username || (user?.name ? user.name.toLowerCase().replace(/[^a-z0-9_]/g, '') : '');
+    const url = publicUsername
+      ? `${window.location.origin}/u/${publicUsername}`
+      : `${window.location.origin}/profile`;
+
+    if (
+      typeof navigator !== "undefined" &&
+      typeof navigator.share === "function" &&
+      /mobile|android|iphone|ipad/i.test(navigator.userAgent)
+    ) {
+      try {
+        await navigator.share({
+          title: `${user?.name || "Cine Social"} on Cine Social`,
+          text: `Check out ${user?.name || "my"} profile on Cine Social!`,
+          url,
+        });
+        return;
+      } catch (err: any) {
+        if (err?.name === "AbortError") return;
+      }
+    }
+
+    try {
+      await navigator.clipboard.writeText(url);
+      showToast("Profile link copied to clipboard!");
+    } catch {
+      showToast("Failed to copy link.");
+    }
+  };
+
   const handleRemoveFromWatchlist = async (movieId: string, itemContentType: string = "movie") => {
     if (!user?.id) return;
     try {
@@ -1342,6 +1373,14 @@ export default function ProfilePage() {
           </h1>
         </Link>
         <div className="flex items-center gap-stack-md">
+          <button
+            onClick={handleShareProfile}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white/10 hover:bg-white/20 active:scale-95 text-white text-xs font-bold border border-white/20 transition-all cursor-pointer shadow-sm"
+            title="Share your public profile"
+          >
+            <span className="material-symbols-outlined text-sm">share</span>
+            <span className="hidden sm:inline">Share</span>
+          </button>
           <NotificationBell />
           <Link
             href="/settings"
@@ -1501,15 +1540,22 @@ export default function ProfilePage() {
                       >
                         <span className="material-symbols-outlined text-sm">edit</span>
                       </button>
-                      {username && (
-                        <span className="text-[10px] text-on-surface-variant opacity-40 hidden md:inline">· /profile/{username}</span>
-                      )}
                     </>
                   )}
                 </div>
 
-                <div className="flex flex-wrap items-center gap-4 mb-3 justify-center md:justify-start">
+                <div className="flex flex-wrap items-center gap-3 mb-3 justify-center md:justify-start">
                   <p className="text-on-surface-variant text-sm">{user.email}</p>
+
+                  <button
+                    onClick={handleShareProfile}
+                    className="text-xs bg-primary text-black px-4 py-1.5 rounded-full font-bold shadow-[0_0_15px_rgba(255,180,170,0.25)] hover:brightness-110 active:scale-95 transition-all flex items-center gap-1.5 cursor-pointer border-none"
+                    title="Share your public profile link"
+                  >
+                    <span className="material-symbols-outlined text-sm">share</span>
+                    Share Profile
+                  </button>
+
                   <Link href="/profile/wrapped" className="text-xs bg-gradient-to-r from-[#e9c349] to-[#b38b22] text-black px-3 py-1 rounded-full font-bold shadow-[0_0_15px_rgba(233,195,73,0.3)] hover:scale-105 transition-transform flex items-center gap-1">
                     <span className="material-symbols-outlined text-xs">auto_awesome</span> Yearly Wrapped
                   </Link>

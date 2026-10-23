@@ -3,6 +3,8 @@
 import React, { useState, useRef, useEffect } from "react";
 import Link from "next/link";
 import { getMovieUrl, getTvUrl } from "@/lib/slug";
+import { supabase } from "@/lib/supabase";
+import { useAuthPrompt } from "@/components/AuthPromptProvider";
 
 type Scope = "movie" | "tv";
 type Step = "filters" | "wheel" | "reveal";
@@ -121,6 +123,7 @@ function CandidateWheelSVG({
   const r = 150;
   const n = candidates.length;
   const sliceAngle = (2 * Math.PI) / n;
+  const hasLabels = n <= 16;
 
   return (
     <svg
@@ -153,8 +156,21 @@ function CandidateWheelSVG({
         const y1 = cy + r * Math.sin(startAngle);
         const x2 = cx + r * Math.cos(endAngle);
         const y2 = cy + r * Math.sin(endAngle);
-        const midAngle = startAngle + sliceAngle / 2;
 
+        if (!hasLabels) {
+          // With >16 titles: draw thin colored slices with no text labels
+          return (
+            <path
+              key={item.id}
+              d={`M ${cx} ${cy} L ${x1} ${y1} A ${r} ${r} 0 0 1 ${x2} ${y2} Z`}
+              fill={item.color}
+              stroke="rgba(0,0,0,0.25)"
+              strokeWidth="0.5"
+            />
+          );
+        }
+
+        const midAngle = startAngle + sliceAngle / 2;
         // Position text along the wedge radius
         const textR = r * 0.62;
         const tx = cx + textR * Math.cos(midAngle);
@@ -211,18 +227,19 @@ function CandidateWheelSVG({
       <circle
         cx={cx}
         cy={cy}
-        r={28}
+        r={hasLabels ? 28 : 22}
         fill="#0a0a0c"
         stroke="rgba(255,255,255,0.25)"
         strokeWidth="3"
       />
-      <circle cx={cx} cy={cy} r={18} fill="#e50914" />
-      <circle cx={cx} cy={cy} r={6} fill="#ffffff" />
+      <circle cx={cx} cy={cy} r={hasLabels ? 18 : 14} fill="#e50914" />
+      <circle cx={cx} cy={cy} r={hasLabels ? 6 : 5} fill="#ffffff" />
     </svg>
   );
 }
 
 export default function SpinWheelModal({ onClose }: SpinWheelModalProps) {
+  const { showAuthPrompt } = useAuthPrompt();
   const [scope, setScope] = useState<Scope>("movie");
   const [step, setStep] = useState<Step>("filters");
 
@@ -232,6 +249,8 @@ export default function SpinWheelModal({ onClose }: SpinWheelModalProps) {
   const [selectedPerson, setSelectedPerson] = useState<SelectedPerson | null>(
     null
   );
+  const [hideWatched, setHideWatched] = useState(true);
+  const [watchedMovieIds, setWatchedMovieIds] = useState<Set<string>>(new Set());
 
   // Person Autocomplete State
   const [personQuery, setPersonQuery] = useState("");
@@ -243,12 +262,15 @@ export default function SpinWheelModal({ onClose }: SpinWheelModalProps) {
   const [candidates, setCandidates] = useState<CandidateTitle[]>([]);
   const [loadingCandidates, setLoadingCandidates] = useState(false);
   const [candidateError, setCandidateError] = useState<string | null>(null);
+  const [rerollCount, setRerollCount] = useState(0);
 
   // Spin Physics State
   const [spinning, setSpinning] = useState(false);
   const [rotation, setRotation] = useState(0);
   const [displayRotation, setDisplayRotation] = useState(0);
   const [winner, setWinner] = useState<CandidateTitle | null>(null);
+  const [addingToWatchlist, setAddingToWatchlist] = useState(false);
+  const [addedToWatchlist, setAddedToWatchlist] = useState(false);
 
   const animFrameRef = useRef<number>(0);
   const startTimeRef = useRef<number>(0);
@@ -258,6 +280,35 @@ export default function SpinWheelModal({ onClose }: SpinWheelModalProps) {
 
   const genres = scope === "movie" ? MOVIE_GENRES : TV_GENRES;
   const comboPresets = scope === "movie" ? MOVIE_COMBO_PRESETS : TV_COMBO_PRESETS;
+
+  // Load user's watched titles for "Hide watched" filter
+  useEffect(() => {
+    let isMounted = true;
+    async function loadWatched() {
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) return;
+        const { data, error } = await supabase
+          .from("watched")
+          .select("movie_id, content_type")
+          .eq("user_id", user.id);
+        if (!error && data && isMounted) {
+          const idSet = new Set<string>();
+          data.forEach((d: any) => {
+            idSet.add(`${d.content_type || "movie"}_${d.movie_id}`);
+            idSet.add(String(d.movie_id));
+          });
+          setWatchedMovieIds(idSet);
+        }
+      } catch (e) {
+        console.error("Error loading watched titles for spin wheel:", e);
+      }
+    }
+    loadWatched();
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   // Lock scroll
   useEffect(() => {
@@ -333,86 +384,125 @@ export default function SpinWheelModal({ onClose }: SpinWheelModalProps) {
     }
   };
 
-  // Fetch candidate titles from TMDB matching filters
-  const handleGenerateCandidates = async () => {
+  // Add winner to user watchlist
+  const handleAddToWatchlist = async () => {
+    if (!winner) return;
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) {
+      showAuthPrompt({
+        title: "Add to Watchlist",
+        message: "Sign in to save this title to your watchlist.",
+      });
+      return;
+    }
+    setAddingToWatchlist(true);
+    try {
+      const { error } = await supabase.from("watchlist").insert({
+        user_id: user.id,
+        movie_id: String(winner.id),
+        movie_title: winner.title,
+        poster_path: winner.poster_path || "",
+        content_type: scope,
+      });
+      if (!error) {
+        setAddedToWatchlist(true);
+      }
+    } catch (err) {
+      console.error("Error adding to watchlist:", err);
+    } finally {
+      setAddingToWatchlist(false);
+    }
+  };
+
+  // Fetch candidate titles from TMDB matching filters: pool of ~100 titles
+  const handleGenerateCandidates = async (isReroll = false) => {
     setLoadingCandidates(true);
     setCandidateError(null);
 
     try {
       const endpoint = scope === "movie" ? "discover/movie" : "discover/tv";
-      const params = new URLSearchParams();
+      const baseParams = new URLSearchParams();
 
       // Multi-genre: comma separator means AND / intersection in TMDB Discover
       if (selectedGenreIds.length > 0) {
-        params.append("with_genres", selectedGenreIds.join(","));
+        baseParams.append("with_genres", selectedGenreIds.join(","));
       }
 
       // Era
       const eraObj = ERAS.find((e) => e.label === selectedEra);
       if (eraObj) {
         if (scope === "movie") {
-          if (eraObj.gte) params.append("primary_release_date.gte", eraObj.gte);
-          if (eraObj.lte) params.append("primary_release_date.lte", eraObj.lte);
+          if (eraObj.gte) baseParams.append("primary_release_date.gte", eraObj.gte);
+          if (eraObj.lte) baseParams.append("primary_release_date.lte", eraObj.lte);
         } else {
-          if (eraObj.gte) params.append("first_air_date.gte", eraObj.gte);
-          if (eraObj.lte) params.append("first_air_date.lte", eraObj.lte);
+          if (eraObj.gte) baseParams.append("first_air_date.gte", eraObj.gte);
+          if (eraObj.lte) baseParams.append("first_air_date.lte", eraObj.lte);
         }
       }
 
       // Person (Actor / Director)
       if (selectedPerson) {
-        params.append("with_people", String(selectedPerson.id));
+        baseParams.append("with_people", String(selectedPerson.id));
       }
 
       // Sort and Quality
-      params.append("sort_by", "popularity.desc");
-      params.append("vote_count.gte", selectedPerson ? "5" : "20");
+      baseParams.append("sort_by", "popularity.desc");
+      baseParams.append("vote_count.gte", selectedPerson ? "5" : "20");
 
-      // Randomize page between 1 and 3 for variety
-      const randomPage = Math.floor(Math.random() * 2) + 1;
-      params.append("page", String(randomPage));
-
-      let res = await fetch(`/api/tmdb?endpoint=${endpoint}&${params.toString()}`);
-      if (!res.ok) throw new Error("Failed to fetch from TMDB");
-
-      let data = await res.json();
-      let results = data.results || [];
-
-      // Filter out items without valid title or poster
-      let validItems = results.filter(
-        (item: any) =>
-          (item.title || item.name) && (item.poster_path || item.backdrop_path)
-      );
-
-      // Graceful fallback for strict AND combinations if fewer than 3 titles were found
-      if (validItems.length < 3 && selectedGenreIds.length > 1) {
-        const fallbackParams = new URLSearchParams(params);
-        fallbackParams.set("with_genres", selectedGenreIds.join("|"));
-        const fallbackRes = await fetch(
-          `/api/tmdb?endpoint=${endpoint}&${fallbackParams.toString()}`
-        );
-        if (fallbackRes.ok) {
-          const fallbackData = await fallbackRes.json();
-          const fallbackValid = (fallbackData.results || []).filter(
-            (item: any) =>
-              (item.title || item.name) && (item.poster_path || item.backdrop_path)
-          );
-          if (fallbackValid.length >= 3) {
-            validItems = fallbackValid;
-          }
-        }
+      // Pages 1-5 in parallel, or different random pages on re-roll
+      let pagesToFetch: number[];
+      if (isReroll) {
+        const offset = ((rerollCount + 1) * 3) % 15;
+        pagesToFetch = [offset + 1, offset + 2, offset + 3, offset + 4, offset + 5];
+        setRerollCount((prev) => prev + 1);
+      } else {
+        pagesToFetch = [1, 2, 3, 4, 5];
       }
 
-      if (validItems.length < 3) {
-        setCandidateError(
-          "Not enough titles found matching this combination. Try choosing a broader filter or fewer combined genres!"
+      const pageFetches = pagesToFetch.map(async (pageNum) => {
+        const pageParams = new URLSearchParams(baseParams);
+        pageParams.set("page", String(pageNum));
+        try {
+          const res = await fetch(`/api/tmdb?endpoint=${endpoint}&${pageParams.toString()}`);
+          if (!res.ok) return [];
+          const data = await res.json();
+          return (data.results || []) as any[];
+        } catch {
+          return [];
+        }
+      });
+
+      const pagesResults = await Promise.all(pageFetches);
+      const merged = pagesResults.flat();
+
+      // Filter out items without valid title or poster, and dedupe by id
+      const seenIds = new Set<number>();
+      let validItems = merged.filter((item: any) => {
+        if (!item || !item.id || seenIds.has(item.id)) return false;
+        seenIds.add(item.id);
+        return (item.title || item.name) && (item.poster_path || item.backdrop_path);
+      });
+
+      // Filter out titles already watched if toggle is enabled
+      if (hideWatched && watchedMovieIds.size > 0) {
+        validItems = validItems.filter(
+          (item: any) =>
+            !watchedMovieIds.has(`${scope}_${item.id}`) &&
+            !watchedMovieIds.has(String(item.id))
         );
+      }
+
+      // If fewer than 5 matches, show message
+      if (validItems.length < 5) {
+        setCandidateError("Not enough matches, loosen filters");
         return;
       }
 
-      // Randomly pick 8 to 10 unique candidates
-      const shuffled = [...validItems].sort(() => 0.5 - Math.random());
-      const selectedPool = shuffled.slice(0, Math.min(shuffled.length, 10));
+      // If fewer than 100, use all. If more, shuffle and take 100.
+      const selectedPool =
+        validItems.length <= 100
+          ? validItems
+          : [...validItems].sort(() => 0.5 - Math.random()).slice(0, 100);
 
       const formattedCandidates: CandidateTitle[] = selectedPool.map(
         (item: any, idx: number) => ({
@@ -433,6 +523,7 @@ export default function SpinWheelModal({ onClose }: SpinWheelModalProps) {
       setRotation(0);
       setDisplayRotation(0);
       setWinner(null);
+      setAddedToWatchlist(false);
     } catch (err) {
       console.error("Candidate fetch error:", err);
       setCandidateError("Failed to load candidate titles. Please try again.");
@@ -790,6 +881,38 @@ export default function SpinWheelModal({ onClose }: SpinWheelModalProps) {
                 )}
               </div>
 
+              {/* Hide titles I've already watched toggle */}
+              <div className="flex items-center justify-between p-3.5 rounded-xl bg-white/5 border border-white/10">
+                <div className="flex items-center gap-2.5">
+                  <span className="material-symbols-outlined text-primary text-lg">
+                    visibility_off
+                  </span>
+                  <div>
+                    <p className="text-xs font-semibold text-white">
+                      Hide titles I&apos;ve already watched
+                    </p>
+                    <p className="text-[10px] text-white/50">
+                      Exclude films & shows you have logged
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={hideWatched}
+                  onClick={() => setHideWatched(!hideWatched)}
+                  className={`w-11 h-6 rounded-full transition-colors relative cursor-pointer border-none p-0.5 ${
+                    hideWatched ? "bg-primary" : "bg-white/20"
+                  }`}
+                >
+                  <div
+                    className={`w-5 h-5 rounded-full bg-white transition-transform ${
+                      hideWatched ? "translate-x-5" : "translate-x-0"
+                    }`}
+                  />
+                </button>
+              </div>
+
               {/* Error warning if not enough titles */}
               {candidateError && (
                 <div className="p-3 rounded-xl bg-red-500/10 border border-red-500/30 text-red-200 text-xs flex items-start gap-2 animate-fade-in">
@@ -814,7 +937,7 @@ export default function SpinWheelModal({ onClose }: SpinWheelModalProps) {
 
               {/* Action Button */}
               <button
-                onClick={handleGenerateCandidates}
+                onClick={() => handleGenerateCandidates(false)}
                 disabled={loadingCandidates}
                 className="w-full py-3.5 bg-gradient-to-r from-primary to-secondary text-black font-bold rounded-full hover:opacity-90 active:scale-98 transition-all cursor-pointer text-sm shadow-[0_0_20px_rgba(229,9,20,0.3)] flex items-center justify-center gap-2 disabled:opacity-50 mt-1"
               >
@@ -880,16 +1003,30 @@ export default function SpinWheelModal({ onClose }: SpinWheelModalProps) {
               </div>
 
               {/* Candidate Titles Legend */}
-              <div className="w-full max-h-24 overflow-y-auto p-2 bg-white/5 rounded-xl border border-white/10 text-[11px] grid grid-cols-2 gap-1.5 no-scrollbar">
-                {candidates.map((c) => (
-                  <div key={c.id} className="flex items-center gap-1.5 truncate">
-                    <span
-                      className="w-2.5 h-2.5 rounded-full flex-shrink-0"
-                      style={{ backgroundColor: c.color }}
-                    />
-                    <span className="truncate text-white/80">{c.title}</span>
+              <div className="w-full max-h-24 overflow-y-auto p-2 bg-white/5 rounded-xl border border-white/10 text-[11px] no-scrollbar">
+                {candidates.length > 16 ? (
+                  <div className="flex items-center justify-between px-2 py-1 text-white/80">
+                    <span className="flex items-center gap-2 font-bold text-white">
+                      <span className="w-2.5 h-2.5 rounded-full bg-primary" />
+                      {candidates.length} Titles in Pool
+                    </span>
+                    <span className="text-[10px] text-white/50 font-mono">
+                      Spin once to choose!
+                    </span>
                   </div>
-                ))}
+                ) : (
+                  <div className="grid grid-cols-2 gap-1.5">
+                    {candidates.map((c) => (
+                      <div key={c.id} className="flex items-center gap-1.5 truncate">
+                        <span
+                          className="w-2.5 h-2.5 rounded-full flex-shrink-0"
+                          style={{ backgroundColor: c.color }}
+                        />
+                        <span className="truncate text-white/80">{c.title}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
 
               {/* Spin Action Button */}
@@ -918,9 +1055,9 @@ export default function SpinWheelModal({ onClose }: SpinWheelModalProps) {
                   )}
                 </button>
                 <button
-                  onClick={handleGenerateCandidates}
+                  onClick={() => handleGenerateCandidates(true)}
                   disabled={spinning || loadingCandidates}
-                  title="Re-roll candidate titles"
+                  title="Re-roll candidate pool"
                   className="px-4 rounded-full bg-white/10 hover:bg-white/15 text-white border border-white/15 transition-all cursor-pointer flex items-center justify-center"
                 >
                   <span className="material-symbols-outlined text-base">
@@ -1001,8 +1138,8 @@ export default function SpinWheelModal({ onClose }: SpinWheelModalProps) {
                 </div>
               </div>
 
-              {/* Action Buttons */}
-              <div className="flex gap-3 w-full">
+              {/* Action Buttons: Watch details, Add to Watchlist, Spin again */}
+              <div className="flex flex-col sm:flex-row gap-2.5 w-full">
                 <Link
                   href={
                     scope === "movie"
@@ -1015,8 +1152,28 @@ export default function SpinWheelModal({ onClose }: SpinWheelModalProps) {
                   <span className="material-symbols-outlined text-base">
                     open_in_new
                   </span>
-                  View Details
+                  Watch details
                 </Link>
+
+                <button
+                  onClick={handleAddToWatchlist}
+                  disabled={addingToWatchlist || addedToWatchlist}
+                  className={`flex-1 py-3 font-semibold rounded-full text-sm active:scale-95 transition-all cursor-pointer flex items-center justify-center gap-2 border ${
+                    addedToWatchlist
+                      ? "bg-emerald-500/20 border-emerald-500/40 text-emerald-300 cursor-default"
+                      : "bg-white/10 border-white/15 text-white hover:bg-white/15"
+                  }`}
+                >
+                  <span className="material-symbols-outlined text-base">
+                    {addedToWatchlist ? "check_circle" : "bookmark_add"}
+                  </span>
+                  {addingToWatchlist
+                    ? "Adding..."
+                    : addedToWatchlist
+                    ? "In Watchlist"
+                    : "Add to Watchlist"}
+                </button>
+
                 <button
                   onClick={handleSpinAgain}
                   className="flex-1 py-3 bg-white/10 border border-white/15 text-white font-semibold rounded-full text-sm hover:bg-white/15 active:scale-95 transition-all cursor-pointer flex items-center justify-center gap-2"
@@ -1024,7 +1181,7 @@ export default function SpinWheelModal({ onClose }: SpinWheelModalProps) {
                   <span className="material-symbols-outlined text-base">
                     refresh
                   </span>
-                  Spin Again
+                  Spin again
                 </button>
               </div>
 

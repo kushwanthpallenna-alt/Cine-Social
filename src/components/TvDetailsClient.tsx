@@ -14,6 +14,7 @@ import RewatchModal from "@/components/RewatchModal";
 import { useAuthPrompt } from "@/components/AuthPromptProvider";
 import { getAvatarUrlOrDefault } from "@/lib/avatar";
 import { getTvUrl } from "@/lib/slug";
+import ExternalRatingsBadges from "@/components/ExternalRatingsBadges";
 
 const CONTENT_TYPE = "tv";
 
@@ -136,6 +137,9 @@ export default function TvDetailsClient({ tvId, initialSlug }: { tvId: string; i
   // Req 7: Rewatches
   const [showRewatchModal, setShowRewatchModal] = useState(false);
   const [rewatchCount, setRewatchCount] = useState<number>(0);
+
+  // CineSocial community average rating
+  const [cineSocialRating, setCineSocialRating] = useState<{ average: number; count: number } | null>(null);
 
   const showToast = useCallback((message: string) => {
     setToast({ message, visible: true });
@@ -593,6 +597,30 @@ export default function TvDetailsClient({ tvId, initialSlug }: { tvId: string; i
   };
 
   // Reviews
+  useEffect(() => {
+    if (!tvId) return;
+    // Fetch CineSocial community average for this TV show
+    async function fetchCineSocialAvg() {
+      try {
+        const { data } = await supabase
+          .from("ratings")
+          .select("rating")
+          .eq("movie_id", tvId)
+          .eq("content_type", CONTENT_TYPE);
+        if (data && data.length > 0) {
+          const vals = data.map((r: any) => Number(r.rating)).filter((v: number) => !isNaN(v));
+          if (vals.length > 0) {
+            const avg = vals.reduce((a: number, b: number) => a + b, 0) / vals.length;
+            setCineSocialRating({ average: avg, count: vals.length });
+          }
+        }
+      } catch {
+        // Ignore rating fetch errors
+      }
+    }
+    fetchCineSocialAvg();
+  }, [tvId]);
+
   useEffect(() => {
     if (!tvId) return;
     async function fetchReviews() {
@@ -1074,6 +1102,16 @@ export default function TvDetailsClient({ tvId, initialSlug }: { tvId: string; i
                     Edit date
                   </button>
                 </div>
+              )}
+
+              {/* External Ratings Row */}
+              {tvShow?.id && (
+                <ExternalRatingsBadges
+                  tmdbId={String(tvShow.id)}
+                  mediaType="tv"
+                  isMovie={false}
+                  cineSocialRating={cineSocialRating}
+                />
               )}
             </div>
           </div>

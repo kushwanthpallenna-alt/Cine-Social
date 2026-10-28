@@ -14,6 +14,7 @@ import RewatchModal from "@/components/RewatchModal";
 import { useAuthPrompt } from "@/components/AuthPromptProvider";
 import { getAvatarUrlOrDefault } from "@/lib/avatar";
 import { getMovieUrl } from "@/lib/slug";
+import ExternalRatingsBadges from "@/components/ExternalRatingsBadges";
 
 const GENRE_MAP: { [key: number]: string } = {
   28: "Action",
@@ -185,6 +186,9 @@ export default function MovieDetailsClient({ movieId, initialSlug }: { movieId: 
   const [rewatchCount, setRewatchCount] = useState<number>(0);
   // Mobile bottom-sheet confirmation before opening the full poster picker
   const [showPosterConfirm, setShowPosterConfirm] = useState(false);
+
+  // CineSocial community average rating
+  const [cineSocialRating, setCineSocialRating] = useState<{ average: number; count: number } | null>(null);
 
   const showToast = (message: string) => {
     setToast({ message, visible: true });
@@ -504,6 +508,30 @@ export default function MovieDetailsClient({ movieId, initialSlug }: { movieId: 
       setIsRatingSubmitting(false);
     }
   };
+
+  // Fetch CineSocial community average rating for this movie
+  useEffect(() => {
+    if (!movieId) return;
+    async function fetchCineSocialAvg() {
+      try {
+        const { data } = await supabase
+          .from("ratings")
+          .select("rating")
+          .eq("movie_id", movieId)
+          .or("content_type.eq.movie,content_type.is.null");
+        if (data && data.length > 0) {
+          const vals = data.map((r: any) => Number(r.rating)).filter((v: number) => !isNaN(v));
+          if (vals.length > 0) {
+            const avg = vals.reduce((a: number, b: number) => a + b, 0) / vals.length;
+            setCineSocialRating({ average: avg, count: vals.length });
+          }
+        }
+      } catch {
+        // Ignore rating fetch errors
+      }
+    }
+    fetchCineSocialAvg();
+  }, [movieId]);
 
   // Fetch reviews from database
   useEffect(() => {
@@ -1124,6 +1152,16 @@ export default function MovieDetailsClient({ movieId, initialSlug }: { movieId: 
                     Edit date
                   </button>
                 </div>
+              )}
+
+              {/* External Ratings Row */}
+              {movie?.id && (
+                <ExternalRatingsBadges
+                  tmdbId={String(movie.id)}
+                  mediaType="movie"
+                  isMovie={true}
+                  cineSocialRating={cineSocialRating}
+                />
               )}
             </div>
           </div>
